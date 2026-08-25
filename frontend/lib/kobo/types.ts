@@ -1,4 +1,4 @@
-export type TransferStatus = "pending" | "onramp_complete" | "sent" | "confirmed";
+export type TransferStatus = "pending" | "onramp_complete" | "sent" | "confirmed" | "failed";
 
 export type CurrencyCode = "EUR" | "GBP" | "USD";
 
@@ -41,10 +41,26 @@ export interface CreateTransferRequest {
   amount_eur: number;
 }
 
+/** Matches the real backend's `transfers` row shape (backend/src/routes/transfers.ts). */
 export interface CreateTransferResponse {
-  transfer_id: string;
+  id: string;
   status: TransferStatus;
-  onramp_reference: string;
+  /** `null` at creation time — only populated once Transak's ORDER_COMPLETED webhook fires. */
+  onramp_reference: string | null;
+}
+
+/** `GET /transfers/:id` response — matches the real backend's `transfers` row exactly. */
+export interface TransferRecord {
+  id: string;
+  status: TransferStatus;
+  solana_tx_signature: string | null;
+  amount_eur: number;
+  amount_usdc: number | null;
+  failure_reason: string | null;
+  retry_count: number;
+  onramp_session_id: string | null;
+  onramp_reference: string | null;
+  created_at: string;
 }
 
 /**

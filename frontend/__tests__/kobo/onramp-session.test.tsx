@@ -66,7 +66,7 @@ describe("redirect on-ramp path", () => {
       widgetUrl: "https://global.transak.com/checkout/tr_redirect_test",
     };
     const response: CreateTransferResponse & { onramp: OnrampSession } = {
-      transfer_id: "tr_redirect_test",
+      id: "tr_redirect_test",
       status: "pending",
       onramp_reference: "KB-1234-EU",
       onramp: session,

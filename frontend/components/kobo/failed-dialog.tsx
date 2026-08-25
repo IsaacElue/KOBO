@@ -7,11 +7,14 @@ import { TriangleAlert } from "lucide-react";
 export function FailedDialog({
   open,
   reference,
+  reason,
   onTryAgain,
   onContactSupport,
 }: {
   open: boolean;
   reference: string;
+  /** The backend's failure_reason, when known — shown in place of generic copy. */
+  reason?: string | null;
   onTryAgain: () => void;
   onContactSupport: () => void;
 }) {
@@ -48,6 +51,12 @@ export function FailedDialog({
             <span className="text-sm text-[#5E7A81]">Status</span>
             <span className="font-mono text-[13.5px] text-kobo-sand-dark">Not completed</span>
           </div>
+          {reason && (
+            <div className="flex items-center justify-between py-1.5">
+              <span className="text-sm text-[#5E7A81]">Reason</span>
+              <span className="text-[13.5px] text-kobo-ink">{reason}</span>
+            </div>
+          )}
         </div>
 
         <div className="mt-6 flex gap-3">

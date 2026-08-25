@@ -26,7 +26,7 @@ describe("processing → success", () => {
       await screen.findByText(/converting eur to usdc/i, {}, { timeout: 2000 })
     ).toBeInTheDocument();
     expect(
-      await screen.findByText(/broadcasting on solana/i, {}, { timeout: 2000 })
+      await screen.findByText(/confirming on solana/i, {}, { timeout: 2000 })
     ).toBeInTheDocument();
 
     const success = await screen.findByRole("dialog", { name: /sent to adaeze/i }, { timeout: 2000 });
@@ -47,7 +47,9 @@ describe("processing → success", () => {
     const expectedReceive = (250 - expectedFee) * rate;
 
     expect(within(success).getByText("Adaeze Okonkwo")).toBeInTheDocument();
-    expect(within(success).getByText(/^KB-\d+-EU$/)).toBeInTheDocument();
+    // onramp_reference is null until Transak's webhook lands (see API_CONTRACT.md);
+    // the reference shown falls back to the transfer's real id in the meantime.
+    expect(within(success).getByText(/^tr_[a-z0-9]+$/)).toBeInTheDocument();
     expect(within(success).getByText(`1 EUR = ${rate.toFixed(4)}`)).toBeInTheDocument();
     expect(within(success).getByText(`€${formatAmount(expectedFee)}`)).toBeInTheDocument();
     expect(within(success).getByText(formatAmount(expectedReceive), { exact: false })).toBeInTheDocument();

@@ -44,14 +44,23 @@ describe("embedded on-ramp step", () => {
     ).toBeInTheDocument();
   });
 
-  test("order-failed shows the failure state with a working Try again", async () => {
+  test("order-failed polls for the real status (not an immediate local failure) and shows the failure state", async () => {
     const { user } = await renderKoboApp();
     await reachCheckout(user);
 
     simulateTransakEvent("TRANSAK_ORDER_FAILED");
 
-    const failed = await screen.findByRole("dialog", { name: /payment didn't go through/i });
+    // The widget closing never decides the outcome by itself - it should still be
+    // polling GET /transfers/:id (shown as the processing overlay) before failing.
+    expect(await screen.findByRole("status", {}, { timeout: 2000 })).toBeInTheDocument();
+
+    const failed = await screen.findByRole(
+      "dialog",
+      { name: /payment didn't go through/i },
+      { timeout: 4000 }
+    );
     expect(within(failed).getByText(/no funds were moved/i)).toBeInTheDocument();
+    expect(within(failed).getByText(/simulated payment could not be completed/i)).toBeInTheDocument();
 
     await user.click(within(failed).getByRole("button", { name: /try again/i }));
 

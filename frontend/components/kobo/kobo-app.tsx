@@ -33,7 +33,7 @@ import {
   randomRate,
 } from "@/lib/kobo/mock-data";
 import { ACTIVITY_INDEX, NAV_ITEMS, SEND_MONEY_INDEX } from "@/lib/kobo/nav";
-import { createTransfer, STATUS_LABEL, watchTransferStatus } from "@/lib/kobo/api";
+import { createTransfer, pollTransferStatus, STATUS_LABEL } from "@/lib/kobo/api";
 import { formatAmount } from "@/lib/kobo/format";
 import { clearOnrampDraft, loadOnrampDraft, saveOnrampDraft } from "@/lib/kobo/onramp-draft";
 import { preferRedirectOnramp, type TransakBridgeEvent } from "@/lib/kobo/onramp-transak";
@@ -88,7 +88,9 @@ export function KoboApp() {
   const [step, setStep] = useState<Step>("form");
   const [code, setCode] = useState("");
   const [transferStatus, setTransferStatus] = useState<TransferStatus>("pending");
+  const [transferId, setTransferId] = useState("");
   const [reference, setReference] = useState("");
+  const [failureReason, setFailureReason] = useState<string | null>(null);
   const [onrampSession, setOnrampSession] = useState<OnrampSession | null>(null);
   const [onrampMode, setOnrampMode] = useState<"redirect" | "embedded" | null>(null);
 
@@ -214,28 +216,47 @@ export function KoboApp() {
         recipient_id: recipient.id,
         amount_eur: amt * currencyMeta.eurRate,
       });
-      setReference(res.onramp_reference);
-      applySession(res.onramp, res.transfer_id, res.onramp_reference);
+      // onramp_reference is genuinely null until Transak's webhook lands server-side
+      // (see API_CONTRACT.md) — fall back to the transfer's real id so the UI never
+      // shows a blank reference while that's pending.
+      const ref = res.onramp_reference || res.id;
+      setTransferId(res.id);
+      setReference(ref);
+      applySession(res.onramp, res.id, ref);
     } catch {
       toast.error("Couldn't start checkout — please try again.");
       setStep("form");
     }
   }
 
-  function beginProcessing() {
+  // The widget/iframe only ever tells us the checkout flow ended — never whether the
+  // transfer actually succeeded. Only the backend's real status (via its own signed
+  // webhook from Transak) can confirm that, so once checkout ends we stop listening
+  // to the widget and start polling GET /transfers/:id for the truth.
+  function finishCheckout(mockOutcome: "confirmed" | "failed") {
     setStep("processing");
     setTransferStatus("pending");
-    watchTransferStatus((status) => {
-      setTransferStatus(status);
-      if (status === "confirmed") setStep("success");
-    });
+    setFailureReason(null);
+    pollTransferStatus(
+      transferId,
+      (transfer) => {
+        setTransferStatus(transfer.status);
+        if (transfer.status === "confirmed") {
+          setStep("success");
+        } else if (transfer.status === "failed") {
+          setFailureReason(transfer.failure_reason);
+          setStep("failed");
+        }
+      },
+      { mockOutcome }
+    );
   }
 
   function handleTransakEvent(event: TransakBridgeEvent) {
     if (event.kind === "order-successful") {
-      beginProcessing();
+      finishCheckout("confirmed");
     } else if (event.kind === "order-failed") {
-      setStep("failed");
+      finishCheckout("failed");
     } else if (event.kind === "widget-closed") {
       setStep("form");
       toast("Payment cancelled — nothing was charged.");
@@ -248,6 +269,7 @@ export function KoboApp() {
     setSecsUntilLock(RATE_LOCK_SECONDS);
     setOnrampSession(null);
     setOnrampMode(null);
+    setFailureReason(null);
   }
 
   function handleDownloadReceipt() {
@@ -259,6 +281,7 @@ export function KoboApp() {
     setStep("form");
     setOnrampSession(null);
     setOnrampMode(null);
+    setFailureReason(null);
   }
 
   function handleContactSupport() {
@@ -465,6 +488,7 @@ export function KoboApp() {
       <FailedDialog
         open={step === "failed"}
         reference={reference}
+        reason={failureReason}
         onTryAgain={handleTryAgain}
         onContactSupport={handleContactSupport}
       />

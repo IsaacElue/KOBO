@@ -9,18 +9,20 @@ dated section, overwrite the stale one.
 
 **Backend read at:** `main` @ `07aa827` ("docs: add POST /users to API_CONTRACT,
 resolves mismatch #5").
-**Frontend read at:** `restructure-frontend-folder` @ `ca36082` — PR open into `main`,
-not yet merged (see "Still open" below).
+**Frontend read at:** `restructure-frontend-folder` @ `bef70f3` — `main` and
+`restructure-frontend-folder` are now fully merged (both directions), so this is a
+single monorepo branch, not a pending PR.
 
 **Since the last sync:** frontend now matches the real `{ sessionId, widgetUrl }`
-onramp shape and picks redirect-vs-embedded itself (Resolved #1); the
-`TRANSAK_REFERRER_DOMAIN` question is answered (Resolved #2); `POST /users` exists on
-the backend (Resolved #3); the wrong "Base" chain label is fixed (Resolved #4); and
+onramp shape and picks redirect-vs-embedded itself, including the outer `id` field
+(`transfer_id` is gone) (Resolved #1); the `TRANSAK_REFERRER_DOMAIN` question is
+answered (Resolved #2); `POST /users` exists on the backend (Resolved #3); the wrong
+"Base" chain label is fixed to "Confirming on Solana" (Resolved #4); and
 `frontend/.env.example` was silently gitignored and never actually committed until now
-(Resolved #5). Two things Isaac's read of `cb47f85` flagged as broken by the shape
-mismatch — `checkoutUrl`/`widgetConfig` branching and the postMessage-vs-webhook
-dual-signal issue — the first is fixed by Resolved #1; the second is still open, see
-"Still open" #1.
+(Resolved #5). The postMessage-vs-webhook dual-signal issue is also now fixed: the
+frontend polls the real `GET /transfers/:id` for status instead of faking it
+client-side, and a `failed` status is now handled end to end (Resolved #6, #7 — see
+below, these were "Still open" #1 and #5).
 
 ---
 
@@ -134,8 +136,7 @@ Creates a transfer row and a Transak widget session for it in one call.
 
 ## `GET /transfers/:id`
 
-Poll this for live status. **Not currently called by the frontend anywhere** — see
-"Still open" #1 below.
+Poll this for live status. **Now called by the frontend** — see Resolved #6 below.
 
 **Response — `200`:**
 ```json
@@ -243,32 +244,39 @@ File refs are all under `frontend/`:
   (`!process.env.NEXT_PUBLIC_KOBO_API_URL`); with that var unset (the current default),
   everything below is simulated client-side and no network call happens at all.
 - With the var set, the response's `onramp` field is now parsed as exactly the real
-  shape: `{ sessionId: string | null; widgetUrl: string }` (Resolved #1) —
-  `checkoutUrl`/`widgetConfig` are gone from the frontend entirely.
+  shape: `{ sessionId: string | null; widgetUrl: string }`, and the outer response's
+  `id` field (not `transfer_id`) is what the frontend uses as the transfer id
+  everywhere (Resolved #1) — `checkoutUrl`/`widgetConfig`/`transfer_id` are gone from
+  the frontend entirely.
 - `components/kobo/kobo-app.tsx` (`applySession`) now decides redirect-vs-embedded
   itself via `preferRedirectOnramp()` (`lib/kobo/onramp-transak.ts`): embeds
   `widgetUrl` in an iframe above a 768px viewport width, redirects
   (`window.location.href = widgetUrl`) below it. No client-side expiry check — the
   backend doesn't return one, so there's nothing to check against.
-- `TransferStatus` type (`lib/kobo/types.ts`) is still
-  `'pending' | 'onramp_complete' | 'sent' | 'confirmed'` — **still no `'failed'`
-  value** (Still open #5). `api.ts`'s `STATUS_LABEL` map for `"sent"` now correctly
-  reads "Broadcasting on Solana" (Resolved #4 — was "Broadcasting on Base", an
-  Ethereum L2, leftover copy from before the chain was decided).
-- **Completion signal is still disconnected from the backend's real one** (mock mode
-  and the embedded-widget path alike, `lib/kobo/onramp-transak.ts` +
-  `components/kobo/onramp/embedded-widget-modal.tsx`): the frontend listens for
-  `window.postMessage` events from the widget iframe and maps `event_id` values
-  `TRANSAK_ORDER_CREATED` / `TRANSAK_ORDER_SUCCESSFUL` / `TRANSAK_ORDER_FAILED` /
-  `TRANSAK_WIDGET_CLOSE` to its own bridge events — the code comment itself flags
-  these exact event-id strings and payload envelope as **unverified against
-  Transak's real docs**. Once triggered, the frontend fakes
-  `pending → onramp_complete → sent → confirmed` on a local 900ms-per-step timer
-  (`watchTransferStatus` in `api.ts`). It never calls `GET /transfers/:id`. This is a
-  second, independent "transfer completed" signal with no relationship to the
-  backend's actual one — a signed `ORDER_COMPLETED` webhook Transak calls on the
-  *backend*, which is the only signal that actually triggers the Solana send.
-  See "Still open" #1.
+- `TransferStatus` type (`lib/kobo/types.ts`) is now
+  `'pending' | 'onramp_complete' | 'sent' | 'confirmed' | 'failed'` (Resolved #7 —
+  was "Still open" #5). `api.ts`'s `STATUS_LABEL` map for `"sent"` now correctly
+  reads "Confirming on Solana" (Resolved #4 — was "Broadcasting on Base", an
+  Ethereum L2, leftover copy from before the chain was decided), and `"failed"` reads
+  "Transfer failed".
+- **Completion signal is now the real one — postMessage is only a UI hint, never the
+  status of record** (Resolved #6 — was "Still open" #1). `lib/kobo/onramp-transak.ts`
+  + `components/kobo/onramp/embedded-widget-modal.tsx` still listen for
+  `window.postMessage` events from the widget iframe (same `event_id` matching as
+  before, still unverified against Transak's real docs for the redirect flow), but
+  those events now only ever mean "the widget closed" or "the user finished
+  checkout" — they no longer decide pending/confirmed/failed themselves. Once the
+  widget signals it's done, `components/kobo/kobo-app.tsx` (`finishCheckout`) and
+  `app/transfers/[id]/return/page.tsx` (the redirect-flow return handler) both call
+  the new `pollTransferStatus()` (`lib/kobo/api.ts`), which repeatedly calls the real
+  `GET /transfers/:id` and drives the UI off whatever `status` comes back, stopping
+  once it's `confirmed` or `failed`. In mock mode (no `NEXT_PUBLIC_KOBO_API_URL`),
+  `mockGetTransfer` simulates the same `pending → onramp_complete → sent →
+  confirmed` progression over real elapsed time (400ms/stage) purely so the demo has
+  something to poll — real mode ignores this entirely and only trusts the backend's
+  response. On `status: "failed"`, the frontend shows `failure_reason` in
+  `FailedDialog` (new optional `reason` prop) instead of a stuck spinner or a fake
+  success.
 - `components/kobo/add-recipient-dialog.tsx`: "Add new recipient" is entirely
   client-side (`onAdd(input)` is a local callback) — no request is sent anywhere. The
   wallet input placeholder is `"0x… or +234…"` and the only validation is
@@ -294,7 +302,11 @@ File refs are all under `frontend/`:
    *or* used as a full-page redirect; that choice is entirely a frontend rendering
    decision, not something the backend needs to encode twice. Frontend now consumes
    `{ sessionId, widgetUrl }` directly and picks redirect-vs-embedded itself
-   (viewport-width heuristic). Code updated (`restructure-frontend-folder` @ `ca36082`).
+   (viewport-width heuristic). **Fully closed out**: the outer response's `id` field
+   (frontend previously read a nonexistent `transfer_id`) is also fixed now, so both
+   halves of the shape mismatch are gone — `lib/kobo/api.ts`, `lib/kobo/types.ts`,
+   `components/kobo/kobo-app.tsx` (`restructure-frontend-folder` @ `bef70f3` +
+   this sync's changes).
 
 2. **`TRANSAK_REFERRER_DOMAIN`.** Decided: `http://localhost:3000` for local dev
    (Next.js default `next dev` port, confirmed against the actual running dev
@@ -310,8 +322,9 @@ File refs are all under `frontend/`:
 
 4. **Frontend status label said "Broadcasting on Base."** Was leftover copy from
    before the chain was decided — Base is an Ethereum L2, the actual chain end to
-   end is Solana devnet. Fixed to "Broadcasting on Solana" (`lib/kobo/api.ts` and
-   the matching "USDC on Solana" copy in `transfer-summary-panel.tsx`).
+   end is Solana devnet. Fixed to "Confirming on Solana" (`lib/kobo/api.ts`'s
+   `STATUS_LABEL` map, plus the matching "USDC on Solana" copy in
+   `transfer-summary-panel.tsx`).
 
 5. **`frontend/.env.example` was silently gitignored.** The `.env*` pattern in
    `frontend/.gitignore` caught `.env.example` too, so it never actually made it
@@ -319,24 +332,44 @@ File refs are all under `frontend/`:
    README referencing it. Fixed: `.gitignore` now explicitly un-ignores it, and it's
    committed.
 
+6. **Frontend's "transfer completed" signal is now the backend's real one.** Was
+   "Still open" #1. The frontend no longer treats a `window.postMessage` event from
+   the Transak widget as completion — it treats it only as "the widget closed / the
+   user finished checkout." Once that fires, the frontend now calls the real
+   `GET /transfers/:id` (`getTransfer` / `pollTransferStatus` in `lib/kobo/api.ts`)
+   on a poll loop and drives every status label off the actual `status` field the
+   backend returns, stopping at `confirmed` or `failed`. Wired into both
+   `components/kobo/kobo-app.tsx` (`finishCheckout`, embedded/mock path) and
+   `app/transfers/[id]/return/page.tsx` (the redirect-flow return page). The
+   frontend's `event_id` matching for the postMessage payload itself is still
+   unverified against Transak's real docs — that part is unchanged and low-stakes
+   now, since it's UI-only and no longer decides money-moving state.
+
+7. **No `TransferStatus.failed` on the frontend.** Was "Still open" #5. Added
+   `'failed'` to `TransferStatus` (`lib/kobo/types.ts`), a "Transfer failed"
+   `STATUS_LABEL` entry, and a failed-state UI: `FailedDialog` now takes an optional
+   `reason` prop and shows the backend's `failure_reason` text in its details box
+   (reassurance copy — "no funds were moved" — kept unconditionally alongside it).
+   Wired from both the polling paths in Resolved #6 above.
+
 ## Still open
 
 These still need a decision — nothing below has been silently resolved or guessed at.
 
-1. **Frontend's "transfer completed" signal is disconnected from the backend's real
-   one.** The backend only ever advances a transfer (and only ever triggers the real
-   Solana send) off its own signed `ORDER_COMPLETED` webhook from Transak
-   (`POST /webhooks/onramp`, JWT-verified). The frontend's embedded-widget path
-   instead listens for `window.postMessage` events from the widget iframe
-   (`TRANSAK_ORDER_SUCCESSFUL` etc., `lib/kobo/onramp-transak.ts`) and treats *that*
-   as completion, independently faking the rest of the status sequence on a
-   client-side timer — it never asks the backend whether anything actually
-   happened, and never calls `GET /transfers/:id` (which exists and works for this).
-   The frontend's own code comment also flags that the exact `event_id` values and
-   payload shape it matches against were never verified against Transak's real docs
-   for the integration mode actually in use. Needs a decision: rewire the frontend
-   to poll `GET /transfers/:id` for the real status, treating postMessage as
-   nothing more than "the widget closed"?
+1. **RESOLVED — see "Resolved this sync" #6.** ~~Frontend's "transfer completed"
+   signal is disconnected from the backend's real one.~~ The frontend now polls the
+   real `GET /transfers/:id` for status and treats postMessage as nothing more than
+   "the widget closed," exactly as this item asked. Left in place (not deleted) for
+   history — the previous open question is quoted below.
+   > The backend only ever advances a transfer (and only ever triggers the real
+   > Solana send) off its own signed `ORDER_COMPLETED` webhook from Transak
+   > (`POST /webhooks/onramp`, JWT-verified). The frontend's embedded-widget path
+   > instead listens for `window.postMessage` events from the widget iframe
+   > (`TRANSAK_ORDER_SUCCESSFUL` etc., `lib/kobo/onramp-transak.ts`) and treats
+   > *that* as completion, independently faking the rest of the status sequence on
+   > a client-side timer — it never asks the backend whether anything actually
+   > happened, and never calls `GET /transfers/:id` (which exists and works for
+   > this).
 
 2. **Frontend isn't wired to `POST /users` yet.** "Add new recipient" is still
    entirely client-side fabrication (a local callback, no request sent anywhere),
@@ -351,18 +384,25 @@ These still need a decision — nothing below has been silently resolved or gues
    hex strings with no format validation. These will fail `POST /users`' `400`
    check. Directly relevant to #2 above — worth doing together.
 
-4. **`onramp_reference` timing mismatch.** Frontend treats `onramp_reference` as
-   available immediately after `POST /transfers` and displays it right away (in the
-   passcode dialog, the "preparing checkout" step, etc). The real backend leaves it
-   `null` until Transak's `ORDER_COMPLETED` webhook fires — which may be minutes
-   after checkout starts. The frontend needs a different value to show immediately
-   (the transfer `id`? a separately-generated reference?) — needs a decision.
+4. **`onramp_reference` timing mismatch — still open, symptom worked around.**
+   Frontend treats `onramp_reference` as available immediately after
+   `POST /transfers` and displays it right away (in the passcode dialog, the
+   "preparing checkout" step, etc). The real backend leaves it `null` until
+   Transak's `ORDER_COMPLETED` webhook fires — which may be minutes after checkout
+   starts. As of this sync the frontend falls back to the transfer's real `id`
+   whenever `onramp_reference` is `null` (`const ref = res.onramp_reference ||
+   res.id` in `kobo-app.tsx`), so the UI never shows a blank reference — but the
+   underlying question (should the backend generate a reference immediately instead
+   of waiting on the webhook? is `id` good enough to show users permanently?) is
+   still undecided.
 
-5. **No `TransferStatus.failed` on the frontend.** The backend has a real `failed`
-   terminal status with a `failure_reason`. The frontend's type and its
-   `STATUS_LABEL` map don't account for it at all. If/when polling is wired up
-   (#1), a `status: "failed"` from the backend has nowhere defined to go on the
-   frontend today.
+5. **RESOLVED — see "Resolved this sync" #7.** ~~No `TransferStatus.failed` on the
+   frontend.~~ Added, with a full failed-state UI. Left in place (not deleted) for
+   history — the previous open question is quoted below.
+   > The backend has a real `failed` terminal status with a `failure_reason`. The
+   > frontend's type and its `STATUS_LABEL` map don't account for it at all. If/when
+   > polling is wired up (#1), a `status: "failed"` from the backend has nowhere
+   > defined to go on the frontend today.
 
 6. **No auth on any backend route.** Every endpoint is fully open right now —
    `sender_id` is just whatever the client sends. Not necessarily wrong for this
@@ -388,6 +428,6 @@ These still need a decision — nothing below has been silently resolved or gues
    source (Transak's actual quote? a rates API?) needs to be decided — right now
    neither side has a real one.
 
-10. **`frontend/` isn't on `main` yet.** PR open from `restructure-frontend-folder`
-    into `main`, not yet merged. Once merged, the monorepo layout (`backend/` +
-    `frontend/` both under `main`) is complete.
+10. **RESOLVED.** ~~`frontend/` isn't on `main` yet.~~ `restructure-frontend-folder`
+    and `main` have been merged both directions — the monorepo layout (`backend/` +
+    `frontend/` both under `main`) is complete. See the header above.

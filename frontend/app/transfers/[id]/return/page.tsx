@@ -7,7 +7,7 @@ import { ProcessingOverlay } from "@/components/kobo/processing-overlay";
 import { SuccessDialog } from "@/components/kobo/success-dialog";
 import { FailedDialog } from "@/components/kobo/failed-dialog";
 import { Button } from "@/components/ui/button";
-import { watchTransferStatus, STATUS_LABEL } from "@/lib/kobo/api";
+import { pollTransferStatus, STATUS_LABEL } from "@/lib/kobo/api";
 import { SUPPORT_EMAIL } from "@/lib/kobo/mock-data";
 import {
   clearOnrampDraft,
@@ -44,19 +44,25 @@ function TransferReturn() {
   const [transferStatus, setTransferStatus] = useState<TransferStatus>(() =>
     draft?.completed ? "confirmed" : "pending"
   );
+  const [failureReason, setFailureReason] = useState<string | null>(null);
 
-  // Subscribes to the (mocked) backend status feed only while actively confirming -
-  // setState here happens inside the subscription's callback, not the effect body.
+  // Polls the real backend status only while actively confirming - setState here
+  // happens inside the poll callback, not the effect body. This is the same signal
+  // GET /transfers/:id gives the embedded flow; a client-side postMessage/redirect
+  // signal is never enough on its own to claim success.
   useEffect(() => {
-    if (phase !== "processing") return;
-    return watchTransferStatus((status) => {
-      setTransferStatus(status);
-      if (status === "confirmed") {
+    if (phase !== "processing" || !draft) return;
+    return pollTransferStatus(draft.transferId, (transfer) => {
+      setTransferStatus(transfer.status);
+      if (transfer.status === "confirmed") {
         markOnrampDraftCompleted();
         setPhase("success");
+      } else if (transfer.status === "failed") {
+        setFailureReason(transfer.failure_reason);
+        setPhase("failed");
       }
     });
-  }, [phase]);
+  }, [phase, draft]);
 
   useEffect(() => {
     if (phase === "cancelled") router.replace("/?onramp=cancelled");
@@ -100,6 +106,7 @@ function TransferReturn() {
       <FailedDialog
         open={phase === "failed"}
         reference={draft?.reference ?? transferId}
+        reason={failureReason}
         onTryAgain={tryAgain}
         onContactSupport={() => (window.location.href = `mailto:${SUPPORT_EMAIL}`)}
       />
