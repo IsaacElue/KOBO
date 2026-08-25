@@ -20,6 +20,45 @@ You can start editing the page by modifying `app/page.tsx`. The page auto-update
 
 This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
 
+## Backend contract for `POST /transfers`
+
+The frontend calls `createTransfer()` in `lib/kobo/api.ts`, which runs against a mock
+implementation until `NEXT_PUBLIC_KOBO_API_URL` is set (see `.env.example`). Once the
+real endpoint exists, the response must match:
+
+```ts
+CreateTransferResponse & { onramp: OnrampSession }
+
+interface OnrampSession {
+  transferId: string;
+  provider: 'transak';
+  checkoutUrl?: string;           // hosted checkout redirect path
+  widgetConfig?: Record<string, unknown>; // embedded iframe path - must include `embedUrl`
+  expiresAt?: string;             // ISO timestamp; frontend re-requests if already past
+}
+```
+
+Exactly one of `checkoutUrl` / `widgetConfig.embedUrl` should be set — the frontend
+picks the redirect or embedded flow at runtime based on whichever is present.
+
+**Still needed from backend/Transak config, before this can point at the real thing:**
+
+- The exact fields `widgetConfig` should carry beyond `embedUrl` (if the frontend needs
+  to read anything out of it directly, rather than just using it as an iframe `src`).
+- Transak's real `postMessage` origin(s) for the environment actually wired up
+  (`lib/kobo/onramp-transak.ts` currently allowlists Transak's publicly documented
+  `https://global.transak.com` / `https://global-stg.transak.com` — unverified against
+  this integration) and the exact event names/payload shape for order-created /
+  order-successful / order-failed / widget-closed (currently assumed to be Transak's
+  documented `TRANSAK_ORDER_CREATED` etc. `event_id` values).
+- Whether the `redirectURL` Transak is configured with appends a `?status=` query param
+  distinguishing success/cancelled/failed. `app/transfers/[id]/return/page.tsx` currently
+  treats `status=cancelled`/`status=failed` as hints and otherwise defaults to polling
+  `watchTransferStatus` for a confirmed status — it never claims success without one.
+
+In mock mode, `app/transfers/mock-widget/page.tsx` stands in for Transak's hosted
+widget so the embedded flow can be exercised end-to-end locally.
+
 ## Learn More
 
 To learn more about Next.js, take a look at the following resources:

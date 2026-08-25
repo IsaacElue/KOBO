@@ -46,6 +46,21 @@
   --radius-2xl: calc(var(--radius) * 1.8);
   --radius-3xl: calc(var(--radius) * 2.2);
   --radius-4xl: calc(var(--radius) * 2.6);
+
+  --color-kobo-bg: var(--kobo-bg);
+  --color-kobo-ink: var(--kobo-ink);
+  --color-kobo-teal-950: var(--kobo-teal-950);
+  --color-kobo-teal-900: var(--kobo-teal-900);
+  --color-kobo-teal-800: var(--kobo-teal-800);
+  --color-kobo-teal-700: var(--kobo-teal-700);
+  --color-kobo-teal-600: var(--kobo-teal-600);
+  --color-kobo-teal-500: var(--kobo-teal-500);
+  --color-kobo-teal-400: var(--kobo-teal-400);
+  --color-kobo-mint: var(--kobo-mint);
+  --color-kobo-mint-light: var(--kobo-mint-light);
+  --color-kobo-mint-dark: var(--kobo-mint-dark);
+  --color-kobo-sand: var(--kobo-sand);
+  --color-kobo-sand-dark: var(--kobo-sand-dark);
 }
 
 :root {
@@ -81,6 +96,22 @@
   --sidebar-accent-foreground: oklch(0.205 0 0);
   --sidebar-border: oklch(0.922 0 0);
   --sidebar-ring: oklch(0.708 0 0);
+
+  /* Kobo brand palette (EUR-to-USDC remittance product) */
+  --kobo-bg: #edf3f4;
+  --kobo-ink: #0b1f24;
+  --kobo-teal-950: #04211f;
+  --kobo-teal-900: #062f2d;
+  --kobo-teal-800: #073f3c;
+  --kobo-teal-700: #0b4a45;
+  --kobo-teal-600: #0f5d57;
+  --kobo-teal-500: #12645d;
+  --kobo-teal-400: #12706a;
+  --kobo-mint: #9ee3c6;
+  --kobo-mint-light: #eaf6f1;
+  --kobo-mint-dark: #155e4c;
+  --kobo-sand: #f6ecd8;
+  --kobo-sand-dark: #8a6a2f;
 }
 
 .dark {
