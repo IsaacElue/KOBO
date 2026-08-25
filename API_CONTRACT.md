@@ -8,11 +8,19 @@ Update this file in place when either side's contract changes — don't append a
 dated section, overwrite the stale one.
 
 **Backend read at:** `main` @ `07aa827` ("docs: add POST /users to API_CONTRACT,
-resolves mismatch #5") — unchanged since the previous sync except for `POST /users`.
-**Frontend read at:** `restructure-frontend-folder` @ `cb47f85` ("frontend: build
-Kobo send-money screen, currency support, and Transak on-ramp integration") — now
-committed to that branch (previously uncommitted), still not merged into `main` (see
-mismatch #12).
+resolves mismatch #5").
+**Frontend read at:** `restructure-frontend-folder` @ `ca36082` — PR open into `main`,
+not yet merged (see "Still open" below).
+
+**Since the last sync:** frontend now matches the real `{ sessionId, widgetUrl }`
+onramp shape and picks redirect-vs-embedded itself (Resolved #1); the
+`TRANSAK_REFERRER_DOMAIN` question is answered (Resolved #2); `POST /users` exists on
+the backend (Resolved #3); the wrong "Base" chain label is fixed (Resolved #4); and
+`frontend/.env.example` was silently gitignored and never actually committed until now
+(Resolved #5). Two things Isaac's read of `cb47f85` flagged as broken by the shape
+mismatch — `checkoutUrl`/`widgetConfig` branching and the postMessage-vs-webhook
+dual-signal issue — the first is fixed by Resolved #1; the second is still open, see
+"Still open" #1.
 
 ---
 
@@ -22,14 +30,14 @@ mismatch #12).
 - `GET /health` → `{ "status": "ok" }`. No auth.
 - **No CORS middleware is set up in `backend/src/index.ts`** and **no auth/session
   middleware exists on any route** — every endpoint below is currently open and will
-  hit CORS errors if called from the frontend's origin in the browser. See Open
-  Questions.
+  hit CORS errors if called from the frontend's origin in the browser. See "Still
+  open" #6 and #7 below.
 
 ---
 
 ## `POST /users`
 
-Creates a user (sender or recipient). Resolves mismatch #5 below — this now exists.
+Creates a user (sender or recipient). See "Resolved this sync" #3 below.
 
 **Request body** (backend/src/routes/users.ts):
 ```json
@@ -66,7 +74,7 @@ Creates a user (sender or recipient). Resolves mismatch #5 below — this now ex
 - `500` — `{ "error": "<supabase error message>" }`
 
 No `GET /users` / listing / lookup endpoint exists — out of scope for now. No auth —
-same open-endpoint caveat as everything else (see mismatch #10).
+same open-endpoint caveat as everything else (see "Still open" #6).
 
 ---
 
@@ -127,7 +135,7 @@ Creates a transfer row and a Transak widget session for it in one call.
 ## `GET /transfers/:id`
 
 Poll this for live status. **Not currently called by the frontend anywhere** — see
-Open Questions.
+"Still open" #1 below.
 
 **Response — `200`:**
 ```json
@@ -167,7 +175,7 @@ transitions the frontend needs to poll for.
 ```
 Returns zeros if no row exists yet (never a 404). **This is a recipient's on-chain
 USDC balance**, written only after a transfer confirms — not a sender's fiat balance.
-See Open Questions.
+See "Still open" #8 below.
 
 ---
 
@@ -218,11 +226,11 @@ SOLANA_RPC_URL=                    # optional, defaults to public devnet
 TRANSAK_API_KEY=
 TRANSAK_API_SECRET=
 TRANSAK_ENV=staging
-TRANSAK_REFERRER_DOMAIN=           # defaults to placeholder "kobo.app" — see Open Questions
+TRANSAK_REFERRER_DOMAIN=           # http://localhost:3000 for dev — see Resolved #2
 ```
 
-**Frontend** — referenced in code (`frontend/lib/kobo/api.ts`) but **no
-`frontend/.env.example` file exists in the repo to document it**:
+**Frontend** (`frontend/.env.example` — was silently gitignored and never actually
+committed until this sync, see Resolved #5):
 ```
 NEXT_PUBLIC_KOBO_API_URL=          # unset => frontend runs entirely on its own mock layer
 ```
@@ -231,55 +239,39 @@ NEXT_PUBLIC_KOBO_API_URL=          # unset => frontend runs entirely on its own 
 
 ## Frontend's current implementation (as of this sync)
 
-The frontend (`frontend/lib/kobo/*`, `frontend/components/kobo/*`) was built against
-an assumed contract before this backend existed, and has **not yet been updated to
-match it.** For accuracy, here's what it actually does today (file refs are all under
-`frontend/`):
+File refs are all under `frontend/`:
 
 - `lib/kobo/api.ts`: `createTransfer()` posts `{ sender_id, recipient_id, amount_eur }`
-  — request shape matches the real backend. It's gated by `isMockMode()`
-  (`!process.env.NEXT_PUBLIC_KOBO_API_URL`); with that var unset (the current default —
-  **no `frontend/.env.example` file exists to document it**, despite the code depending
-  on it), everything below is simulated client-side and no network call happens at all.
-- With the var set, the real `fetch(`${API_URL}/transfers`, ...)` response is parsed
-  straight into:
-  ```ts
-  { transfer_id: string; status: TransferStatus; onramp_reference: string } & {
-    onramp: {
-      transferId: string;
-      provider: 'transak';
-      checkoutUrl?: string;        // redirect path
-      widgetConfig?: Record<string, unknown>;  // embedded path, reads .embedUrl
-      expiresAt?: string;
-    }
-  }
-  ```
-  none of these field names exist on the real backend response (see mismatch #1) —
-  every field the frontend reads off a real response would be `undefined`.
-- `components/kobo/kobo-app.tsx` (`applySession`) branches on `session.checkoutUrl`
-  present → full-page redirect (`RedirectHandoff`); else falls back to
-  `session.widgetConfig?.embedUrl` → embedded iframe (`EmbeddedWidgetModal`). Since
-  the real backend returns neither field, wiring `NEXT_PUBLIC_KOBO_API_URL` to the
-  real backend as-is breaks both paths — `embedUrl` would be `undefined` and nothing
-  would render.
-- `TransferStatus` type (`lib/kobo/types.ts`) is
-  `'pending' | 'onramp_complete' | 'sent' | 'confirmed'` — **no `'failed'` value.**
-  `api.ts`'s `STATUS_LABEL` map for `"sent"` reads **"Broadcasting on Base"** — Base
-  is an Ethereum L2; the actual chain end-to-end is Solana devnet. This looks like
-  leftover copy from an earlier chain choice, not an intentional label.
-- Completion signal, in mock mode and in the embedded-widget path alike
-  (`lib/kobo/onramp-transak.ts`, `components/kobo/onramp/embedded-widget-modal.tsx`):
-  the frontend listens for `window.postMessage` events from the widget iframe and maps
-  `event_id` values `TRANSAK_ORDER_CREATED` / `TRANSAK_ORDER_SUCCESSFUL` /
-  `TRANSAK_ORDER_FAILED` / `TRANSAK_WIDGET_CLOSE` to its own bridge events — the code
-  comment itself flags these exact event-id strings and payload envelope as
-  **unverified against Transak's real docs**. Once triggered, the frontend fakes
+  — matches the real backend. Gated by `isMockMode()`
+  (`!process.env.NEXT_PUBLIC_KOBO_API_URL`); with that var unset (the current default),
+  everything below is simulated client-side and no network call happens at all.
+- With the var set, the response's `onramp` field is now parsed as exactly the real
+  shape: `{ sessionId: string | null; widgetUrl: string }` (Resolved #1) —
+  `checkoutUrl`/`widgetConfig` are gone from the frontend entirely.
+- `components/kobo/kobo-app.tsx` (`applySession`) now decides redirect-vs-embedded
+  itself via `preferRedirectOnramp()` (`lib/kobo/onramp-transak.ts`): embeds
+  `widgetUrl` in an iframe above a 768px viewport width, redirects
+  (`window.location.href = widgetUrl`) below it. No client-side expiry check — the
+  backend doesn't return one, so there's nothing to check against.
+- `TransferStatus` type (`lib/kobo/types.ts`) is still
+  `'pending' | 'onramp_complete' | 'sent' | 'confirmed'` — **still no `'failed'`
+  value** (Still open #5). `api.ts`'s `STATUS_LABEL` map for `"sent"` now correctly
+  reads "Broadcasting on Solana" (Resolved #4 — was "Broadcasting on Base", an
+  Ethereum L2, leftover copy from before the chain was decided).
+- **Completion signal is still disconnected from the backend's real one** (mock mode
+  and the embedded-widget path alike, `lib/kobo/onramp-transak.ts` +
+  `components/kobo/onramp/embedded-widget-modal.tsx`): the frontend listens for
+  `window.postMessage` events from the widget iframe and maps `event_id` values
+  `TRANSAK_ORDER_CREATED` / `TRANSAK_ORDER_SUCCESSFUL` / `TRANSAK_ORDER_FAILED` /
+  `TRANSAK_WIDGET_CLOSE` to its own bridge events — the code comment itself flags
+  these exact event-id strings and payload envelope as **unverified against
+  Transak's real docs**. Once triggered, the frontend fakes
   `pending → onramp_complete → sent → confirmed` on a local 900ms-per-step timer
   (`watchTransferStatus` in `api.ts`). It never calls `GET /transfers/:id`. This is a
-  second, independent "transfer completed" signal that has no relationship to the
-  backend's actual completion signal — a signed `ORDER_COMPLETED` webhook Transak
-  calls on the *backend*, which is the only signal that actually triggers the Solana
-  send. See mismatch #13.
+  second, independent "transfer completed" signal with no relationship to the
+  backend's actual one — a signed `ORDER_COMPLETED` webhook Transak calls on the
+  *backend*, which is the only signal that actually triggers the Solana send.
+  See "Still open" #1.
 - `components/kobo/add-recipient-dialog.tsx`: "Add new recipient" is entirely
   client-side (`onAdd(input)` is a local callback) — no request is sent anywhere. The
   wallet input placeholder is `"0x… or +234…"` and the only validation is
@@ -291,121 +283,114 @@ match it.** For accuracy, here's what it actually does today (file refs are all 
   real-backend `uuid`s, so none of them would resolve against `users` even after
   `POST /users` is wired up — they're display fixtures, not seed data.
 - Sidebar shows a per-currency EUR/GBP/USD fiat balance from local mock data
-  (`BALANCES` in `mock-data.ts`) — unrelated to `GET /balances/:userId` (see #7).
+  (`BALANCES` in `mock-data.ts`) — unrelated to `GET /balances/:userId` (see "Still
+  open" #8).
+- Frontend dev server: `next dev`, confirmed running on `http://localhost:3000`.
 
 ---
 
-## Known mismatches / open questions
+## Resolved this sync
 
-These need a decision from you (Shina) and/or Isaac — nothing below has been
-silently resolved or guessed at.
+1. **Onramp session shape — frontend decides redirect vs. embedded, backend keeps
+   one shape.** Decided: the backend keeps returning exactly `{ sessionId, widgetUrl }`
+   — no two-shape split. Transak's widget URL can be *either* opened in an iframe
+   *or* used as a full-page redirect; that choice is entirely a frontend rendering
+   decision, not something the backend needs to encode twice. Frontend now consumes
+   `{ sessionId, widgetUrl }` directly and picks redirect-vs-embedded itself
+   (viewport-width heuristic). Code updated (`restructure-frontend-folder` @ `ca36082`).
 
-1. **`onramp` response shape is fundamentally different, not just renamed.**
-   Frontend expects the backend to choose between two mutually-exclusive session
-   shapes (`checkoutUrl` for a redirect flow vs. `widgetConfig.embedUrl` for an
-   embedded iframe flow) — i.e. the *backend* decides redirect-vs-embedded.
-   The real backend always returns exactly one thing: `{ sessionId, widgetUrl }`.
-   There's no backend-side concept of two modes — Transak's widget URL can be
-   *either* opened in an iframe *or* used as a full-page redirect; that choice is
-   entirely a **frontend** decision, not something the backend encodes. Someone
-   needs to decide: does the frontend rewrite its on-ramp step to consume
-   `{ sessionId, widgetUrl }` directly and pick redirect-vs-embedded itself, or
-   does the backend get asked to add the two-shape split the frontend already
-   built against? I'd lean toward the former (matches how Transak's API actually
-   works) but I'm flagging it rather than just rewriting the frontend to match.
+2. **`TRANSAK_REFERRER_DOMAIN`.** Decided: `http://localhost:3000` for local dev
+   (Next.js default `next dev` port, confirmed against the actual running dev
+   server, not assumed). Update this to the real staging/Vercel domain once one
+   exists — whoever sets that up should update `TRANSAK_REFERRER_DOMAIN` and this
+   line together.
 
-2. **`onramp_reference` timing mismatch.** Frontend treats `onramp_reference` as
+3. **`POST /users` — backend half done.** Decided: user registration is backend
+   scope (writes to `users`, which backend owns the schema for). Isaac built
+   `POST /users` — see the section above for the real shape. The frontend side
+   (wiring "Add new recipient" up to it, and validating real Solana addresses
+   client-side) is still open — see "Still open" #2 and #3.
+
+4. **Frontend status label said "Broadcasting on Base."** Was leftover copy from
+   before the chain was decided — Base is an Ethereum L2, the actual chain end to
+   end is Solana devnet. Fixed to "Broadcasting on Solana" (`lib/kobo/api.ts` and
+   the matching "USDC on Solana" copy in `transfer-summary-panel.tsx`).
+
+5. **`frontend/.env.example` was silently gitignored.** The `.env*` pattern in
+   `frontend/.gitignore` caught `.env.example` too, so it never actually made it
+   into the repo despite the code depending on `NEXT_PUBLIC_KOBO_API_URL` and the
+   README referencing it. Fixed: `.gitignore` now explicitly un-ignores it, and it's
+   committed.
+
+## Still open
+
+These still need a decision — nothing below has been silently resolved or guessed at.
+
+1. **Frontend's "transfer completed" signal is disconnected from the backend's real
+   one.** The backend only ever advances a transfer (and only ever triggers the real
+   Solana send) off its own signed `ORDER_COMPLETED` webhook from Transak
+   (`POST /webhooks/onramp`, JWT-verified). The frontend's embedded-widget path
+   instead listens for `window.postMessage` events from the widget iframe
+   (`TRANSAK_ORDER_SUCCESSFUL` etc., `lib/kobo/onramp-transak.ts`) and treats *that*
+   as completion, independently faking the rest of the status sequence on a
+   client-side timer — it never asks the backend whether anything actually
+   happened, and never calls `GET /transfers/:id` (which exists and works for this).
+   The frontend's own code comment also flags that the exact `event_id` values and
+   payload shape it matches against were never verified against Transak's real docs
+   for the integration mode actually in use. Needs a decision: rewire the frontend
+   to poll `GET /transfers/:id` for the real status, treating postMessage as
+   nothing more than "the widget closed"?
+
+2. **Frontend isn't wired to `POST /users` yet.** "Add new recipient" is still
+   entirely client-side fabrication (a local callback, no request sent anywhere),
+   even though the endpoint now exists (see Resolved #3). Needs frontend work: call
+   it, handle its `400`s, and use the returned `id` as the real `recipient_id`.
+
+3. **Wallet address format mismatch.** Backend requires Solana base58 pubkeys
+   (`wallet_address`, validated via `new PublicKey(...)` on both `POST /users` and
+   at send time). Frontend's mock/demo wallet addresses (`0x7a3f…C41d` etc., also
+   pre-truncated for display — not full addresses) and its "Add new recipient" form
+   (placeholder `"0x… or +234…"`, validated only as non-empty) use Ethereum-style
+   hex strings with no format validation. These will fail `POST /users`' `400`
+   check. Directly relevant to #2 above — worth doing together.
+
+4. **`onramp_reference` timing mismatch.** Frontend treats `onramp_reference` as
    available immediately after `POST /transfers` and displays it right away (in the
    passcode dialog, the "preparing checkout" step, etc). The real backend leaves it
    `null` until Transak's `ORDER_COMPLETED` webhook fires — which may be minutes
    after checkout starts. The frontend needs a different value to show immediately
    (the transfer `id`? a separately-generated reference?) — needs a decision.
 
-3. **Frontend never polls `GET /transfers/:id`.** It fakes the whole
-   `pending → onramp_complete → sent → confirmed` sequence client-side with a fixed
-   timer, disconnected from what the backend is actually doing. Since only the
-   backend (via Transak's *signed* webhook) can truthfully confirm anything, this
-   needs to change to real polling — otherwise the frontend can show "confirmed"
-   before, or without, the backend ever agreeing. This is a frontend change, not a
-   mismatch to resolve on the backend side, but flagging it since it's a real gap
-   between what the UI claims and what's actually true.
-
-4. **No `TransferStatus.failed` on the frontend.** The backend has a real `failed`
+5. **No `TransferStatus.failed` on the frontend.** The backend has a real `failed`
    terminal status with a `failure_reason`. The frontend's type and its
-   `STATUS_LABEL` map don't account for it at all. If/when polling is wired up, a
-   `status: "failed"` from the backend has nowhere defined to go on the frontend
-   today.
+   `STATUS_LABEL` map don't account for it at all. If/when polling is wired up
+   (#1), a `status: "failed"` from the backend has nowhere defined to go on the
+   frontend today.
 
-5. **RESOLVED (2026-08-25, backend side).** `POST /users` now exists — see the
-   section above. It covers user registration (`name`, `role`, `country`,
-   `wallet_address`), validates `role` and the wallet address format, and returns
-   the created row. No `GET /users`/lookup endpoint was built (not needed yet).
-   ~~No user registration/lookup endpoint exists on either side.~~ The backend half
-   of this is done; the frontend's "Add new recipient" flow is still entirely local
-   fabrication with no server round-trip — wiring it to call `POST /users` (and
-   validating real Solana addresses client-side, see mismatch #6) is still open on
-   the frontend side.
+6. **No auth on any backend route.** Every endpoint is fully open right now —
+   `sender_id` is just whatever the client sends. Not necessarily wrong for this
+   stage, but worth a conscious decision on when auth gets added rather than
+   building further on top of an implicit "trust the client" model.
 
-6. **Wallet address format mismatch.** Backend requires Solana base58 pubkeys
-   (`wallet_address`, validated implicitly by `new PublicKey(...)` failing on send).
-   Frontend's mock/demo wallet addresses (`0x7a3f…C41d` etc.) and its "Add new
-   recipient" form use Ethereum-style `0x…` hex strings with no format validation.
-   These will fail on the real backend. Frontend needs real Solana-address
-   validation before this is wired up for real.
+7. **No CORS middleware on the backend.** Calling any of these endpoints from a
+   browser at the frontend's origin will currently be blocked. Needs to be added
+   (and now can target the frontend's real origin — confirmed as
+   `http://localhost:3000` for dev, see Resolved #2).
 
-7. **No fiat/EUR balance source exists on the backend.** The only balance endpoint
+8. **No fiat/EUR balance source exists on the backend.** The only balance endpoint
    (`GET /balances/:userId`) is a recipient's post-transfer USDC balance, not a
    sender's spendable EUR balance. The frontend's sidebar "EUR/GBP/USD balance" is
    pure mock data with nothing to back it once real accounts exist. Not clear
    whether fiat balance tracking is even in scope for the backend — needs a
    decision on whether/where that gets built.
 
-8. **`TRANSAK_REFERRER_DOMAIN` — Isaac is explicitly asking for this.** The code
-   comment in `backend/src/lib/transak.ts` and `.env.example` both say this is a
-   placeholder (`"kobo.app"`) pending confirmation of "the real domain the widget
-   will be embedded on" from Person A. This needs an actual answer — what domain
-   will the frontend actually be served from / embed Transak in.
+9. **`amount_usdc` is computed with a placeholder rate (1.08), server-side**,
+   explicitly flagged in the code as temporary. The frontend independently shows
+   its own live-ish random-jittered rate client-side for the "you send" quote.
+   These two numbers will not match today. Whoever owns the real quoted-rate
+   source (Transak's actual quote? a rates API?) needs to be decided — right now
+   neither side has a real one.
 
-9. **No CORS middleware on the backend.** Calling any of these endpoints from a
-   browser at the frontend's origin will currently be blocked. Needs to be added
-   (and probably needs to know the frontend's real origin(s) to allow).
-
-10. **No auth on any backend route.** Every endpoint is fully open right now —
-    `sender_id` is just whatever the client sends. Not necessarily wrong for this
-    stage, but worth a conscious decision on when auth gets added rather than
-    building further on top of an implicit "trust the client" model.
-
-11. **`amount_usdc` is computed with a placeholder rate (1.08), server-side**,
-    explicitly flagged in the code as temporary. The frontend independently shows
-    its own live-ish random-jittered rate client-side for the "you send" quote.
-    These two numbers will not match today. Whoever owns the real quoted-rate
-    source (Transak's actual quote? a rates API?) needs to be decided — right now
-    neither side has a real one.
-
-12. **`frontend/` isn't on `main` at all yet.** This whole comparison is between
-    `main`'s `backend/` and the frontend's work on `restructure-frontend-folder`
-    (now committed to that branch as of `cb47f85`, still not merged into `main`).
-    The monorepo layout (`backend/` + `frontend/` both under `main`) still needs to
-    actually happen — someone needs to decide when/how that branch merges.
-
-13. **Two independent, disagreeing "transfer completed" signals.** The backend only
-    ever advances a transfer (and only ever triggers the real Solana send) off its
-    own signed `ORDER_COMPLETED` webhook from Transak (`POST /webhooks/onramp`,
-    JWT-verified). The frontend's embedded-widget path instead listens for
-    `window.postMessage` events from the widget iframe (`TRANSAK_ORDER_SUCCESSFUL`
-    etc., `frontend/lib/kobo/onramp-transak.ts`) and treats *that* as completion,
-    independently faking the rest of the status sequence on a client-side timer —
-    it never asks the backend whether anything actually happened. Beyond the
-    architectural gap (this is really the same issue as #3, restated with the
-    concrete mechanism now identified), the frontend's own code comment flags that
-    the exact `event_id` values and payload shape it's matching against were never
-    verified against Transak's real docs for the integration mode actually in use.
-    Needs a decision: does the frontend get rewired to poll `GET /transfers/:id`
-    (backend already exists and works for this) instead of trusting postMessage for
-    anything beyond "the widget closed"?
-
-14. **Frontend status label says "Broadcasting on Base."** `frontend/lib/kobo/api.ts`'s
-    `STATUS_LABEL["sent"]` is `"Broadcasting on Base"` — Base is an Ethereum L2: the
-    actual chain, end to end, is Solana devnet. Reads like leftover copy from before
-    the chain was decided rather than an intentional relabel. Simple fix once someone
-    confirms it's a mistake and not referring to something else.
+10. **`frontend/` isn't on `main` yet.** PR open from `restructure-frontend-folder`
+    into `main`, not yet merged. Once merged, the monorepo layout (`backend/` +
+    `frontend/` both under `main`) is complete.
