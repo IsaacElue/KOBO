@@ -25,6 +25,49 @@ transfer pipeline, Solana devnet integration, Transak on-ramp")
 
 ---
 
+## `POST /users`
+
+Creates a user (sender or recipient). Resolves mismatch #5 below — this now exists.
+
+**Request body** (backend/src/routes/users.ts):
+```json
+{
+  "name": "string",
+  "role": "sender | recipient",
+  "country": "string",
+  "wallet_address": "string"
+}
+```
+- All four fields required.
+- `role` must be exactly `"sender"` or `"recipient"`.
+- `wallet_address` is checked with `new PublicKey(...)` (base58 charset + correct
+  32-byte length) — a format check only, no on-chain existence check.
+
+**Success response — `201`:** the created row, verbatim:
+```json
+{
+  "id": "uuid",
+  "name": "string",
+  "role": "sender" | "recipient",
+  "country": "string",
+  "wallet_address": "string",
+  "created_at": "2026-08-25T12:00:00.000Z"
+}
+```
+
+**Error responses:**
+- `400` — `{ "error": "name is required" }`
+- `400` — `{ "error": "role must be one of: sender, recipient" }`
+- `400` — `{ "error": "country is required" }`
+- `400` — `{ "error": "wallet_address is required" }`
+- `400` — `{ "error": "wallet_address does not look like a valid Solana address" }`
+- `500` — `{ "error": "<supabase error message>" }`
+
+No `GET /users` / listing / lookup endpoint exists — out of scope for now. No auth —
+same open-endpoint caveat as everything else (see mismatch #10).
+
+---
+
 ## `POST /transfers`
 
 Creates a transfer row and a Transak widget session for it in one call.
@@ -254,14 +297,15 @@ silently resolved or guessed at.
    `status: "failed"` from the backend has nowhere defined to go on the frontend
    today.
 
-5. **No user registration/lookup endpoint exists on either side.** The backend
-   requires real `uuid` rows in `users` (with `role`, `country`, `wallet_address`)
-   before a transfer can even be created — recipients and senders must pre-exist.
-   The frontend's "Add new recipient" flow and mock sender are entirely local
-   fabrication with no server round-trip. There is no `/users` or `/recipients`
-   route on the backend at all. Registering a new recipient (or looking up a real
-   sender) is unimplemented on **both** sides — needs someone to decide who builds
-   it and design the endpoint before "Add new recipient" can be real.
+5. **RESOLVED (2026-08-25, backend side).** `POST /users` now exists — see the
+   section above. It covers user registration (`name`, `role`, `country`,
+   `wallet_address`), validates `role` and the wallet address format, and returns
+   the created row. No `GET /users`/lookup endpoint was built (not needed yet).
+   ~~No user registration/lookup endpoint exists on either side.~~ The backend half
+   of this is done; the frontend's "Add new recipient" flow is still entirely local
+   fabrication with no server round-trip — wiring it to call `POST /users` (and
+   validating real Solana addresses client-side, see mismatch #6) is still open on
+   the frontend side.
 
 6. **Wallet address format mismatch.** Backend requires Solana base58 pubkeys
    (`wallet_address`, validated implicitly by `new PublicKey(...)` failing on send).
