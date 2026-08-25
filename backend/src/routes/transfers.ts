@@ -4,6 +4,9 @@ import { createWidgetSession } from "../lib/transak";
 
 export const transfersRouter = Router();
 
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 // PLACEHOLDER conversion rate — Person A's on-ramp integration will supply
 // the real quoted rate per transfer. Swap this out before launch.
 const PLACEHOLDER_EUR_TO_USDC_RATE = 1.08;
@@ -89,6 +92,10 @@ transfersRouter.post("/", async (req, res) => {
 
 transfersRouter.get("/:id", async (req, res) => {
   const { id } = req.params;
+
+  if (!UUID_RE.test(id)) {
+    return res.status(400).json({ error: "id must be a valid UUID" });
+  }
 
   const { data, error } = await supabase
     .from("transfers")

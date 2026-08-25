@@ -153,7 +153,10 @@ Poll this for live status. **Now called by the frontend** — see Resolved #6 be
   "created_at": "2026-08-25T12:00:00.000Z"
 }
 ```
-`404` → `{ "error": "Transfer not found" }`.
+`400` → `{ "error": "id must be a valid UUID" }` if `:id` isn't a well-formed UUID
+(checked before querying Supabase — previously this leaked a raw Postgres error as a
+500, fixed 2026-08-25).
+`404` → `{ "error": "Transfer not found" }` if it's a well-formed UUID with no matching row.
 
 ## `POST /webhooks/onramp`
 
