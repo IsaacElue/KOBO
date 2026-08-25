@@ -52,7 +52,7 @@ export function AppSidebar({
         <div className="text-[11.5px] font-semibold tracking-[0.16em] text-kobo-mint-light/60">
           {balanceLabel}
         </div>
-        <div className="mt-2 text-[30px] font-semibold tracking-tight">{balance}</div>
+        <div className="mt-2 text-[30px] font-semibold tabular-nums tracking-tight">{balance}</div>
         <div className="mt-1.5 text-[13px] text-kobo-mint-light/60">
           IBAN ·· {iban} · Instant SEPA
         </div>

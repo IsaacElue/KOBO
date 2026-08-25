@@ -13,6 +13,7 @@ export function TransferSummaryPanel({
   fee,
   receiveUsdc,
   onConfirm,
+  disabled,
 }: {
   currencyCode: string;
   currencySymbol: string;
@@ -22,6 +23,7 @@ export function TransferSummaryPanel({
   fee: number;
   receiveUsdc: number;
   onConfirm: () => void;
+  disabled?: boolean;
 }) {
   const lockPct = Math.round((secsUntilLock / 30) * 100);
 
@@ -64,7 +66,7 @@ export function TransferSummaryPanel({
         </div>
         <div className="mt-0.5 text-[13px] text-[#8AA3A9]">USDC on Solana · arrives in ~2 min</div>
         <div className="mt-3 flex items-baseline gap-2">
-          <span className="text-[44px] font-semibold tracking-tight text-kobo-teal-600">
+          <span className="text-[44px] font-semibold tabular-nums tracking-tight text-kobo-teal-600">
             {receiveUsdc.toFixed(2)}
           </span>
           <span className="text-[15px] font-medium text-[#7B959B]">USDC</span>
@@ -76,6 +78,7 @@ export function TransferSummaryPanel({
 
       <Button
         onClick={onConfirm}
+        disabled={disabled}
         className="mt-5.5 h-auto w-full gap-3 rounded-full bg-gradient-to-br from-kobo-teal-500 to-kobo-teal-800 py-5 text-[17.5px] font-semibold text-kobo-mint-light shadow-lg shadow-kobo-teal-900/40 hover:-translate-y-0.5 hover:opacity-95"
       >
         Confirm &amp; Continue

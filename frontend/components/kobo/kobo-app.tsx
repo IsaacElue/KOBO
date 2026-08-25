@@ -17,6 +17,7 @@ import { FailedDialog } from "@/components/kobo/failed-dialog";
 import { AddRecipientDialog } from "@/components/kobo/add-recipient-dialog";
 import { TransferDetailDialog } from "@/components/kobo/transfer-detail-dialog";
 import { ComingSoonPanel } from "@/components/kobo/coming-soon-panel";
+import { RecipientsScreen } from "@/components/kobo/recipients-screen";
 import { RedirectHandoff } from "@/components/kobo/onramp/redirect-handoff";
 import { EmbeddedWidgetModal } from "@/components/kobo/onramp/embedded-widget-modal";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
@@ -32,7 +33,7 @@ import {
   TRANSFER_HISTORY,
   randomRate,
 } from "@/lib/kobo/mock-data";
-import { ACTIVITY_INDEX, NAV_ITEMS, SEND_MONEY_INDEX } from "@/lib/kobo/nav";
+import { ACTIVITY_INDEX, NAV_ITEMS, RECIPIENTS_INDEX, SEND_MONEY_INDEX } from "@/lib/kobo/nav";
 import { createTransfer, pollTransferStatus, STATUS_LABEL } from "@/lib/kobo/api";
 import { formatAmount } from "@/lib/kobo/format";
 import { clearOnrampDraft, loadOnrampDraft, saveOnrampDraft } from "@/lib/kobo/onramp-draft";
@@ -308,6 +309,26 @@ export function KoboApp() {
     toast.success(`${input.name} added as a recipient`);
   }
 
+  function handleRemoveRecipient(id: string) {
+    if (recipients.length <= 1) {
+      toast.error("You need at least one saved recipient.");
+      return;
+    }
+    const removed = recipients.find((r) => r.id === id);
+    setRecipients((prev) => {
+      const next = prev.filter((r) => r.id !== id);
+      if (recipientId === id) setRecipientId(next[0].id);
+      return next;
+    });
+    if (removed) toast.success(`${removed.name} removed`);
+  }
+
+  function handleSendToRecipient(id: string) {
+    setRecipientId(id);
+    setTab("send");
+    setNavIndex(SEND_MONEY_INDEX);
+  }
+
   function handleSendAgain(transfer: TransferHistoryItem) {
     setCurrency("EUR");
     setAmount(String(transfer.amountEur));
@@ -341,6 +362,13 @@ export function KoboApp() {
 
         {loading ? (
           <DashboardSkeleton />
+        ) : navIndex === RECIPIENTS_INDEX ? (
+          <RecipientsScreen
+            recipients={recipients}
+            onAddNew={() => setAddRecipientOpen(true)}
+            onSend={handleSendToRecipient}
+            onRemove={handleRemoveRecipient}
+          />
         ) : navIndex !== SEND_MONEY_INDEX ? (
           <ComingSoonPanel
             label={NAV_ITEMS[navIndex]}
@@ -386,6 +414,7 @@ export function KoboApp() {
                       presets={AMOUNT_PRESETS}
                       onPickPreset={(v) => setAmount(String(v))}
                       balance={`${currencyMeta.symbol}${formatAmount(BALANCES[currency])}`}
+                      balanceValue={BALANCES[currency]}
                     />
                     <RecipientPicker
                       recipients={recipients}
@@ -409,6 +438,7 @@ export function KoboApp() {
                     fee={fee}
                     receiveUsdc={receiveUsdc}
                     onConfirm={goPasscode}
+                    disabled={amt <= 0 || amt > BALANCES[currency]}
                   />
                 </div>
               </TabsContent>

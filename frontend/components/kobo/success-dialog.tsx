@@ -47,7 +47,7 @@ export function SuccessDialog({
           <DialogTitle className="mt-5.5 text-[15px] font-medium tracking-wide text-[#3E7A68]">
             Sent to {firstName}
           </DialogTitle>
-          <div className="mt-1.5 flex items-baseline gap-2 text-5xl font-semibold tracking-tight text-kobo-ink">
+          <div className="mt-1.5 flex items-baseline gap-2 text-5xl font-semibold tabular-nums tracking-tight text-kobo-ink">
             {receiveStr}
             <span className="text-xl font-medium text-[#7B959B]">USDC</span>
           </div>
