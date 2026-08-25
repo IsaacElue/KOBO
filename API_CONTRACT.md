@@ -129,7 +129,13 @@ Creates a transfer row and a Transak widget session for it in one call.
 
 **Error responses:**
 - `400` — `{ "error": "sender_id, recipient_id, and numeric amount_eur are required" }`
-- `404` — `{ "error": "Recipient not found" }`
+- `400` — `{ "error": "sender_id must be a valid UUID" }` / `{ "error": "recipient_id must be a valid UUID" }`
+  — malformed id, checked before querying Supabase (fixed 2026-08-25, same pattern as
+  `GET /transfers/:id`).
+- `400` — `{ "error": "Sender not found" }` / `{ "error": "Recipient not found" }` —
+  well-formed UUID with no matching row in `users`. Note this is `400`, not `404` —
+  a nonexistent sender/recipient is treated as a bad request here, not a missing
+  resource (was `404` for recipient before this fix; now consistent for both).
 - `502` — `{ "error": "Failed to create Transak widget session: <message>" }` — the
   transfer row is deleted server-side before this is returned (no orphaned rows).
 - `500` — `{ "error": "<supabase error message>" }`

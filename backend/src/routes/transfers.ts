@@ -20,6 +20,26 @@ transfersRouter.post("/", async (req, res) => {
     });
   }
 
+  if (!UUID_RE.test(sender_id)) {
+    return res.status(400).json({ error: "sender_id must be a valid UUID" });
+  }
+  if (!UUID_RE.test(recipient_id)) {
+    return res.status(400).json({ error: "recipient_id must be a valid UUID" });
+  }
+
+  const { data: sender, error: senderError } = await supabase
+    .from("users")
+    .select("id")
+    .eq("id", sender_id)
+    .maybeSingle();
+
+  if (senderError) {
+    return res.status(500).json({ error: senderError.message });
+  }
+  if (!sender) {
+    return res.status(400).json({ error: "Sender not found" });
+  }
+
   const { data: recipient, error: recipientError } = await supabase
     .from("users")
     .select("id, wallet_address")
@@ -30,7 +50,7 @@ transfersRouter.post("/", async (req, res) => {
     return res.status(500).json({ error: recipientError.message });
   }
   if (!recipient) {
-    return res.status(404).json({ error: "Recipient not found" });
+    return res.status(400).json({ error: "Recipient not found" });
   }
 
   const amount_usdc = Number(
