@@ -26,7 +26,7 @@ describe("processing → success", () => {
       await screen.findByText(/converting eur to usdc/i, {}, { timeout: 2000 })
     ).toBeInTheDocument();
     expect(
-      await screen.findByText(/broadcasting on base/i, {}, { timeout: 2000 })
+      await screen.findByText(/broadcasting on solana/i, {}, { timeout: 2000 })
     ).toBeInTheDocument();
 
     const success = await screen.findByRole("dialog", { name: /sent to adaeze/i }, { timeout: 2000 });

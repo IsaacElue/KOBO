@@ -62,7 +62,7 @@ export function TransferSummaryPanel({
         <div className="text-base font-semibold tracking-tight text-kobo-ink">
           Recipient gets
         </div>
-        <div className="mt-0.5 text-[13px] text-[#8AA3A9]">USDC on Base · arrives in ~2 min</div>
+        <div className="mt-0.5 text-[13px] text-[#8AA3A9]">USDC on Solana · arrives in ~2 min</div>
         <div className="mt-3 flex items-baseline gap-2">
           <span className="text-[44px] font-semibold tracking-tight text-kobo-teal-600">
             {receiveUsdc.toFixed(2)}

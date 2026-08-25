@@ -5,7 +5,7 @@ const STATUS_SEQUENCE: TransferStatus[] = ["pending", "onramp_complete", "sent",
 export const STATUS_LABEL: Record<TransferStatus, string> = {
   pending: "Securing your transfer",
   onramp_complete: "Converting EUR to USDC",
-  sent: "Broadcasting on Base",
+  sent: "Broadcasting on Solana",
   confirmed: "Confirmed",
 };
 
