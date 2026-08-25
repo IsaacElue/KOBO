@@ -36,7 +36,7 @@ import { ACTIVITY_INDEX, NAV_ITEMS, SEND_MONEY_INDEX } from "@/lib/kobo/nav";
 import { createTransfer, STATUS_LABEL, watchTransferStatus } from "@/lib/kobo/api";
 import { formatAmount } from "@/lib/kobo/format";
 import { clearOnrampDraft, loadOnrampDraft, saveOnrampDraft } from "@/lib/kobo/onramp-draft";
-import type { TransakBridgeEvent } from "@/lib/kobo/onramp-transak";
+import { preferRedirectOnramp, type TransakBridgeEvent } from "@/lib/kobo/onramp-transak";
 import type {
   CurrencyCode,
   NewRecipientInput,
@@ -49,10 +49,6 @@ import type {
 type Step = "form" | "passcode" | "onramp" | "processing" | "success" | "failed";
 
 const RATE_LOCK_SECONDS = 30;
-
-function isSessionExpired(session: OnrampSession) {
-  return !!session.expiresAt && new Date(session.expiresAt).getTime() < Date.now();
-}
 
 /** Reconstructs a stand-in Recipient from a persisted draft, for a recipient added right before checkout. */
 function draftRecipient(recipientId: string, snapshot: { name: string; initials: string; wallet: string }): Recipient {
@@ -94,6 +90,7 @@ export function KoboApp() {
   const [transferStatus, setTransferStatus] = useState<TransferStatus>("pending");
   const [reference, setReference] = useState("");
   const [onrampSession, setOnrampSession] = useState<OnrampSession | null>(null);
+  const [onrampMode, setOnrampMode] = useState<"redirect" | "embedded" | null>(null);
 
   const [addRecipientOpen, setAddRecipientOpen] = useState(false);
   const [detailTransferId, setDetailTransferId] = useState<string | null>(null);
@@ -184,10 +181,18 @@ export function KoboApp() {
     setStep("onramp");
     setOnrampSession(null);
 
-    function applySession(session: OnrampSession, ref: string) {
-      if (session.checkoutUrl) {
+    function applySession(session: OnrampSession, newTransferId: string, ref: string) {
+      if (!session.widgetUrl) {
+        toast.error("Couldn't start checkout — please try again.");
+        setStep("form");
+        return;
+      }
+      // Frontend decides redirect vs. embedded — the backend always returns one
+      // widgetUrl. Redirect leaves the page, so persist enough to resume after.
+      const mode = preferRedirectOnramp() ? "redirect" : "embedded";
+      if (mode === "redirect") {
         saveOnrampDraft({
-          transferId: session.transferId,
+          transferId: newTransferId,
           reference: ref,
           currency,
           amount,
@@ -198,15 +203,8 @@ export function KoboApp() {
           receiveStr,
           rate: rateStr,
         });
-        setOnrampSession(session);
-        return;
       }
-      const embed = session.widgetConfig?.embedUrl;
-      if (typeof embed !== "string") {
-        toast.error("Couldn't start checkout — please try again.");
-        setStep("form");
-        return;
-      }
+      setOnrampMode(mode);
       setOnrampSession(session);
     }
 
@@ -217,19 +215,7 @@ export function KoboApp() {
         amount_eur: amt * currencyMeta.eurRate,
       });
       setReference(res.onramp_reference);
-
-      if (isSessionExpired(res.onramp)) {
-        // Re-request rather than opening a dead widget.
-        const fresh = await createTransfer({
-          sender_id: CURRENT_USER.id,
-          recipient_id: recipient.id,
-          amount_eur: amt * currencyMeta.eurRate,
-        });
-        setReference(fresh.onramp_reference);
-        applySession(fresh.onramp, fresh.onramp_reference);
-      } else {
-        applySession(res.onramp, res.onramp_reference);
-      }
+      applySession(res.onramp, res.transfer_id, res.onramp_reference);
     } catch {
       toast.error("Couldn't start checkout — please try again.");
       setStep("form");
@@ -261,6 +247,7 @@ export function KoboApp() {
     setCode("");
     setSecsUntilLock(RATE_LOCK_SECONDS);
     setOnrampSession(null);
+    setOnrampMode(null);
   }
 
   function handleDownloadReceipt() {
@@ -271,6 +258,7 @@ export function KoboApp() {
   function handleTryAgain() {
     setStep("form");
     setOnrampSession(null);
+    setOnrampMode(null);
   }
 
   function handleContactSupport() {
@@ -309,11 +297,6 @@ export function KoboApp() {
   const detailRecipient = detailTransfer
     ? (recipients.find((r) => r.id === detailTransfer.recipientId) ?? null)
     : null;
-
-  const embedUrl =
-    onrampSession?.widgetConfig && typeof onrampSession.widgetConfig.embedUrl === "string"
-      ? onrampSession.widgetConfig.embedUrl
-      : null;
 
   return (
     <div className="flex min-h-screen w-full bg-gradient-to-b from-[#DCEDEA] via-kobo-bg to-[#E8F0F1] text-kobo-ink">
@@ -443,26 +426,12 @@ export function KoboApp() {
         onBack={back}
       />
 
-      {step === "onramp" && onrampSession?.checkoutUrl && (
-        <RedirectHandoff
-          checkoutUrl={onrampSession.checkoutUrl}
-          draft={{
-            transferId: onrampSession.transferId,
-            reference,
-            currency,
-            amount,
-            recipientId,
-            recipient: { name: recipient.name, initials: recipient.initials, wallet: recipient.wallet },
-            sentStr,
-            feeStr,
-            receiveStr,
-            rate: rateStr,
-          }}
-        />
+      {step === "onramp" && onrampSession && onrampMode === "redirect" && (
+        <RedirectHandoff widgetUrl={onrampSession.widgetUrl} />
       )}
 
-      {step === "onramp" && !onrampSession?.checkoutUrl && embedUrl && (
-        <EmbeddedWidgetModal embedUrl={embedUrl} onEvent={handleTransakEvent} />
+      {step === "onramp" && onrampSession && onrampMode === "embedded" && (
+        <EmbeddedWidgetModal embedUrl={onrampSession.widgetUrl} onEvent={handleTransakEvent} />
       )}
 
       <ProcessingOverlay

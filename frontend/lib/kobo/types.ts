@@ -47,13 +47,13 @@ export interface CreateTransferResponse {
   onramp_reference: string;
 }
 
+/**
+ * Matches the real backend response exactly (backend/src/routes/transfers.ts).
+ * One URL, valid either as a redirect target or an iframe src — the backend does
+ * not distinguish "embedded" vs "redirect"; that's a frontend rendering choice.
+ * See lib/kobo/onramp-transak.ts's `preferRedirectOnramp()`.
+ */
 export interface OnrampSession {
-  transferId: string;
-  provider: "transak";
-  /** Hosted checkout URL to redirect to, when present. */
-  checkoutUrl?: string;
-  /** Widget config for the embedded SDK path, when present. */
-  widgetConfig?: Record<string, unknown>;
-  /** ISO timestamp after which the session must be recreated. */
-  expiresAt?: string;
+  sessionId: string | null;
+  widgetUrl: string;
 }

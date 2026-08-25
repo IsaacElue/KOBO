@@ -18,10 +18,7 @@ export function isMockMode() {
 
 /**
  * `POST /transfers`. Returns the created transfer plus a Transak checkout session to launch.
- *
- * The response shape the backend actually returns isn't finalised yet - every field beyond
- * the required `transferId`/`provider` on `OnrampSession` is optional so wiring up the real
- * endpoint (swap the mock branch below for the fetch call) doesn't require touching callers.
+ * `onramp` shape confirmed against the real backend — see API_CONTRACT.md.
  */
 export async function createTransfer(
   req: CreateTransferRequest
@@ -52,7 +49,7 @@ async function mockCreateTransfer(
     amount: req.amount_eur.toFixed(2),
     reference,
   });
-  const embedUrl =
+  const widgetUrl =
     typeof window !== "undefined"
       ? `${window.location.origin}/transfers/mock-widget?${params.toString()}`
       : `/transfers/mock-widget?${params.toString()}`;
@@ -62,10 +59,8 @@ async function mockCreateTransfer(
     status: "pending",
     onramp_reference: reference,
     onramp: {
-      transferId,
-      provider: "transak",
-      widgetConfig: { embedUrl },
-      expiresAt: new Date(Date.now() + 5 * 60_000).toISOString(),
+      sessionId: transferId,
+      widgetUrl,
     },
   };
 }

@@ -48,19 +48,22 @@ describe("session creation failure", () => {
 });
 
 describe("redirect on-ramp path", () => {
+  const originalWidth = window.innerWidth;
+
   beforeEach(() => {
     vi.useFakeTimers();
+    // preferRedirectOnramp() picks redirect below a mobile breakpoint.
+    Object.defineProperty(window, "innerWidth", { writable: true, configurable: true, value: 500 });
   });
   afterEach(() => {
     vi.useRealTimers();
+    Object.defineProperty(window, "innerWidth", { writable: true, configurable: true, value: originalWidth });
   });
 
   test("persists a draft and shows the handoff panel, with a manual link after ~3s", async () => {
     const session: OnrampSession = {
-      transferId: "tr_redirect_test",
-      provider: "transak",
-      checkoutUrl: "https://global.transak.com/checkout/tr_redirect_test",
-      expiresAt: new Date(Date.now() + 5 * 60_000).toISOString(),
+      sessionId: "sess_redirect_test",
+      widgetUrl: "https://global.transak.com/checkout/tr_redirect_test",
     };
     const response: CreateTransferResponse & { onramp: OnrampSession } = {
       transfer_id: "tr_redirect_test",
@@ -103,7 +106,7 @@ describe("redirect on-ramp path", () => {
     });
     expect(screen.getByRole("link", { name: /taking a while/i })).toHaveAttribute(
       "href",
-      session.checkoutUrl
+      session.widgetUrl
     );
   });
 });

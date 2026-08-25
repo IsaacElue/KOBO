@@ -2,15 +2,14 @@
 
 import { useEffect, useState } from "react";
 import { CircleDot } from "lucide-react";
-import { saveOnrampDraft, type OnrampDraft } from "@/lib/kobo/onramp-draft";
 
-export function RedirectHandoff({ checkoutUrl, draft }: { checkoutUrl: string; draft: OnrampDraft }) {
+/** Caller must persist the onramp draft before rendering this — it navigates away. */
+export function RedirectHandoff({ widgetUrl }: { widgetUrl: string }) {
   const [showManualLink, setShowManualLink] = useState(false);
 
   useEffect(() => {
-    saveOnrampDraft(draft);
     const redirectTimer = setTimeout(() => {
-      window.location.href = checkoutUrl;
+      window.location.href = widgetUrl;
     }, 400);
     const manualLinkTimer = setTimeout(() => setShowManualLink(true), 3000);
     return () => {
@@ -45,7 +44,7 @@ export function RedirectHandoff({ checkoutUrl, draft }: { checkoutUrl: string; d
       </div>
       {showManualLink && (
         <a
-          href={checkoutUrl}
+          href={widgetUrl}
           className="text-sm font-medium text-kobo-teal-600 underline underline-offset-4 hover:text-kobo-teal-800"
         >
           Taking a while — continue to Transak

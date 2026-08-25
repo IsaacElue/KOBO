@@ -1,6 +1,17 @@
 import { isMockMode } from "./api";
 
 /**
+ * The backend returns one `widgetUrl` and leaves it to the frontend to decide how
+ * to load it — Transak's widget works equally as an iframe src or a full-page
+ * redirect target (confirmed with backend, see API_CONTRACT.md). Embedded iframes
+ * are unreliable for payment flows on small/mobile viewports (3D Secure, native
+ * wallet sheets), so redirect there; embed everywhere else.
+ */
+export function preferRedirectOnramp(): boolean {
+  return typeof window !== "undefined" && window.innerWidth < 768;
+}
+
+/**
  * Origins Transak's widget is allowed to postMessage from.
  *
  * TODO(backend): confirm the exact origin(s) for the Transak environment actually
