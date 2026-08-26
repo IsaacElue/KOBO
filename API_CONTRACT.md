@@ -286,11 +286,26 @@ File refs are all under `frontend/`:
   response. On `status: "failed"`, the frontend shows `failure_reason` in
   `FailedDialog` (new optional `reason` prop) instead of a stuck spinner or a fake
   success.
-- `components/kobo/add-recipient-dialog.tsx`: "Add new recipient" is entirely
-  client-side (`onAdd(input)` is a local callback) — no request is sent anywhere. The
-  wallet input placeholder is `"0x… or +234…"` and the only validation is
-  non-empty-string; a Solana address would currently be accepted or rejected on
-  exactly the same basis as anything else typed in.
+- `components/kobo/add-recipient-dialog.tsx`: "Add new recipient" now calls the real
+  `POST /users` (via `createUser()` in `lib/kobo/api.ts`, mock-mode-gated same as
+  `createTransfer`) instead of just invoking a local callback. It sends
+  `{ name, role: "recipient", country, wallet_address }`, mapped from the form's
+  existing `name` and wallet/phone fields — `wallet_address` is the wallet field
+  trimmed, and `country` is hardcoded to `"NG"` (see "Resolved this sync" below; no
+  country input exists in this form, and none was added). Before submitting, the
+  wallet field is checked client-side with `isPlausibleSolanaAddress()`
+  (`lib/kobo/solana.ts`, a dependency-free base58-decode-to-32-bytes check mirroring
+  the backend's `new PublicKey(...)`); a failing check shows through the dialog's
+  existing inline field-error UI, not a toast. The wallet input's placeholder
+  (`"0x… or +234…"`) is unchanged — still misleading now that the check requires a
+  Solana address — see "Still open" #3, left open on purpose (copy changes were out
+  of scope for this pass). On success, `onAdd()` now receives the real created row
+  (real `uuid`, `CreateUserResponse` in `lib/kobo/types.ts`) and
+  `kobo-app.tsx`'s `handleAddRecipient` builds the `Recipient` from that instead of
+  fabricating an id — same `Recipient` shape as before. A `POST /users` failure
+  (network error or an unexpected `4xx`/`5xx`) shows
+  `toast.error("Couldn't add recipient — please try again.")`, matching the generic
+  toast style already used for `POST /transfers` failures.
 - Mock recipients (`lib/kobo/mock-data.ts`) use wallet strings like `0x7a3f…C41d`
   (Ethereum-style, and pre-truncated for display — not full addresses) and ids like
   `rcp_adaeze`. Mock sender is `{ id: "usr_tomiwa", ... }`. None of these ids are
@@ -361,6 +376,24 @@ File refs are all under `frontend/`:
    (reassurance copy — "no funds were moved" — kept unconditionally alongside it).
    Wired from both the polling paths in Resolved #6 above.
 
+8. **Frontend wired to `POST /users`.** Was "Still open" #2. `add-recipient-dialog.tsx`
+   now calls the real endpoint through a new `createUser()` in `lib/kobo/api.ts`
+   (mock-gated the same way `createTransfer` is), instead of only invoking a local
+   callback. Client-side wallet validation was added (`lib/kobo/solana.ts`,
+   `isPlausibleSolanaAddress()`) to match the backend's format check ahead of
+   submitting, closing "Still open" #3's validation gap for this form specifically
+   (the placeholder copy and the pre-existing mock recipients' Ethereum-style
+   addresses are unchanged — see "Still open" #3 below, left open on purpose).
+   `role` is sent as `"recipient"` (this dialog only ever creates recipients).
+   **`country` decision:** the form has no country input and none was added (out of
+   scope — no UI changes were wanted here); `country` is hardcoded to `"NG"` for
+   every recipient created through this dialog. This is a deliberate product-scope
+   call, not a placeholder guess: Kobo's Phase 1 is specifically the Ireland-to-Nigeria
+   corridor, so every recipient added here is in Nigeria by scope. Revisit if/when
+   Kobo supports more than one recipient country. On success the dialog now passes the
+   real created row (real `uuid`) up to `kobo-app.tsx`, which uses it as the recipient
+   going forward instead of a locally fabricated id.
+
 ## Still open
 
 These still need a decision — nothing below has been silently resolved or guessed at.
@@ -380,18 +413,30 @@ These still need a decision — nothing below has been silently resolved or gues
    > happened, and never calls `GET /transfers/:id` (which exists and works for
    > this).
 
-2. **Frontend isn't wired to `POST /users` yet.** "Add new recipient" is still
-   entirely client-side fabrication (a local callback, no request sent anywhere),
-   even though the endpoint now exists (see Resolved #3). Needs frontend work: call
-   it, handle its `400`s, and use the returned `id` as the real `recipient_id`.
+2. **RESOLVED — see "Resolved this sync" #8.** ~~Frontend isn't wired to
+   `POST /users` yet.~~ "Add new recipient" now calls the real endpoint, validates
+   the wallet client-side, handles its `400`s/network errors via the app's existing
+   toast pattern, and uses the returned `id` as the real `recipient_id` going
+   forward. Left in place (not deleted) for history — the previous open question is
+   quoted below.
+   > "Add new recipient" is still entirely client-side fabrication (a local
+   > callback, no request sent anywhere), even though the endpoint now exists (see
+   > Resolved #3). Needs frontend work: call it, handle its `400`s, and use the
+   > returned `id` as the real `recipient_id`.
 
-3. **Wallet address format mismatch.** Backend requires Solana base58 pubkeys
-   (`wallet_address`, validated via `new PublicKey(...)` on both `POST /users` and
-   at send time). Frontend's mock/demo wallet addresses (`0x7a3f…C41d` etc., also
-   pre-truncated for display — not full addresses) and its "Add new recipient" form
-   (placeholder `"0x… or +234…"`, validated only as non-empty) use Ethereum-style
-   hex strings with no format validation. These will fail `POST /users`' `400`
-   check. Directly relevant to #2 above — worth doing together.
+3. **Wallet address format mismatch — partially addressed.** Backend requires
+   Solana base58 pubkeys (`wallet_address`, validated via `new PublicKey(...)` on
+   both `POST /users` and at send time). The "Add new recipient" form's own
+   submission is now validated client-side to match (see "Resolved this sync" #8) —
+   that half of this item is closed. Still open: the form's wallet input
+   **placeholder** (`"0x… or +234…"`) was deliberately left unchanged (no copy
+   changes wanted in that pass) and now describes a format the field will actually
+   reject; and the pre-existing **mock/demo recipients** (`lib/kobo/mock-data.ts`,
+   `0x7a3f…C41d` etc., also pre-truncated for display — not full addresses) are
+   still Ethereum-style and were never routed through `POST /users` to begin with,
+   so they still wouldn't resolve as real `recipient_id`s against `users`. Needs a
+   decision on updating the placeholder copy and on what (if anything) replaces the
+   mock recipients once real ones exist.
 
 4. **`onramp_reference` timing mismatch — still open, symptom worked around.**
    Frontend treats `onramp_reference` as available immediately after

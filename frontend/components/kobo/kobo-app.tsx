@@ -39,8 +39,8 @@ import { formatAmount } from "@/lib/kobo/format";
 import { clearOnrampDraft, loadOnrampDraft, saveOnrampDraft } from "@/lib/kobo/onramp-draft";
 import { preferRedirectOnramp, type TransakBridgeEvent } from "@/lib/kobo/onramp-transak";
 import type {
+  CreateUserResponse,
   CurrencyCode,
-  NewRecipientInput,
   OnrampSession,
   Recipient,
   TransferHistoryItem,
@@ -289,24 +289,24 @@ export function KoboApp() {
     window.location.href = `mailto:${SUPPORT_EMAIL}`;
   }
 
-  function handleAddRecipient(input: NewRecipientInput) {
-    const initials = input.name
+  function handleAddRecipient(user: CreateUserResponse) {
+    const initials = user.name
       .split(" ")
       .filter(Boolean)
       .slice(0, 2)
       .map((w) => w[0]!.toUpperCase())
       .join("") || "NR";
     const newRecipient: Recipient = {
-      id: `rcp_${Date.now().toString(36)}`,
-      name: input.name,
+      id: user.id,
+      name: user.name,
       initials,
       meta: "New recipient · USDC wallet",
-      wallet: input.wallet,
+      wallet: user.wallet_address,
       lastSent: "No transfers yet",
     };
     setRecipients((prev) => [newRecipient, ...prev]);
     setRecipientId(newRecipient.id);
-    toast.success(`${input.name} added as a recipient`);
+    toast.success(`${user.name} added as a recipient`);
   }
 
   function handleRemoveRecipient(id: string) {

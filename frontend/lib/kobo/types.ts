@@ -21,9 +21,23 @@ export interface Recipient {
   lastSent: string;
 }
 
-export interface NewRecipientInput {
+export type UserRole = "sender" | "recipient";
+
+export interface CreateUserRequest {
   name: string;
-  wallet: string;
+  role: UserRole;
+  country: string;
+  wallet_address: string;
+}
+
+/** Matches the real backend's `users` row shape (backend/src/routes/users.ts). */
+export interface CreateUserResponse {
+  id: string;
+  name: string;
+  role: UserRole;
+  country: string;
+  wallet_address: string;
+  created_at: string;
 }
 
 export interface TransferHistoryItem {

@@ -1,4 +1,12 @@
-import type { CreateTransferRequest, CreateTransferResponse, OnrampSession, TransferRecord, TransferStatus } from "./types";
+import type {
+  CreateTransferRequest,
+  CreateTransferResponse,
+  CreateUserRequest,
+  CreateUserResponse,
+  OnrampSession,
+  TransferRecord,
+  TransferStatus,
+} from "./types";
 
 export const STATUS_LABEL: Record<TransferStatus, string> = {
   pending: "Securing your transfer",
@@ -60,6 +68,39 @@ async function mockCreateTransfer(
       sessionId: id,
       widgetUrl,
     },
+  };
+}
+
+/**
+ * `POST /users`. Creates a sender or recipient row.
+ * Shape confirmed against the real backend — see API_CONTRACT.md.
+ */
+export async function createUser(req: CreateUserRequest): Promise<CreateUserResponse> {
+  if (!isMockMode()) {
+    const res = await fetch(`${API_URL}/users`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(req),
+    });
+    if (!res.ok) {
+      const body: { error?: string } | null = await res.json().catch(() => null);
+      throw new Error(body?.error ?? `POST /users failed: ${res.status}`);
+    }
+    return res.json();
+  }
+
+  return mockCreateUser(req);
+}
+
+async function mockCreateUser(req: CreateUserRequest): Promise<CreateUserResponse> {
+  await new Promise((r) => setTimeout(r, 250));
+  return {
+    id: `usr_${Math.random().toString(36).slice(2, 10)}`,
+    name: req.name,
+    role: req.role,
+    country: req.country,
+    wallet_address: req.wallet_address,
+    created_at: new Date().toISOString(),
   };
 }
 

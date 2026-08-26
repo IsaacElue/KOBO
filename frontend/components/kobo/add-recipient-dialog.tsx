@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { toast } from "sonner";
 import {
   Dialog,
   DialogContent,
@@ -11,7 +12,9 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import type { NewRecipientInput } from "@/lib/kobo/types";
+import { createUser } from "@/lib/kobo/api";
+import { isPlausibleSolanaAddress } from "@/lib/kobo/solana";
+import type { CreateUserResponse } from "@/lib/kobo/types";
 
 export function AddRecipientDialog({
   open,
@@ -20,11 +23,12 @@ export function AddRecipientDialog({
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onAdd: (input: NewRecipientInput) => void;
+  onAdd: (user: CreateUserResponse) => void;
 }) {
   const [name, setName] = useState("");
   const [wallet, setWallet] = useState("");
   const [error, setError] = useState("");
+  const [submitting, setSubmitting] = useState(false);
 
   function reset() {
     setName("");
@@ -37,15 +41,37 @@ export function AddRecipientDialog({
     onOpenChange(next);
   }
 
-  function handleSubmit(e: React.FormEvent) {
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!wallet.trim()) {
+    const trimmedWallet = wallet.trim();
+    if (!trimmedWallet) {
       setError("Enter a wallet address or phone number.");
       return;
     }
-    onAdd({ name: name.trim() || "New recipient", wallet: wallet.trim() });
-    reset();
-    onOpenChange(false);
+    if (!isPlausibleSolanaAddress(trimmedWallet)) {
+      setError("That doesn't look like a valid Solana wallet address.");
+      return;
+    }
+
+    setSubmitting(true);
+    try {
+      const created = await createUser({
+        name: name.trim() || "New recipient",
+        role: "recipient",
+        // Kobo Phase 1 is the Ireland -> Nigeria corridor only, so every recipient
+        // added here is in Nigeria by product scope, not by assumption — there's no
+        // country input in this form (see API_CONTRACT.md, "Add new recipient").
+        country: "NG",
+        wallet_address: trimmedWallet,
+      });
+      onAdd(created);
+      reset();
+      onOpenChange(false);
+    } catch {
+      toast.error("Couldn't add recipient — please try again.");
+    } finally {
+      setSubmitting(false);
+    }
   }
 
   return (
@@ -95,7 +121,9 @@ export function AddRecipientDialog({
           </div>
 
           <DialogFooter>
-            <Button type="submit">Add recipient</Button>
+            <Button type="submit" disabled={submitting}>
+              Add recipient
+            </Button>
           </DialogFooter>
         </form>
       </DialogContent>
