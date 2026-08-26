@@ -255,16 +255,10 @@ field, ever):
   `sender_id`/`recipient_id`/`amount_eur` validation errors, unchanged).
 - `500` — `{ "error": "<message>" }` — unexpected Supabase/infra error.
 
-**Known integration gap, flagged, not fixed here (backend-only task):** the
-frontend's `lib/kobo/api.ts` `createTransfer()` still types this response as
-`CreateTransferResponse & { onramp: OnrampSession }` and
-`components/kobo/kobo-app.tsx`'s `applySession()` unconditionally checks
-`session.widgetUrl`, showing "Couldn't start checkout" and resetting to the form
-if it's falsy — which it now always will be, since `onramp` is never returned
-anymore. **The frontend has not been touched by this sync** (this was an
-explicitly backend-only task); wiring it to the new instant/balance-checked
-contract, plus a real Add Funds UI calling `POST /funding`, is real, necessary,
-separately-scoped follow-up work — not guessed at or silently patched here.
+**RESOLVED — frontend now wired to this contract, see "Resolved this sync" #14.**
+`createTransfer()` (`lib/kobo/api.ts`) now returns the `TransferRecord` directly
+(no more `onramp`), and `kobo-app.tsx` no longer expects a widget session for a
+send at all — see that entry for the full detail.
 
 ## `GET /transfers/:id`
 
@@ -810,6 +804,84 @@ File refs are all under `frontend/`:
     a real funding request through its full `pending -> confirmed` lifecycle,
     `balance` tracked the sender's exact real running total at each poll.
 
+14. **Frontend wired to real funding + instant send — the backend half from
+    #12/#13 now has a working UI.** Read `API_CONTRACT.md` in full first, per
+    instruction — no shape guessed at.
+    **Add Funds** (`components/kobo/app-sidebar.tsx`'s existing but previously
+    inert button, now wired): new `add-funds-dialog.tsx` (amount entry, matching
+    `add-recipient-dialog.tsx`'s dialog-chrome convention + `SendAmountCard`'s
+    preset-button styling — no new visual pattern) calls `POST /funding`, then
+    reuses the *exact* existing Transak widget-loading components
+    (`RedirectHandoff`/`EmbeddedWidgetModal`, same viewport-based
+    `preferRedirectOnramp()` decision) that the old per-transfer flow used —
+    not a second widget mechanism. Once the widget signals "checkout ended,"
+    polls the new `GET /funding/:id` — same `pollTransferStatus`-shaped pattern,
+    literally named `pollFundingStatus()` — and on confirmation, updates the
+    sidebar balance straight from that response's `balance` field and toasts
+    the result (matching the app's existing toast conventions, no new success
+    dialog invented for this).
+    **Send is rewired to no longer expect a Transak session at all.**
+    `TransferSummaryPanel`'s "Confirm & Continue" now does a fresh
+    `GET /balances/:userId` check before proceeding — insufficient balance
+    toasts and opens Add Funds instead of the passcode gate. (In practice the
+    *existing* `SendAmountCard` over-balance warning + disabled button, now fed
+    the real balance, already blocks this for any amount a user could type in —
+    the fresh check is the defensive fallback for the narrower case of the
+    balance changing after that check but before the click resolves; both are
+    real, both were verified.) The passcode dialog is unchanged and still gates
+    entry; the 4th digit now opens a **new** in-app confirmation dialog
+    (`send-confirmation-dialog.tsx` — recipient, amount, fee, estimated
+    arrival, confirm/cancel; same Dialog/Avatar/Row conventions
+    `success-dialog.tsx` already used) instead of launching Transak checkout.
+    Confirm calls `POST /transfers` (now instant) and polls `GET /transfers/:id`
+    exactly as before (`pollTransferStatus`, unchanged) — same success/failed
+    dialogs, unchanged. A `400 INSUFFICIENT_BALANCE` from the send itself
+    (`code`/`requiredUsdc` on a typed `ApiError`) gets the same toast +
+    Add-Funds-prompt treatment as the pre-check.
+    **Sidebar balance** now reads real `GET /balances/:userId` (via a mount
+    effect + post-action refreshes, same silent-retry-on-failure pattern
+    `refreshRate()` already established), converted from USDC into whichever
+    currency is selected using the *same* live `rate` state the header ticker
+    already holds — no second rate mechanism, per instruction.
+    `SendAmountCard`'s "Balance available" line and the amount-exceeds-balance
+    disabled check were switched to the same real converted figure too (not
+    explicitly named in the instructions, but the same number as the sidebar —
+    leaving them on the old static fixture while the sidebar went real would
+    have shown two different, contradictory balances on one screen).
+    `lib/kobo/mock-data.ts`'s `BALANCES` (the static per-currency fixture all
+    three of those used to read) is deleted, not just unused.
+    **Mock mode kept fully working, not just real mode:** `lib/kobo/api.ts` grew
+    a real-shaped mock ledger (`mockBalanceUsdc`, seeded generously so a mock
+    demo can send immediately without needing to fund first) that `POST /funding`
+    credits and `POST /transfers` debits/insufficiency-checks against, plus
+    `mockCreateFunding`/`mockGetFundingRequest`/`pollFundingStatus` mirroring the
+    real endpoints' shapes and the existing `mockGetTransfer` staged-polling
+    convention.
+    **Test suite:** `onramp-embedded.test.tsx` and `onramp-session.test.tsx`
+    (session-creation-failure + redirect-handoff coverage) were repointed at
+    Add Funds — the only place a Transak widget still opens from the frontend
+    now; `transfer-flow.test.tsx`/`passcode-dialog.test.tsx`/
+    `accessibility.test.tsx` updated for the new passcode -> confirm-dialog ->
+    instant-send sequence; `currency-switching.test.tsx`'s balance assertions
+    redesigned to check cross-component consistency instead of an exact
+    precomputed figure, since the real (now random-rate-driven even in mock
+    mode) balance can't be known ahead of time the way the old static fixture
+    could.
+    **Verified live, in your exact order:** funded a real sender's balance via
+    a real Transak session (confirmed through `selftest-webhook-e2e.ts`, its
+    isolated process avoiding the token-invalidation collision noted in an
+    earlier sync) — sidebar balance moved from a real figure to a real higher
+    figure by exactly the funded amount, live in the browser, no page reload.
+    Sent an amount within that balance: no Transak popup at any point
+    (confirmed programmatically, not just visually), the new confirmation
+    dialog shown with correct recipient/amount/fee, `POST /transfers` returned
+    `200` with a real `solana_tx_signature` **synchronously** (confirmed
+    `finalized` on-chain independently), success dialog shown, balance
+    decremented by exactly the sent amount. Attempted a send exceeding balance:
+    "Confirm & Continue" correctly disabled with the existing
+    "more than your available balance" warning — a clear, pre-existing UI
+    state, not a raw error or crash.
+
 ## Still open
 
 These still need a decision — nothing below has been silently resolved or guessed at.
@@ -932,27 +1004,17 @@ These still need a decision — nothing below has been silently resolved or gues
     and `main` have been merged both directions — the monorepo layout (`backend/` +
     `frontend/` both under `main`) is complete. See the header above.
 
-11. **Frontend not wired to real sender balance funding + instant send.** The
-    backend half landed this sync (`POST /funding`, rewritten `POST /transfers`,
-    extended `POST /webhooks/onramp` — see "Resolved this sync" #12) and was
-    explicitly scoped as backend-only; the frontend was deliberately not
-    touched. Concretely still needed:
-    - An Add Funds flow calling `POST /funding`, rendering the returned
-      `onramp.widgetUrl` the same way checkout already does today (the widget
-      mechanics are identical — same `createWidgetSession` shape — so this
-      should be able to reuse the existing embedded/redirect widget components
-      as-is, just pointed at a different endpoint/session), then polling the
-      new `GET /funding/:id` (added — see "Resolved this sync" #13 — the same
-      way `GET /transfers/:id` is already polled today) for status and the
-      resulting balance.
-    - `lib/kobo/api.ts`'s `createTransfer()` and its `CreateTransferResponse`
-      type need to drop the now-always-absent `onramp` field, and
-      `components/kobo/kobo-app.tsx`'s `applySession()`/`startOnramp()` need to
-      stop assuming `POST /transfers` always returns a widget session to open —
-      it now sometimes settles instantly (`200`/`202`) and sometimes 400s with
-      `code: "INSUFFICIENT_BALANCE"`, needing a real "prompt Add Funds" UI path
-      that doesn't exist yet.
-    - Sidebar balance display ("Still open" #8, resolved on the backend side)
-      still needs its actual frontend wiring decided/built — this is the
-      dependency that was missing when that item was investigated and
-      deliberately left on mock data.
+11. **RESOLVED — see "Resolved this sync" #14.** ~~Frontend not wired to real
+    sender balance funding + instant send.~~ Add Funds, the rewired instant-send
+    flow (new in-app confirmation dialog, no more Transak checkout for a send),
+    and the real sidebar balance are all built and verified live. Left in place
+    (not deleted) for history — the previous open question is quoted below.
+    > The backend half landed this sync (`POST /funding`, rewritten
+    > `POST /transfers`, extended `POST /webhooks/onramp` — see "Resolved this
+    > sync" #12) and was explicitly scoped as backend-only; the frontend was
+    > deliberately not touched. Concretely still needed: an Add Funds flow
+    > calling `POST /funding` [...]; `createTransfer()` needs to drop the
+    > now-always-absent `onramp` field, and `kobo-app.tsx` needs to stop
+    > assuming `POST /transfers` always returns a widget session to open [...];
+    > sidebar balance display ("Still open" #8, resolved on the backend side)
+    > still needs its actual frontend wiring decided/built [...].

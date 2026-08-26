@@ -11,6 +11,8 @@ import { RecipientPicker } from "@/components/kobo/recipient-picker";
 import { RecentTransfers } from "@/components/kobo/recent-transfers";
 import { TransferSummaryPanel } from "@/components/kobo/transfer-summary-panel";
 import { PasscodeDialog } from "@/components/kobo/passcode-dialog";
+import { SendConfirmationDialog } from "@/components/kobo/send-confirmation-dialog";
+import { AddFundsDialog } from "@/components/kobo/add-funds-dialog";
 import { ProcessingOverlay } from "@/components/kobo/processing-overlay";
 import { SuccessDialog } from "@/components/kobo/success-dialog";
 import { FailedDialog } from "@/components/kobo/failed-dialog";
@@ -24,7 +26,6 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Card } from "@/components/ui/card";
 import {
   AMOUNT_PRESETS,
-  BALANCES,
   CONVERSION_FEE_RATE,
   CURRENCIES,
   CURRENT_USER,
@@ -34,20 +35,32 @@ import {
   randomRate,
 } from "@/lib/kobo/mock-data";
 import { ACTIVITY_INDEX, NAV_ITEMS, RECIPIENTS_INDEX, SEND_MONEY_INDEX } from "@/lib/kobo/nav";
-import { createTransfer, getRate, pollTransferStatus, STATUS_LABEL } from "@/lib/kobo/api";
+import {
+  createFunding,
+  createTransfer,
+  getBalance,
+  getRate,
+  pollFundingStatus,
+  pollTransferStatus,
+  FUNDING_STATUS_LABEL,
+  STATUS_LABEL,
+  type ApiError,
+} from "@/lib/kobo/api";
 import { formatAmount } from "@/lib/kobo/format";
-import { clearOnrampDraft, loadOnrampDraft, saveOnrampDraft } from "@/lib/kobo/onramp-draft";
+import { clearOnrampDraft, loadOnrampDraft } from "@/lib/kobo/onramp-draft";
 import { preferRedirectOnramp, type TransakBridgeEvent } from "@/lib/kobo/onramp-transak";
 import type {
   CreateUserResponse,
   CurrencyCode,
+  FundingStatus,
   OnrampSession,
   Recipient,
   TransferHistoryItem,
   TransferStatus,
 } from "@/lib/kobo/types";
 
-type Step = "form" | "passcode" | "onramp" | "processing" | "success" | "failed";
+type Step = "form" | "passcode" | "confirm" | "processing" | "success" | "failed";
+type FundingStep = "closed" | "amount" | "onramp" | "processing";
 
 const RATE_LOCK_SECONDS = 30;
 
@@ -85,6 +98,7 @@ export function KoboApp() {
   const [recipientId, setRecipientId] = useState(() => loadOnrampDraft()?.recipientId ?? RECIPIENTS[0].id);
   const [rate, setRate] = useState(randomRate("EUR"));
   const [secsUntilLock, setSecsUntilLock] = useState(RATE_LOCK_SECONDS);
+  const [balance, setBalance] = useState(0);
 
   const [step, setStep] = useState<Step>("form");
   const [code, setCode] = useState("");
@@ -92,13 +106,19 @@ export function KoboApp() {
   const [transferId, setTransferId] = useState("");
   const [reference, setReference] = useState("");
   const [failureReason, setFailureReason] = useState<string | null>(null);
-  const [onrampSession, setOnrampSession] = useState<OnrampSession | null>(null);
-  const [onrampMode, setOnrampMode] = useState<"redirect" | "embedded" | null>(null);
 
   const [addRecipientOpen, setAddRecipientOpen] = useState(false);
   const [detailTransferId, setDetailTransferId] = useState<string | null>(null);
 
-  const anyOverlayOpen = step !== "form" || addRecipientOpen || detailTransferId !== null;
+  const [fundingStep, setFundingStep] = useState<FundingStep>("closed");
+  const [fundingAmount, setFundingAmount] = useState("100");
+  const [fundingId, setFundingId] = useState("");
+  const [fundingStatus, setFundingStatus] = useState<FundingStatus>("pending");
+  const [fundingOnrampSession, setFundingOnrampSession] = useState<OnrampSession | null>(null);
+  const [fundingOnrampMode, setFundingOnrampMode] = useState<"redirect" | "embedded" | null>(null);
+
+  const anyOverlayOpen =
+    step !== "form" || addRecipientOpen || detailTransferId !== null || fundingStep !== "closed";
 
   /**
    * Fetches the live rate (real `GET /rate` -> Transak's public quote in real
@@ -115,16 +135,26 @@ export function KoboApp() {
     }
   }
 
+  /** Same silent-retry treatment as refreshRate, for the same reason. */
+  async function refreshBalance() {
+    try {
+      setBalance(await getBalance(CURRENT_USER.id));
+    } catch {
+      // keep last known value
+    }
+  }
+
   useEffect(() => {
     const t = setTimeout(() => setLoading(false), 1100);
     return () => clearTimeout(t);
   }, []);
 
-  // Get the real rate in as soon as possible after mount, rather than leaving
-  // the ticker on its initial random seed for a full RATE_LOCK_SECONDS.
+  // Get the real rate and balance in as soon as possible after mount.
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional one-time fetch-on-mount, not a render loop
     refreshRate(currency);
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    refreshBalance();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -168,16 +198,46 @@ export function KoboApp() {
   const amt = Math.max(0, parseFloat(amount.replace(/[^\d.]/g, "")) || 0);
   const fee = amt * CONVERSION_FEE_RATE;
   const receiveUsdc = (amt - fee) * rate;
+  // Real balance is in USDC — converted into whichever currency is selected,
+  // using the same live `rate` state the header ticker already reuses (no
+  // second rate mechanism).
+  const balanceInCurrency = rate > 0 ? balance / rate : 0;
 
   const sentStr = `${currencyMeta.symbol}${formatAmount(amt)}`;
   const feeStr = `${currencyMeta.symbol}${formatAmount(fee)}`;
   const receiveStr = formatAmount(receiveUsdc);
   const rateStr = rate.toFixed(4);
+  const balanceStr = `${currencyMeta.symbol}${formatAmount(balanceInCurrency)}`;
 
   function handleCurrencyChange(next: CurrencyCode) {
     setCurrency(next);
     refreshRate(next);
     setSecsUntilLock(RATE_LOCK_SECONDS);
+  }
+
+  function openAddFunds() {
+    setFundingAmount("100");
+    setFundingStep("amount");
+  }
+
+  /** Before submitting, a fresh real balance check — insufficient prompts Add Funds instead of the passcode gate. */
+  async function handleConfirmClick() {
+    let currentBalance = balance;
+    try {
+      currentBalance = await getBalance(CURRENT_USER.id);
+      setBalance(currentBalance);
+    } catch {
+      // Fall back to the last known balance for this pre-check — POST /transfers'
+      // own INSUFFICIENT_BALANCE check (handled in handleSendConfirm) remains
+      // authoritative either way, so a stale pre-check here is a UX nicety, not
+      // the real gate.
+    }
+    if (receiveUsdc > currentBalance) {
+      toast.error("Not enough balance — add funds first.");
+      openAddFunds();
+      return;
+    }
+    goPasscode();
   }
 
   function goPasscode() {
@@ -199,40 +259,16 @@ export function KoboApp() {
     const next = (code + key).slice(0, 4);
     setCode(next);
     if (next.length === 4) {
-      setTimeout(() => startOnramp(), 220);
+      setTimeout(() => setStep("confirm"), 220);
     }
   }
 
-  async function startOnramp() {
-    setStep("onramp");
-    setOnrampSession(null);
-
-    function applySession(session: OnrampSession, newTransferId: string, ref: string) {
-      if (!session.widgetUrl) {
-        toast.error("Couldn't start checkout — please try again.");
-        setStep("form");
-        return;
-      }
-      // Frontend decides redirect vs. embedded — the backend always returns one
-      // widgetUrl. Redirect leaves the page, so persist enough to resume after.
-      const mode = preferRedirectOnramp() ? "redirect" : "embedded";
-      if (mode === "redirect") {
-        saveOnrampDraft({
-          transferId: newTransferId,
-          reference: ref,
-          currency,
-          amount,
-          recipientId,
-          recipient: { name: recipient.name, initials: recipient.initials, wallet: recipient.wallet },
-          sentStr,
-          feeStr,
-          receiveStr,
-          rate: rateStr,
-        });
-      }
-      setOnrampMode(mode);
-      setOnrampSession(session);
-    }
+  // Sending is now instant (balance-checked, no Transak session) — confirm here,
+  // then poll GET /transfers/:id for real status, same pattern as before.
+  async function handleSendConfirm() {
+    setStep("processing");
+    setTransferStatus("pending");
+    setFailureReason(null);
 
     try {
       const res = await createTransfer({
@@ -240,50 +276,101 @@ export function KoboApp() {
         recipient_id: recipient.id,
         amount_eur: amt * currencyMeta.eurRate,
       });
-      // onramp_reference is genuinely null until Transak's webhook lands server-side
-      // (see API_CONTRACT.md) — fall back to the transfer's real id so the UI never
-      // shows a blank reference while that's pending.
+      // onramp_reference is always null for an instant-send transfer (it never
+      // touches Transak) — falls back to the transfer's real id, same as before.
       const ref = res.onramp_reference || res.id;
       setTransferId(res.id);
       setReference(ref);
-      applySession(res.onramp, res.id, ref);
-    } catch {
-      toast.error("Couldn't start checkout — please try again.");
+      settleFromTransfer(res.status, res.id, res.failure_reason);
+    } catch (err) {
+      const apiErr = err as ApiError;
       setStep("form");
+      if (apiErr.code === "INSUFFICIENT_BALANCE") {
+        toast.error("Not enough balance — add funds first.");
+        openAddFunds();
+      } else {
+        toast.error("Couldn't send — please try again.");
+      }
     }
   }
 
-  // The widget/iframe only ever tells us the checkout flow ended — never whether the
-  // transfer actually succeeded. Only the backend's real status (via its own signed
-  // webhook from Transak) can confirm that, so once checkout ends we stop listening
-  // to the widget and start polling GET /transfers/:id for the truth.
-  function finishCheckout(mockOutcome: "confirmed" | "failed") {
-    setStep("processing");
-    setTransferStatus("pending");
-    setFailureReason(null);
-    pollTransferStatus(
-      transferId,
-      (transfer) => {
+  function settleFromTransfer(status: TransferStatus, id: string, failure_reason: string | null) {
+    setTransferStatus(status);
+    if (status === "confirmed") {
+      setStep("success");
+      refreshBalance();
+    } else if (status === "failed") {
+      setFailureReason(failure_reason);
+      setStep("failed");
+      refreshBalance();
+    } else {
+      // 'pending' (shouldn't happen post-response) or 'sent' (confirmation
+      // timed out, not a failure) — keep polling for the real terminal status.
+      pollTransferStatus(id, (transfer) => {
         setTransferStatus(transfer.status);
         if (transfer.status === "confirmed") {
           setStep("success");
+          refreshBalance();
         } else if (transfer.status === "failed") {
           setFailureReason(transfer.failure_reason);
           setStep("failed");
+          refreshBalance();
+        }
+      });
+    }
+  }
+
+  async function handleAddFundsSubmit(amountEur: number) {
+    setFundingStep("onramp");
+    setFundingOnrampSession(null);
+
+    try {
+      const res = await createFunding({ sender_id: CURRENT_USER.id, amount_eur: amountEur });
+      if (!res.onramp.widgetUrl) {
+        toast.error("Couldn't start checkout — please try again.");
+        setFundingStep("closed");
+        return;
+      }
+      setFundingId(res.id);
+      const mode = preferRedirectOnramp() ? "redirect" : "embedded";
+      setFundingOnrampMode(mode);
+      setFundingOnrampSession(res.onramp);
+    } catch {
+      toast.error("Couldn't start checkout — please try again.");
+      setFundingStep("closed");
+    }
+  }
+
+  // Same principle as the transfer flow: the widget only ever signals "checkout
+  // ended," never the real outcome — always poll GET /funding/:id for the truth.
+  function finishFundingCheckout(mockOutcome: "confirmed" | "failed") {
+    setFundingStep("processing");
+    setFundingStatus("pending");
+    pollFundingStatus(
+      fundingId,
+      (funding) => {
+        setFundingStatus(funding.status);
+        if (funding.status === "confirmed") {
+          setBalance(funding.balance);
+          toast.success(`Added ${formatAmount(funding.amount_eur)} — your balance is now ${funding.balance.toFixed(2)} USDC`);
+          setFundingStep("closed");
+        } else if (funding.status === "failed") {
+          toast.error(funding.failure_reason || "Couldn't add funds — please try again.");
+          setFundingStep("closed");
         }
       },
       { mockOutcome }
     );
   }
 
-  function handleTransakEvent(event: TransakBridgeEvent) {
+  function handleFundingTransakEvent(event: TransakBridgeEvent) {
     if (event.kind === "order-successful") {
-      finishCheckout("confirmed");
+      finishFundingCheckout("confirmed");
     } else if (event.kind === "order-failed") {
-      finishCheckout("failed");
+      finishFundingCheckout("failed");
     } else if (event.kind === "widget-closed") {
-      setStep("form");
-      toast("Payment cancelled — nothing was charged.");
+      setFundingStep("closed");
+      toast("Add funds cancelled — nothing was charged.");
     }
   }
 
@@ -291,8 +378,6 @@ export function KoboApp() {
     setStep("form");
     setCode("");
     setSecsUntilLock(RATE_LOCK_SECONDS);
-    setOnrampSession(null);
-    setOnrampMode(null);
     setFailureReason(null);
   }
 
@@ -303,8 +388,6 @@ export function KoboApp() {
 
   function handleTryAgain() {
     setStep("form");
-    setOnrampSession(null);
-    setOnrampMode(null);
     setFailureReason(null);
   }
 
@@ -371,8 +454,9 @@ export function KoboApp() {
         activeIndex={navIndex}
         onSelect={setNavIndex}
         balanceLabel={`${currency} BALANCE`}
-        balance={`${currencyMeta.symbol}${formatAmount(BALANCES[currency])}`}
+        balance={balanceStr}
         iban={CURRENT_USER.iban}
+        onAddFunds={openAddFunds}
       />
 
       <main className="flex min-w-0 flex-1 flex-col">
@@ -436,8 +520,8 @@ export function KoboApp() {
                       onCurrencyChange={handleCurrencyChange}
                       presets={AMOUNT_PRESETS}
                       onPickPreset={(v) => setAmount(String(v))}
-                      balance={`${currencyMeta.symbol}${formatAmount(BALANCES[currency])}`}
-                      balanceValue={BALANCES[currency]}
+                      balance={balanceStr}
+                      balanceValue={balanceInCurrency}
                     />
                     <RecipientPicker
                       recipients={recipients}
@@ -460,8 +544,8 @@ export function KoboApp() {
                     amountSent={amt}
                     fee={fee}
                     receiveUsdc={receiveUsdc}
-                    onConfirm={goPasscode}
-                    disabled={amt <= 0 || amt > BALANCES[currency]}
+                    onConfirm={handleConfirmClick}
+                    disabled={amt <= 0 || amt > balanceInCurrency}
                   />
                 </div>
               </TabsContent>
@@ -502,19 +586,14 @@ export function KoboApp() {
         onBack={back}
       />
 
-      {step === "onramp" && onrampSession && onrampMode === "redirect" && (
-        <RedirectHandoff widgetUrl={onrampSession.widgetUrl} />
-      )}
-
-      {step === "onramp" && onrampSession && onrampMode === "embedded" && (
-        <EmbeddedWidgetModal embedUrl={onrampSession.widgetUrl} onEvent={handleTransakEvent} />
-      )}
-
-      <ProcessingOverlay
-        open={step === "onramp" && !onrampSession}
-        label="Preparing checkout"
+      <SendConfirmationDialog
+        open={step === "confirm"}
+        recipient={recipient}
         sentStr={sentStr}
-        firstName={firstName}
+        feeStr={feeStr}
+        receiveStr={receiveStr}
+        onConfirm={handleSendConfirm}
+        onCancel={back}
       />
 
       <ProcessingOverlay
@@ -544,6 +623,37 @@ export function KoboApp() {
         reason={failureReason}
         onTryAgain={handleTryAgain}
         onContactSupport={handleContactSupport}
+      />
+
+      <AddFundsDialog
+        open={fundingStep === "amount"}
+        onOpenChange={(open) => !open && setFundingStep("closed")}
+        onSubmit={handleAddFundsSubmit}
+      />
+
+      {fundingStep === "onramp" && fundingOnrampSession && fundingOnrampMode === "redirect" && (
+        <RedirectHandoff widgetUrl={fundingOnrampSession.widgetUrl} />
+      )}
+
+      {fundingStep === "onramp" && fundingOnrampSession && fundingOnrampMode === "embedded" && (
+        <EmbeddedWidgetModal
+          embedUrl={fundingOnrampSession.widgetUrl}
+          onEvent={handleFundingTransakEvent}
+        />
+      )}
+
+      <ProcessingOverlay
+        open={fundingStep === "onramp" && !fundingOnrampSession}
+        label="Preparing checkout"
+        sentStr={`€${fundingAmount}`}
+        firstName="your balance"
+      />
+
+      <ProcessingOverlay
+        open={fundingStep === "processing"}
+        label={FUNDING_STATUS_LABEL[fundingStatus]}
+        sentStr={`€${fundingAmount}`}
+        firstName="your balance"
       />
     </div>
   );

@@ -1,9 +1,12 @@
 import type {
+  BalanceResponse,
+  CreateFundingRequest,
   CreateTransferRequest,
-  CreateTransferResponse,
   CreateUserRequest,
   CreateUserResponse,
   CurrencyCode,
+  FundingRecord,
+  FundingStatus,
   OnrampSession,
   RateResponse,
   TransferRecord,
@@ -19,6 +22,12 @@ export const STATUS_LABEL: Record<TransferStatus, string> = {
   failed: "Transfer failed",
 };
 
+export const FUNDING_STATUS_LABEL: Record<FundingStatus, string> = {
+  pending: "Adding funds",
+  confirmed: "Added",
+  failed: "Couldn't add funds",
+};
+
 const API_URL = process.env.NEXT_PUBLIC_KOBO_API_URL;
 
 /** True while there's no real backend configured — see NEXT_PUBLIC_KOBO_API_URL in .env.example. */
@@ -26,51 +35,74 @@ export function isMockMode() {
   return !API_URL;
 }
 
+/** Thrown by `createTransfer()` on a `400`/`500` — `code`/`requiredUsdc` are only set for `INSUFFICIENT_BALANCE`. */
+export interface ApiError extends Error {
+  code?: string;
+  requiredUsdc?: number;
+}
+
+// Mock-mode's own real-shaped ledger (module-scope, resets on a full reload) —
+// seeded generously so a mock demo can send right away without needing to fund
+// first, same spirit as the old static BALANCES fixture it replaces, but now a
+// single real USDC figure instead of one per fiat currency.
+let mockBalanceUsdc = 2000;
+
 /**
- * `POST /transfers`. Returns the created transfer plus a Transak checkout session to launch.
- * Shape confirmed against the real backend — see API_CONTRACT.md.
+ * `POST /transfers`. No longer creates a Transak session — the backend is
+ * balance-checked and, when funded, instant. Returns the settled transfer row
+ * directly (same shape `GET /transfers/:id` already returns) for every outcome
+ * that isn't a request-level failure: `200`/`202`/`422`/`502` are all real
+ * settlement outcomes (confirmed/sent/failed), not exceptions — only a `400`
+ * (validation, or `INSUFFICIENT_BALANCE`) or `500` throws. Shape confirmed
+ * against the real backend — see API_CONTRACT.md.
  */
-export async function createTransfer(
-  req: CreateTransferRequest
-): Promise<CreateTransferResponse & { onramp: OnrampSession }> {
+export async function createTransfer(req: CreateTransferRequest): Promise<TransferRecord> {
   if (!isMockMode()) {
     const res = await fetch(`${API_URL}/transfers`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(req),
     });
-    if (!res.ok) throw new Error(`POST /transfers failed: ${res.status}`);
-    return res.json();
+    const body = await res.json().catch(() => null);
+    if (res.status === 400 || res.status === 500) {
+      const err = new Error(body?.error ?? `POST /transfers failed: ${res.status}`) as ApiError;
+      err.code = body?.code;
+      err.requiredUsdc = body?.required_usdc;
+      throw err;
+    }
+    return body as TransferRecord;
   }
 
   return mockCreateTransfer(req);
 }
 
-async function mockCreateTransfer(
-  req: CreateTransferRequest
-): Promise<CreateTransferResponse & { onramp: OnrampSession }> {
+async function mockCreateTransfer(req: CreateTransferRequest): Promise<TransferRecord> {
   await new Promise((r) => setTimeout(r, 250));
-  const seed = [...req.recipient_id].reduce((sum, ch) => sum + ch.charCodeAt(0), 0);
-  const id = `tr_${Math.random().toString(36).slice(2, 10)}`;
 
-  const params = new URLSearchParams({
-    transferId: id,
-    amount: req.amount_eur.toFixed(2),
-    reference: `KB-${9182 + (seed % 800)}-EU`,
-  });
-  const widgetUrl =
-    typeof window !== "undefined"
-      ? `${window.location.origin}/transfers/mock-widget?${params.toString()}`
-      : `/transfers/mock-widget?${params.toString()}`;
+  const rate = randomRate("EUR"); // mock equivalent of the real getMarketRate("EUR")
+  const amount_usdc = Number((req.amount_eur * rate).toFixed(6));
+
+  if (mockBalanceUsdc < amount_usdc) {
+    const err = new Error("Insufficient balance — add funds before sending") as ApiError;
+    err.code = "INSUFFICIENT_BALANCE";
+    err.requiredUsdc = amount_usdc;
+    throw err;
+  }
+  mockBalanceUsdc = Number((mockBalanceUsdc - amount_usdc).toFixed(6));
+
+  const id = `tr_${Math.random().toString(36).slice(2, 10)}`;
 
   return {
     id,
     status: "pending",
-    onramp_reference: null, // real backend leaves this null until the onramp webhook fires
-    onramp: {
-      sessionId: id,
-      widgetUrl,
-    },
+    solana_tx_signature: null,
+    amount_eur: req.amount_eur,
+    amount_usdc,
+    failure_reason: null,
+    retry_count: 0,
+    onramp_session_id: null,
+    onramp_reference: null,
+    created_at: new Date().toISOString(),
   };
 }
 
@@ -121,6 +153,167 @@ export async function getRate(currency: CurrencyCode): Promise<number> {
   }
 
   return randomRate(currency);
+}
+
+/**
+ * `GET /balances/:userId`. Real for both senders (post-funding, post-send debit/
+ * credit) and recipients (post-transfer credit) now. Shape confirmed against the
+ * real backend — see API_CONTRACT.md.
+ */
+export async function getBalance(userId: string): Promise<number> {
+  if (!isMockMode()) {
+    const res = await fetch(`${API_URL}/balances/${userId}`);
+    if (!res.ok) throw new Error(`GET /balances/${userId} failed: ${res.status}`);
+    const body: BalanceResponse = await res.json();
+    return body.usdc_balance;
+  }
+
+  return mockBalanceUsdc;
+}
+
+/**
+ * `POST /funding`. Creates a Transak session that tops up the sender's own
+ * balance — same session-creation shape `POST /transfers` used to return, just
+ * for a different purpose. Shape confirmed against the real backend — see
+ * API_CONTRACT.md.
+ */
+export async function createFunding(
+  req: CreateFundingRequest
+): Promise<FundingRecord & { onramp: OnrampSession }> {
+  if (!isMockMode()) {
+    const res = await fetch(`${API_URL}/funding`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(req),
+    });
+    if (!res.ok) {
+      const body: { error?: string } | null = await res.json().catch(() => null);
+      throw new Error(body?.error ?? `POST /funding failed: ${res.status}`);
+    }
+    return res.json();
+  }
+
+  return mockCreateFunding(req);
+}
+
+const mockFundingRequests = new Map<string, FundingRecord>();
+
+async function mockCreateFunding(
+  req: CreateFundingRequest
+): Promise<FundingRecord & { onramp: OnrampSession }> {
+  await new Promise((r) => setTimeout(r, 250));
+
+  const rate = randomRate("EUR");
+  const amount_usdc = Number((req.amount_eur * rate).toFixed(6));
+  const id = `fund_${Math.random().toString(36).slice(2, 10)}`;
+
+  const record: FundingRecord = {
+    id,
+    sender_id: req.sender_id,
+    amount_eur: req.amount_eur,
+    amount_usdc,
+    status: "pending",
+    onramp_session_id: id,
+    onramp_reference: null,
+    failure_reason: null,
+    created_at: new Date().toISOString(),
+  };
+  mockFundingRequests.set(id, record);
+
+  const params = new URLSearchParams({
+    transferId: id,
+    amount: req.amount_eur.toFixed(2),
+    reference: `KB-FUND-${id.slice(-4)}`,
+  });
+  const widgetUrl =
+    typeof window !== "undefined"
+      ? `${window.location.origin}/transfers/mock-widget?${params.toString()}`
+      : `/transfers/mock-widget?${params.toString()}`;
+
+  return { ...record, onramp: { sessionId: id, widgetUrl } };
+}
+
+/**
+ * `GET /funding/:id`. Poll this for live status after `POST /funding`, same
+ * pattern as `GET /transfers/:id`. `balance` is the sender's current real
+ * balance, not just this one request's amount — the resulting total, not a
+ * delta. Shape confirmed against the real backend — see API_CONTRACT.md.
+ */
+export async function getFundingRequest(
+  id: string,
+  opts?: { mockOutcome?: "confirmed" | "failed" }
+): Promise<FundingRecord & { balance: number }> {
+  if (!isMockMode()) {
+    const res = await fetch(`${API_URL}/funding/${id}`);
+    if (!res.ok) throw new Error(`GET /funding/${id} failed: ${res.status}`);
+    return res.json();
+  }
+  return mockGetFundingRequest(id, opts?.mockOutcome ?? "confirmed");
+}
+
+const FUNDING_STAGE_MS = 400;
+const mockFundingStartedAt = new Map<string, number>();
+
+async function mockGetFundingRequest(
+  id: string,
+  outcome: "confirmed" | "failed"
+): Promise<FundingRecord & { balance: number }> {
+  const record = mockFundingRequests.get(id);
+  if (!record) throw new Error(`Mock funding request ${id} not found`);
+
+  const startedAt = mockFundingStartedAt.get(id) ?? Date.now();
+  mockFundingStartedAt.set(id, startedAt);
+  const elapsed = Date.now() - startedAt;
+
+  // Claim once, exactly like the real webhook's conditional update — a second
+  // poll after the request already resolved must not credit twice.
+  if (elapsed >= FUNDING_STAGE_MS && record.status === "pending") {
+    if (outcome === "failed") {
+      record.status = "failed";
+      record.failure_reason = "The simulated top-up could not be completed.";
+    } else {
+      record.status = "confirmed";
+      record.onramp_reference = `KB-MOCK-${id.slice(-4)}`;
+      mockBalanceUsdc = Number((mockBalanceUsdc + (record.amount_usdc ?? 0)).toFixed(6));
+    }
+  }
+
+  return { ...record, balance: mockBalanceUsdc };
+}
+
+/**
+ * Polls `GET /funding/:id` until the request reaches a terminal status
+ * (`confirmed` or `failed`). Same shape as `pollTransferStatus` below —
+ * deliberately, so both flows share one polling pattern.
+ */
+export function pollFundingStatus(
+  id: string,
+  onUpdate: (funding: FundingRecord & { balance: number }) => void,
+  opts?: { intervalMs?: number; mockOutcome?: "confirmed" | "failed" }
+): () => void {
+  let cancelled = false;
+  const intervalMs = opts?.intervalMs ?? (isMockMode() ? FUNDING_STAGE_MS : 3000);
+
+  const tick = async () => {
+    if (cancelled) return;
+    let record: FundingRecord & { balance: number };
+    try {
+      record = await getFundingRequest(id, { mockOutcome: opts?.mockOutcome });
+    } catch {
+      if (!cancelled) setTimeout(tick, intervalMs);
+      return;
+    }
+    if (cancelled) return;
+    onUpdate(record);
+    if (record.status !== "confirmed" && record.status !== "failed") {
+      setTimeout(tick, intervalMs);
+    }
+  };
+
+  tick();
+  return () => {
+    cancelled = true;
+  };
 }
 
 /**

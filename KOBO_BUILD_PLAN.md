@@ -29,16 +29,17 @@
 - `failed` status UI wired to real backend data
 - "Add new recipient" now calls real `POST /users` — tested live via Playwright, confirmed in Supabase
 - The default/pre-selected recipient ("Adaeze Okonkwo") is now a real `users` row too — a fresh page load can send a real transfer using only default state, no prior "add recipient" action needed
+- Add Funds (sidebar button, previously inert) now calls real `POST /funding`, reuses the existing Transak widget components, and polls real `GET /funding/:id` — sidebar balance updates live off the real result
+- Send no longer touches Transak at all: real balance-checked, instant `POST /transfers` behind a new in-app confirmation dialog (recipient/amount/fee/ETA), same passcode gate and success/failed polling as before — see API_CONTRACT.md "Resolved this sync" #14 for full detail, verified live end to end (fund → sidebar balance moves → instant send within balance, no Transak popup, real Solana tx → over-balance amount cleanly blocked, not a raw error)
 
 **Still mock, in priority order:**
 1. ~~Sender identity~~ — RESOLVED. CURRENT_USER now carries a real users.id (role:
    "sender"), wired via NEXT_PUBLIC_KOBO_SENDER_ID. See API_CONTRACT.md for detail.
-2. Balance display — sidebar still reads local mock data. Backend half now
-   exists (real sender balances, `GET /balances/:userId` returns real data for
-   senders too — see item on `POST /funding` above and API_CONTRACT.md "Still
-   open" #8, resolved). Frontend sidebar wiring itself is still not done — see
-   API_CONTRACT.md "Still open" #11 for the concrete remaining pieces (Add
-   Funds UI, `createTransfer()`'s response contract, sidebar display).
+2. ~~Balance display~~ — RESOLVED, both halves. Sidebar (and `SendAmountCard`'s
+   balance line, and the amount-exceeds-balance check) now read the real
+   `GET /balances/:userId` figure, converted to whichever currency is selected
+   using the same live rate the header ticker already holds. The old static
+   `BALANCES` fixture is deleted. See API_CONTRACT.md "Resolved this sync" #14.
 3. No auth anywhere — any client can call any endpoint as any user
 4. ~~Wallet input placeholder copy~~ — RESOLVED, copy fixed to reflect Solana
    wallet-address-only input.
@@ -71,7 +72,10 @@
   Kobo generating and holding a custodial wallet on someone's behalf — a real
   feature with real custody/regulatory implications, contradicting the product
   doc's non-custodial stance. Not being built now.
-- **Sender-side "balance" — SUPERSEDED (2026-08-25, later same day).** Earlier
+- **Sender-side "balance" — SUPERSEDED (2026-08-25, later same day) — and now
+  fully IMPLEMENTED (2026-08-26), backend and frontend both, verified live.**
+  See API_CONTRACT.md "Resolved this sync" #12 (backend) and #14 (frontend) for
+  what actually shipped against this plan. Earlier
   decision said the backend had no concept of a sender balance and nothing was
   being invented under time pressure — that stands as accurate for that point in
   time, but is now deliberately being built, not stumbled into. New architecture:
@@ -110,8 +114,9 @@
 
 ## 2. Immediate priority queue (today, in order)
 
-1. **Wire the real sender** (backend already supports this — same pattern as recipient)
-2. **Wire real balance display**
+1. ~~Wire the real sender~~ — done.
+2. ~~Wire real balance display~~ — done, both backend (real sender balances via
+   `POST /funding`) and frontend (sidebar + `SendAmountCard` wired to it).
 3. **Day 7 joint run-through** — first time this is genuinely possible end-to-end
 4. Then Days 8–9 polish, Days 10–11 rehearsal + fallback video, per the original plan — unchanged
 

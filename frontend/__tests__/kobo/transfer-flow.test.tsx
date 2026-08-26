@@ -1,23 +1,12 @@
 import { describe, expect, test } from "vitest";
 import { screen, within } from "@testing-library/react";
-import { renderKoboApp, simulateTransakEvent } from "./test-utils";
+import { renderKoboApp, confirmSend } from "./test-utils";
 import { formatAmount } from "@/lib/kobo/format";
 
-/** Passcode → mock Transak checkout → simulated successful payment → processing begins. */
-async function enterPasscode(user: ReturnType<typeof import("@testing-library/user-event").default.setup>) {
-  await user.click(screen.getByRole("button", { name: /confirm & continue/i }));
-  const dialog = await screen.findByRole("dialog", { name: /enter your passcode/i });
-  for (const d of ["1", "2", "3", "4"]) {
-    await user.click(within(dialog).getByRole("button", { name: `Digit ${d}` }));
-  }
-  await screen.findByRole("dialog", { name: /transak checkout/i }, { timeout: 2000 });
-  simulateTransakEvent("TRANSAK_ORDER_SUCCESSFUL");
-}
-
 describe("processing → success", () => {
-  test("advances through the three status labels in order, then renders success", async () => {
+  test("advances through the status labels in order, then renders success", async () => {
     const { user } = await renderKoboApp();
-    await enterPasscode(user);
+    await confirmSend(user);
 
     const status = await screen.findByRole("status", {}, { timeout: 2000 });
     expect(status).toHaveTextContent(/securing your transfer/i);
@@ -40,15 +29,15 @@ describe("processing → success", () => {
     const rateText = screen.getByText(/^1 EUR ≈/).textContent!;
     const rate = parseFloat(rateText.match(/([\d.]+) USDC/)![1]);
 
-    await enterPasscode(user);
+    await confirmSend(user);
     const success = await screen.findByRole("dialog", { name: /sent to adaeze/i }, { timeout: 4000 });
 
     const expectedFee = 250 * 0.0053;
     const expectedReceive = (250 - expectedFee) * rate;
 
     expect(within(success).getByText("Adaeze Okonkwo")).toBeInTheDocument();
-    // onramp_reference is null until Transak's webhook lands (see API_CONTRACT.md);
-    // the reference shown falls back to the transfer's real id in the meantime.
+    // onramp_reference is always null for an instant-send transfer (it never
+    // touches Transak); the reference shown falls back to the transfer's real id.
     expect(within(success).getByText(/^tr_[a-z0-9]+$/)).toBeInTheDocument();
     expect(within(success).getByText(`1 EUR = ${rate.toFixed(4)}`)).toBeInTheDocument();
     expect(within(success).getByText(`€${formatAmount(expectedFee)}`)).toBeInTheDocument();
@@ -57,7 +46,7 @@ describe("processing → success", () => {
 
   test("Done resets to the form", async () => {
     const { user } = await renderKoboApp();
-    await enterPasscode(user);
+    await confirmSend(user);
     const success = await screen.findByRole("dialog", { name: /sent to adaeze/i }, { timeout: 4000 });
 
     await user.click(within(success).getByRole("button", { name: /^done$/i }));
@@ -68,7 +57,7 @@ describe("processing → success", () => {
 
   test("Download receipt closes the dialog and shows a toast", async () => {
     const { user } = await renderKoboApp();
-    await enterPasscode(user);
+    await confirmSend(user);
     const success = await screen.findByRole("dialog", { name: /sent to adaeze/i }, { timeout: 4000 });
 
     await user.click(within(success).getByRole("button", { name: /download receipt/i }));

@@ -11,12 +11,14 @@ export function AppSidebar({
   balanceLabel,
   balance,
   iban,
+  onAddFunds,
 }: {
   activeIndex: number;
   onSelect: (index: number) => void;
   balanceLabel: string;
   balance: string;
   iban: string;
+  onAddFunds: () => void;
 }) {
   return (
     <aside className="hidden w-64 shrink-0 flex-col gap-6 border-r border-kobo-ink/[0.07] bg-white/55 p-5 backdrop-blur-xl lg:flex">
@@ -58,6 +60,7 @@ export function AppSidebar({
         </div>
         <Button
           variant="outline"
+          onClick={onAddFunds}
           className="mt-4 h-auto w-full rounded-full border-white/20 bg-white/10 py-2.5 text-[14px] font-medium text-kobo-mint-light hover:bg-white/20"
         >
           Add funds

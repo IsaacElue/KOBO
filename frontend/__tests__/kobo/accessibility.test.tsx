@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 import { screen, within } from "@testing-library/react";
-import { renderKoboApp, simulateTransakEvent } from "./test-utils";
+import { renderKoboApp, confirmSend } from "./test-utils";
 
 describe("overlay dismissal + focus management", () => {
   test("Escape closes the passcode dialog and returns focus to the trigger", async () => {
@@ -48,13 +48,7 @@ describe("overlay dismissal + focus management", () => {
 
   test("Escape closes the success dialog and resets to the form", async () => {
     const { user } = await renderKoboApp();
-    await user.click(screen.getByRole("button", { name: /confirm & continue/i }));
-    const passcodeDialog = await screen.findByRole("dialog", { name: /enter your passcode/i });
-    for (const d of ["1", "2", "3", "4"]) {
-      await user.click(within(passcodeDialog).getByRole("button", { name: `Digit ${d}` }));
-    }
-    await screen.findByRole("dialog", { name: /transak checkout/i }, { timeout: 2000 });
-    simulateTransakEvent("TRANSAK_ORDER_SUCCESSFUL");
+    await confirmSend(user);
     await screen.findByRole("dialog", { name: /sent to adaeze/i }, { timeout: 4000 });
 
     await user.keyboard("{Escape}");

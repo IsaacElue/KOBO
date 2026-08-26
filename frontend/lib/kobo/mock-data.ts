@@ -23,12 +23,6 @@ export const CURRENCIES: Record<CurrencyCode, CurrencyMeta> = {
   USD: { code: "USD", symbol: "$", pluralNoun: "Dollars", eurRate: 0.92, flagColor: "#3C3B6E" },
 };
 
-export const BALANCES: Record<CurrencyCode, number> = {
-  EUR: 1840.5,
-  GBP: 1580.2,
-  USD: 1990.75,
-};
-
 const BASE_USDC_RATE: Record<CurrencyCode, number> = {
   EUR: 1.08,
   GBP: 1.26,

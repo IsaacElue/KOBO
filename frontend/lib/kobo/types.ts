@@ -63,14 +63,6 @@ export interface CreateTransferRequest {
   amount_eur: number;
 }
 
-/** Matches the real backend's `transfers` row shape (backend/src/routes/transfers.ts). */
-export interface CreateTransferResponse {
-  id: string;
-  status: TransferStatus;
-  /** `null` at creation time — only populated once Transak's ORDER_COMPLETED webhook fires. */
-  onramp_reference: string | null;
-}
-
 /** `GET /transfers/:id` response — matches the real backend's `transfers` row exactly. */
 export interface TransferRecord {
   id: string;
@@ -86,7 +78,10 @@ export interface TransferRecord {
 }
 
 /**
- * Matches the real backend response exactly (backend/src/routes/transfers.ts).
+ * Matches the real backend response exactly (backend/src/routes/transfers.ts,
+ * backend/src/routes/funding.ts — both POST /transfers and POST /funding used to
+ * return this shape; only POST /funding still does, POST /transfers no longer
+ * creates a Transak session at all — see lib/kobo/api.ts's `createTransfer()`).
  * One URL, valid either as a redirect target or an iframe src — the backend does
  * not distinguish "embedded" vs "redirect"; that's a frontend rendering choice.
  * See lib/kobo/onramp-transak.ts's `preferRedirectOnramp()`.
@@ -94,4 +89,30 @@ export interface TransferRecord {
 export interface OnrampSession {
   sessionId: string | null;
   widgetUrl: string;
+}
+
+/** `GET /balances/:userId` response — real for both senders and recipients now. */
+export interface BalanceResponse {
+  usdc_balance: number;
+  updated_at: string | null;
+}
+
+export type FundingStatus = "pending" | "confirmed" | "failed";
+
+export interface CreateFundingRequest {
+  sender_id: string;
+  amount_eur: number;
+}
+
+/** Matches the real backend's `funding_requests` row shape (backend/src/routes/funding.ts). */
+export interface FundingRecord {
+  id: string;
+  sender_id: string;
+  amount_eur: number;
+  amount_usdc: number | null;
+  status: FundingStatus;
+  onramp_session_id: string | null;
+  onramp_reference: string | null;
+  failure_reason: string | null;
+  created_at: string;
 }

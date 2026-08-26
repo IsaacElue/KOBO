@@ -49,7 +49,11 @@ describe("rate lock countdown", () => {
 
     const before = secondsLeft();
 
-    fireEvent.click(screen.getByRole("button", { name: /confirm & continue/i }));
+    // Confirm & Continue now does a real (mock) balance check before opening the
+    // passcode dialog — await the click so that microtask resolves first.
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /confirm & continue/i }));
+    });
     const dialog = screen.getByRole("dialog", { name: /enter your passcode/i });
     expect(within(dialog).getByText(/enter your passcode/i)).toBeInTheDocument();
 
