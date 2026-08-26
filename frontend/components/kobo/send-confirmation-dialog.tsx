@@ -42,7 +42,7 @@ export function SendConfirmationDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="mt-5 rounded-3xl border border-kobo-ink/[0.06] bg-[#F6FAFA] p-5 pb-4">
+        <div className="mt-5 min-w-0 rounded-3xl border border-kobo-ink/[0.06] bg-[#F6FAFA] p-5 pb-4">
           <div className="flex items-center gap-3.5 border-b border-kobo-ink/[0.07] pb-4">
             <Avatar size="lg">
               <AvatarFallback className="bg-gradient-to-br from-kobo-mint to-[#BFE7D1] font-semibold text-kobo-mint-dark">
