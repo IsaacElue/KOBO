@@ -22,7 +22,7 @@ export function FailedDialog({
     <Dialog open={open} onOpenChange={(next) => !next && onTryAgain()}>
       <DialogContent
         showCloseButton={false}
-        className="max-w-[520px] gap-0 rounded-[34px] border border-kobo-sand-dark/10 bg-gradient-to-b from-kobo-sand to-[#FBFDFD] p-9 pb-7 shadow-[0_60px_110px_-44px_rgba(0,0,0,0.6)] ring-0"
+        className="max-w-sm gap-0 rounded-[32px] border border-kobo-sand-dark/10 bg-gradient-to-b from-kobo-sand to-[#FBFDFD] p-8 pb-7 shadow-[0_60px_110px_-44px_rgba(0,0,0,0.6)] ring-0"
       >
         <div className="flex flex-col items-center text-center">
           <div className="relative flex size-24 items-center justify-center">
