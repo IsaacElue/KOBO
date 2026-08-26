@@ -500,12 +500,32 @@ These still need a decision — nothing below has been silently resolved or gues
    (and now can target the frontend's real origin — confirmed as
    `http://localhost:3000` for dev, see Resolved #2).
 
-8. **No fiat/EUR balance source exists on the backend.** The only balance endpoint
+8. **No fiat/EUR balance source exists on the backend — confirmed, sidebar wiring
+   attempted and deliberately not done.** The only balance endpoint
    (`GET /balances/:userId`) is a recipient's post-transfer USDC balance, not a
    sender's spendable EUR balance. The frontend's sidebar "EUR/GBP/USD balance" is
    pure mock data with nothing to back it once real accounts exist. Not clear
    whether fiat balance tracking is even in scope for the backend — needs a
    decision on whether/where that gets built.
+
+   **Investigated this sync, while attempting to wire the sidebar to
+   `GET /balances/:userId` using `CURRENT_USER.id`** (the real sender uuid from the
+   previous sync). Confirmed against `backend/src/routes/webhooks.ts` (lines
+   ~203-221) and the live `balances` table: a row is written only for
+   `transfer.recipient_id`, never `sender_id` — a sender never accumulates a
+   `balances` row under the current data model. The two rows that exist in
+   `balances` right now both belong to recipient users. This means
+   `GET /balances/{CURRENT_USER.id}` doesn't just have a currency-label mismatch
+   (`usdc_balance` vs. the card's "EUR BALANCE") — it would return
+   `{ usdc_balance: 0, updated_at: null }` **permanently**, regardless of real
+   transfer activity, since nothing ever writes a row keyed to a sender's id.
+   Wiring the sidebar to it as literally specified would replace a plausible mock
+   balance with a real but frozen `€0.00` that never moves even after a confirmed
+   transfer — a visible regression for Demo Day, not a fix. **Decision: sidebar
+   left on mock data for now**, pending a real product decision on what "sender
+   balance" should even mean here — e.g. their EUR bank/SEPA balance (nothing in
+   this build touches that), vs. rescoping the sidebar to show something the
+   backend actually tracks. Not guessed at or silently patched around.
 
 9. **`amount_usdc` is computed with a placeholder rate (1.08), server-side**,
    explicitly flagged in the code as temporary. The frontend independently shows
