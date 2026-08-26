@@ -66,11 +66,30 @@
   Kobo generating and holding a custodial wallet on someone's behalf — a real
   feature with real custody/regulatory implications, contradicting the product
   doc's non-custodial stance. Not being built now.
-- Sender-side "balance" has no backend concept and isn't being invented under time
-  pressure. GET /balances/:userId only ever gets a row written for a transfer's
-  recipient_id — a sender holds nothing after sending in this model. Wiring the
-  sidebar to the real sender's id would show a real, permanently-frozen €0.00,
-  worse than the current mock. Sidebar stays on mock data for now.
+- **Sender-side "balance" — SUPERSEDED (2026-08-25, later same day).** Earlier
+  decision said the backend had no concept of a sender balance and nothing was
+  being invented under time pressure — that stands as accurate for that point in
+  time, but is now deliberately being built, not stumbled into. New architecture:
+  **Add Funds** opens a real Transak session (same pattern as the existing
+  per-transfer flow) that lands real USDC into Kobo's pooled backend wallet and
+  credits a real balance row for the sender (generalizing `balances` beyond
+  recipient-only). **Send becomes instant** once a sender has sufficient balance:
+  an in-app confirmation (recipient, amount, fee, estimated arrival, confirm/
+  cancel — no second Transak step), then an internal Solana transfer from Kobo's
+  wallet to the recipient's wallet, reusing the exact retry/idempotency/
+  confirmation/failure-handling logic already built and tested in Days 5-6 — none
+  of that gets weakened or removed. If a sender's balance is insufficient, they're
+  prompted to Add Funds first — no parallel/legacy per-send Transak path is being
+  kept alongside this.
+- **Custody note, stated plainly, not glossed over.** This introduces a
+  pooled-custody ledger model — Kobo's backend wallet holds real funds on behalf
+  of users between top-up and send, standard for neobank-style products (Revolut,
+  Wise) but a step beyond the pure pass-through framing in the product doc's
+  Section 5. Worth keeping in mind for any future compliance conversation, same
+  category as the phone-number-wallet custody question flagged earlier.
+- **Email confirmation / proof-of-payment receipt** — good idea, explicitly out
+  of scope for this task. Requires a new email-sending integration, not something
+  today's pieces cover. Scoped as the next feature after this one lands.
 - Recipient balance display, EUR-equivalent shown, is a real and properly scoped
   next feature — not the sidebar fix. A recipient does accumulate a real USDC
   balance post-transfer. Decision: display it converted to EUR-equivalent, friendly
