@@ -6,6 +6,7 @@ import { webhooksRouter } from "./routes/webhooks";
 import { balancesRouter } from "./routes/balances";
 import { usersRouter } from "./routes/users";
 import { rateRouter } from "./routes/rate";
+import { fundingRouter } from "./routes/funding";
 
 const app = express();
 const port = process.env.PORT || 4000;
@@ -23,6 +24,7 @@ app.use("/webhooks", webhooksRouter);
 app.use("/balances", balancesRouter);
 app.use("/users", usersRouter);
 app.use("/rate", rateRouter);
+app.use("/funding", fundingRouter);
 
 app.listen(port, () => {
   console.log(`API listening on port ${port}`);

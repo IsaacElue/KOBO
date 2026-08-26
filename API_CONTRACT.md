@@ -80,69 +80,151 @@ same open-endpoint caveat as everything else (see "Still open" #6).
 
 ---
 
-## `POST /transfers`
+## `POST /funding` (NEW this sync)
 
-Creates a transfer row and a Transak widget session for it in one call.
+Tops up the **sender's own** real balance — not a send to anyone. Creates a
+Transak widget session, same underlying mechanics as the old per-transfer session
+creation (`createWidgetSession`, reused unchanged), except the destination wallet
+is **Kobo's own pooled backend wallet** (`backendWallet.publicKey`,
+`backend/src/lib/solana.ts`), not a recipient's. Real USDC that lands there via
+this flow is credited to the sender's row in `balances` once
+`POST /webhooks/onramp` confirms it — see that section below.
 
-**Request body** (backend/src/routes/transfers.ts):
+**Request body** (`backend/src/routes/funding.ts`):
 ```json
-{
-  "sender_id": "uuid",
-  "recipient_id": "uuid",
-  "amount_eur": 250
-}
+{ "sender_id": "uuid", "amount_eur": 100 }
 ```
-- All three fields required; `amount_eur` must be a JS `number` (not a numeric string).
-- `sender_id` / `recipient_id` must be existing `uuid` rows in `users` — see Data
-  model below. Only `recipient_id` is actually looked up server-side; an invalid
-  `sender_id` will fail at the DB foreign-key constraint on insert.
+- Both fields required; `amount_eur` must be a JS `number` and `> 0`.
+- `sender_id` must be an existing `uuid` row in `users` (any role — the route
+  doesn't check `role === "sender"`, same laxness `POST /transfers` already had
+  around sender/recipient roles).
 
 **Success response — `201`:**
 ```json
 {
   "id": "uuid",
   "sender_id": "uuid",
-  "recipient_id": "uuid",
-  "amount_eur": 250,
-  "amount_usdc": 270,
+  "amount_eur": 100,
+  "amount_usdc": 116.428667,
   "status": "pending",
-  "onramp_reference": null,
-  "solana_tx_signature": null,
-  "failure_reason": null,
-  "retry_count": 0,
   "onramp_session_id": "string | null",
-  "created_at": "2026-08-25T12:00:00.000Z",
-  "onramp": {
-    "sessionId": "string | null",
-    "widgetUrl": "https://global-stg.transak.com/...(single-use, valid 5 min)"
-  }
+  "onramp_reference": null,
+  "failure_reason": null,
+  "created_at": "2026-08-26T12:00:00.000Z",
+  "onramp": { "sessionId": "string | null", "widgetUrl": "https://global-stg.transak.com/...(single-use, valid 5 min)" }
 }
 ```
-- The whole `transfers` row is spread into the response (real column names above),
-  plus a nested `onramp` object with exactly two fields: `sessionId`, `widgetUrl`.
-- `amount_usdc` is computed server-side using a **placeholder rate (1.08)** —
-  explicitly marked in the code as temporary, to be replaced by a real quoted rate
-  from the on-ramp integration.
-- `onramp_reference` is **`null` at creation time.** It is only populated later, by
-  the `/webhooks/onramp` handler, once Transak's `ORDER_COMPLETED` webhook fires
-  (backend sets it to Transak's own webhook order id).
+The whole `funding_requests` row (new table — see Data model below), plus the same
+`onramp: { sessionId, widgetUrl }` shape `POST /transfers` used to return.
+`amount_usdc` is computed with the **real live market rate**
+(`getMarketRate("EUR")`, `backend/src/lib/transak.ts` — the same function
+`GET /rate` uses), not a placeholder — this is a fresh code path with no old
+convention to preserve, and the figure directly determines how much gets credited
+to the sender's balance once confirmed, so accuracy matters here more than it did
+for the old display-only `POST /transfers` estimate (see "Still open" #9, still
+unresolved for the parts of the system it was already scoped to).
 
 **Error responses:**
-- `400` — `{ "error": "sender_id, recipient_id, and numeric amount_eur are required" }`
-- `400` — `{ "error": "sender_id must be a valid UUID" }` / `{ "error": "recipient_id must be a valid UUID" }`
-  — malformed id, checked before querying Supabase (fixed 2026-08-25, same pattern as
-  `GET /transfers/:id`).
-- `400` — `{ "error": "Sender not found" }` / `{ "error": "Recipient not found" }` —
-  well-formed UUID with no matching row in `users`. Note this is `400`, not `404` —
-  a nonexistent sender/recipient is treated as a bad request here, not a missing
-  resource (was `404` for recipient before this fix; now consistent for both).
+- `400` — `{ "error": "sender_id and numeric amount_eur are required" }`
+- `400` — `{ "error": "amount_eur must be positive" }`
+- `400` — `{ "error": "sender_id must be a valid UUID" }`
+- `400` — `{ "error": "Sender not found" }`
+- `502` — `{ "error": "Failed to fetch conversion rate: <message>" }`
 - `502` — `{ "error": "Failed to create Transak widget session: <message>" }` — the
-  transfer row is deleted server-side before this is returned (no orphaned rows).
+  `funding_requests` row is deleted server-side before this is returned (no
+  orphaned rows), same pattern `POST /transfers` used to follow.
 - `500` — `{ "error": "<supabase error message>" }`
+
+## `POST /transfers` — **behavior changed this sync, no longer creates a Transak session**
+
+**Breaking change from the shape documented in every prior sync of this file:**
+this endpoint no longer ever returns an `onramp` object, and no longer ever
+returns `201`. It's now balance-checked and, when funded, **instant** — see
+`KOBO_BUILD_PLAN.md` "Sender-side balance — SUPERSEDED" for the product decision
+behind this. **No parallel/legacy per-transfer Transak-session path was kept** —
+if you want to add funds, that's `POST /funding` now, a separate step before
+sending, not something `POST /transfers` falls back to.
+
+**Request body unchanged** (`backend/src/routes/transfers.ts`):
+```json
+{ "sender_id": "uuid", "recipient_id": "uuid", "amount_eur": 250 }
+```
+Same three required fields as before. New: `amount_eur` must also be `> 0` (not
+previously enforced — added because this number now directly drives a real ledger
+debit, where it wasn't before).
+
+**New flow, in order:**
+1. Validate inputs, look up sender (existence only) and recipient (existence +
+   `wallet_address`) — unchanged from before.
+2. Compute `amount_usdc` from the **real live rate** (`getMarketRate("EUR")`,
+   same function `POST /funding` and `GET /rate` use) — no longer the old 1.08
+   placeholder; that constant was deleted, it's dead code now (nothing calls the
+   old per-transfer Transak path anymore).
+3. Check the sender's real balance (`debitBalanceIfSufficient`,
+   `backend/src/lib/balances.ts`) — **debits atomically as part of the check**: a
+   conditional `UPDATE ... WHERE usdc_balance >= amount` guards against a
+   concurrent debit racing the balance negative between the read and the write
+   (see that file's doc comment for the one race it does *not* cover, matching
+   the same demo-scale rigor `creditBalance`'s read-then-upsert already had).
+4. **Insufficient balance → `400`, no `transfers` row created at all:**
+   ```json
+   { "error": "Insufficient balance — add funds before sending", "code": "INSUFFICIENT_BALANCE", "required_usdc": 232.906416 }
+   ```
+   `code: "INSUFFICIENT_BALANCE"` is the machine-readable signal for the frontend
+   to prompt Add Funds — a plain string match on `error` was never a stable
+   contract, this is. `required_usdc` is the exact amount that would have been
+   needed, at the real rate quoted for this attempt.
+5. **Sufficient → instant send**, reusing the *exact* Solana
+   send/confirm/retry/idempotency/failure-handling logic `POST /webhooks/onramp`
+   already used — extracted verbatim into `settleTransfer()`
+   (`backend/src/lib/settlement.ts`) so both callers share one implementation,
+   not two forks of it. No Transak session, no async wait for a webhook — the
+   full send-and-confirm sequence (real Solana broadcast, up to 3 retries, up to
+   a 45s confirmation poll) runs **synchronously inside this request**, exactly
+   as it always has inside `POST /webhooks/onramp` (that handler already blocked
+   on the same sequence before responding to Transak — this isn't new latency
+   behavior, just the same latency now also happening on this endpoint).
+6. **On failure** (`settleTransfer`'s result has `status: "failed"` in its body):
+   the debited amount is credited straight back to the sender
+   (`creditBalance`) before responding — every `failed` outcome happens either
+   before a successful broadcast or after the chain itself rejected the
+   transaction, so no funds ever actually left Kobo's wallet either way, making
+   the refund always correct. (A `sent`/timeout or `confirmed` result is never
+   refunded — the send may still land, or already has.) **This refund logic
+   wasn't explicitly spelled out in the task that created it, but follows
+   directly from "a failure must be visible and reported, never silently
+   swallowed" — a permanent debit with nothing to show for it on a failed send
+   would itself be a silent loss, not just an unreported one.**
+
+**Response — status code and body are now exactly whatever `settleTransfer`
+produced** (same shape `GET /transfers/:id` already returns — no more `onramp`
+field, ever):
+- `200` — the `confirmed` transfer row (real `solana_tx_signature` set).
+- `202` — the `sent` transfer row — confirmation timed out (not a failure, the tx
+  may still land; check `explorer.solana.com/?cluster=devnet`).
+- `422` — the `failed` transfer row — a non-retryable send error (bad recipient
+  address, backend wallet's *on-chain* USDC insufficient — a distinct thing from
+  the sender's *ledger* balance in `balances`, see the note under Data model).
+- `502` — the `failed` transfer row — retries exhausted, or the confirmation poll
+  itself errored.
+- `400` — see step 4 above (insufficient ledger balance; also the pre-existing
+  `sender_id`/`recipient_id`/`amount_eur` validation errors, unchanged).
+- `500` — `{ "error": "<message>" }` — unexpected Supabase/infra error.
+
+**Known integration gap, flagged, not fixed here (backend-only task):** the
+frontend's `lib/kobo/api.ts` `createTransfer()` still types this response as
+`CreateTransferResponse & { onramp: OnrampSession }` and
+`components/kobo/kobo-app.tsx`'s `applySession()` unconditionally checks
+`session.widgetUrl`, showing "Couldn't start checkout" and resetting to the form
+if it's falsy — which it now always will be, since `onramp` is never returned
+anymore. **The frontend has not been touched by this sync** (this was an
+explicitly backend-only task); wiring it to the new instant/balance-checked
+contract, plus a real Add Funds UI calling `POST /funding`, is real, necessary,
+separately-scoped follow-up work — not guessed at or silently patched here.
 
 ## `GET /transfers/:id`
 
-Poll this for live status. **Now called by the frontend** — see Resolved #6 below.
+Unchanged. Poll this for live status.
 
 **Response — `200`:**
 ```json
@@ -159,30 +241,95 @@ Poll this for live status. **Now called by the frontend** — see Resolved #6 be
   "created_at": "2026-08-25T12:00:00.000Z"
 }
 ```
-`400` → `{ "error": "id must be a valid UUID" }` if `:id` isn't a well-formed UUID
-(checked before querying Supabase — previously this leaked a raw Postgres error as a
-500, fixed 2026-08-25).
+`400` → `{ "error": "id must be a valid UUID" }` if `:id` isn't a well-formed UUID.
 `404` → `{ "error": "Transfer not found" }` if it's a well-formed UUID with no matching row.
+For a transfer created via the new instant-send path, `onramp_session_id` and
+`onramp_reference` are always `null` — nothing about that transfer ever touched
+Transak.
 
-## `POST /webhooks/onramp`
+## `POST /webhooks/onramp` — extended this sync to also handle funding
 
 Transak → backend only. Not called by the frontend. Verifies a JWT-signed payload
-(signed with the partner access token), and only runs the transfer pipeline on a
-decoded `eventID === "ORDER_COMPLETED"` — all other lifecycle events are ack'd `200`
-and ignored. Drives `pending → onramp_complete → sent → confirmed`, or `failed` with
-a `failure_reason`, via retried Solana sends (max 3 attempts, exponential backoff)
-and a bounded (45s) confirmation poll. Full detail in `backend/src/routes/webhooks.ts`
-— documented here for context since it's the actual source of truth for status
-transitions the frontend needs to poll for.
+(signed with the partner access token) **exactly as before, unchanged** — this
+sync only extended what happens *after* verification, never touched
+`verifyWebhook()` itself. Only runs a pipeline on a decoded
+`eventID === "ORDER_COMPLETED"` — all other lifecycle events are ack'd `200` and
+ignored, unchanged.
+
+**Routing (new):** the payload's `webhookData.partnerOrderId` decides which
+pipeline runs:
+- Starts with `"fund_"` → **funding pipeline** (new): strip the prefix to get
+  a `funding_requests.id`, credit the sender's balance. No Solana interaction at
+  all — the real USDC already landed on-chain in Kobo's wallet via Transak's own
+  settlement; this just updates Kobo's internal ledger to reflect whose portion
+  of the pool it is.
+- Anything else (or absent, falling back to matching `onramp_session_id` — tried
+  against `funding_requests` first, then `transfers`, since a collision between
+  the two tables' session ids is effectively impossible) → **transfer pipeline**
+  (unchanged in mechanics, `settleTransfer()` now doing what used to be written
+  inline in this file).
+
+**Funding pipeline, in order:**
+1. Look up the `funding_requests` row. `404` if no match.
+2. `409` if `status !== "pending"` (already processed) — same idempotency
+   guard-rail pattern `POST /webhooks/onramp`'s transfer path already used.
+3. `422` if `amount_usdc` is unset.
+4. **Claims the row first**, via a conditional update
+   (`.eq("status", "pending")`) — this is deliberately different from the
+   transfer path's idempotency approach (which relies on `solana_tx_signature`
+   being a natural once-only marker). Crediting a balance has no equivalent
+   natural idempotency key — doing it twice really does credit twice — so the
+   row's own status transition is what a retried/duplicate webhook call gets
+   blocked by. If the claim fails (0 rows matched — another call already
+   claimed it), returns `409`.
+5. Credits the sender's balance (`creditBalance`). If this fails after the claim
+   already succeeded, the request is marked `failed` with the error as
+   `failure_reason` rather than left stuck `confirmed` with nothing actually
+   credited — same "visible and reported, never silently swallowed" principle
+   the transfer pipeline's failure handling already followed.
+6. Returns `200` with the updated `funding_requests` row.
+
+**Transfer pipeline:** unchanged behavior, still drives
+`pending → onramp_complete → sent → confirmed`, or `failed` with a
+`failure_reason`, via `settleTransfer()`'s retried Solana sends (max 3 attempts,
+exponential backoff) and bounded (45s) confirmation poll — the exact same code
+now also used by `POST /transfers`' instant-send path. **This pipeline is
+currently unreachable through any live code path** — `POST /transfers` no longer
+ever creates a `transfers` row with a Transak session for this to later confirm
+(see that section above). Left fully intact rather than deleted: it's still
+correct, harmless, and would apply again if a `transfers` row from before this
+sync were ever replayed, or if a future decision reintroduces some
+Transak-backed transfer flow. Not a currently-exercised path, worth knowing that
+if debugging.
 
 ## `GET /balances/:userId`
 
 ```json
 { "usdc_balance": 0, "updated_at": null }
 ```
-Returns zeros if no row exists yet (never a 404). **This is a recipient's on-chain
-USDC balance**, written only after a transfer confirms — not a sender's fiat balance.
-See "Still open" #8 below.
+Returns zeros if no row exists yet (never a 404). **Route itself is completely
+unchanged this sync** — it was already generic (`select ... where user_id = :id`,
+no role filtering ever existed in the query). What changed is what's actually in
+the table: previously only ever written for a *recipient's* post-transfer credit,
+so it always read `0`/`null` for a sender. Now `POST /funding`'s webhook-confirm
+step (see above) also writes a sender's row, and `POST /transfers`' instant-send
+path debits/credits/refunds it — so this now correctly returns real,
+moving balances for senders too, not just recipients. **"Still open" #8 (below)
+is resolved** by this — see that entry.
+
+**Distinct from the backend wallet's real on-chain USDC balance.** `balances`
+is Kobo's own ledger — who, among everyone with a `balances` row, owns what
+share of the pool sitting in `backendWallet` (`lib/solana.ts`). A sender's ledger
+balance can be `>` what's actually on-chain in the pool right now (e.g. if the
+pool hasn't itself been topped up with enough real devnet USDC yet) — in that
+case `POST /transfers`' instant-send still passes the *ledger* check (step 3
+above) but the real Solana send then fails with `NonRetryableTransferError:
+Insufficient backend wallet USDC balance...` (`sendUsdcTransfer`,
+`lib/solana.ts`), landing as a `422` with `status: "failed"` — refunded per the
+`POST /transfers` failure-handling above, so the sender's ledger is left
+correct even though the *pool itself* was short. Verified live this sync: the
+pool had ~21.6 real USDC on-chain; a real instant send well within that
+succeeded end to end (real `solana_tx_signature`, `finalized` on-chain).
 
 ## `GET /rate`
 
@@ -247,31 +394,65 @@ balances
   user_id       uuid FK -> users.id, unique
   usdc_balance  numeric(18,6) default 0
   updated_at    timestamptz
+  -- No schema change needed to generalize this beyond recipient-only — the FK
+  -- and unique(user_id) already worked for any role. Only the application code
+  -- previously only ever wrote a recipient's row; POST /funding's webhook-confirm
+  -- and POST /transfers' instant-send now also read/write a sender's row here.
+
+funding_requests   -- NEW this sync (20260826150000_add_funding_requests.sql)
+  id                 uuid PK
+  sender_id          uuid FK -> users.id
+  amount_eur         numeric(18,2)
+  amount_usdc        numeric(18,6) | null
+  status             text  check in ('pending','confirmed','failed')
+  onramp_session_id  text | null
+  onramp_reference   text | null
+  failure_reason     text | null
+  created_at         timestamptz
+  -- Deliberately its own table, not an overload of `transfers` (a funding
+  -- request has no recipient_id and never triggers a Solana send from this
+  -- backend — the real settlement is entirely Transak's, landing USDC directly
+  -- in Kobo's pooled wallet; this table just tracks the session and, once
+  -- POST /webhooks/onramp confirms it, credits `balances`).
 ```
 
-**Status enum, confirmed exact:** `pending | onramp_complete | sent | confirmed | failed`
+**Status enums, confirmed exact:**
+- `transfers.status`: `pending | onramp_complete | sent | confirmed | failed`
+- `funding_requests.status`: `pending | confirmed | failed` (no `onramp_complete`/
+  `sent` — there's no Solana send in this table's lifecycle at all, just a
+  Transak session and a ledger credit on confirmation)
 
 ---
 
 ## Env vars
 
-**Backend** (`backend/.env.example`):
+**Backend** (`backend/.env.example` — refreshed this sync, was stale):
 ```
 SUPABASE_URL=
 SUPABASE_SERVICE_ROLE_KEY=
+SUPABASE_DB_URL=                   # optional, NEW this sync — direct postgres:// connection,
+                                    # only needed to run scripts/run-migration.ts (the Supabase
+                                    # CLI needs an authenticated login and/or local Docker,
+                                    # neither reliably available in every environment)
 BACKEND_WALLET_KEYPAIR_PATH=       # optional, defaults to backend/keys/backend-wallet.json
 SOLANA_RPC_URL=                    # optional, defaults to public devnet
 TRANSAK_API_KEY=
 TRANSAK_API_SECRET=
 TRANSAK_ENV=staging
 TRANSAK_REFERRER_DOMAIN=           # http://localhost:3000 for dev — see Resolved #2
+FRONTEND_ORIGIN=                   # optional, defaults to http://localhost:3000 — CORS origin
 ```
 
 **Frontend** (`frontend/.env.example` — was silently gitignored and never actually
-committed until this sync, see Resolved #5):
+committed until Resolved #5; missing three vars added since, now current):
 ```
-NEXT_PUBLIC_KOBO_API_URL=          # unset => frontend runs entirely on its own mock layer
+NEXT_PUBLIC_KOBO_API_URL=                          # unset => frontend runs entirely on its own mock layer
+NEXT_PUBLIC_KOBO_SENDER_ID=                         # real users.id of the app's one demo sender
+NEXT_PUBLIC_KOBO_DEFAULT_RECIPIENT_ID=              # real users.id of the default/pre-selected recipient
+NEXT_PUBLIC_KOBO_DEFAULT_RECIPIENT_WALLET=          # that recipient's real wallet_address
 ```
+All three `NEXT_PUBLIC_KOBO_*` id/wallet vars are ignored in mock mode and required
+in real mode — see their own sections above/below for what each backs.
 
 ---
 
@@ -529,6 +710,53 @@ File refs are all under `frontend/`:
     confirmed a real transfer using **only** default page-load state —
     `POST /transfers` → `201`, both `sender_id` and `recipient_id` real uuids.
 
+12. **Real sender balance funding + instant send — SUPERSEDES the "sidebar stays
+    on mock data" decision from earlier today.** Full detail is under the new
+    `POST /funding` and rewritten `POST /transfers`/`POST /webhooks/onramp`
+    sections above — this entry is the summary/index. New: `POST /funding`
+    (real Transak session, lands USDC in Kobo's pooled `backendWallet`, credits
+    the sender's real `balances` row on webhook confirmation — new
+    `funding_requests` table). Changed: `POST /transfers` no longer creates a
+    Transak session at all — it's balance-checked first
+    (`debitBalanceIfSufficient`), `400`s with `code: "INSUFFICIENT_BALANCE"` if
+    short, otherwise sends **instantly** by reusing the exact
+    retry/idempotency/confirmation/failure-handling Solana logic
+    `POST /webhooks/onramp` already had — extracted verbatim into
+    `settleTransfer()` (`backend/src/lib/settlement.ts`), not forked, so both
+    callers share one implementation. A failed instant send refunds the
+    sender's ledger balance (not explicitly asked for, but a direct consequence
+    of "failure must be visible and reported, never silently swallowed" — an
+    un-refunded debit on a failed send is a silent loss, not just an unreported
+    one). `GET /balances/:userId` needed zero code changes to start returning
+    real sender data — it was already role-agnostic; only the write side was
+    recipient-only before. **Resolves "Still open" #8 below** (sender balance
+    now has a real backend concept) and **partially resolves #9** (the *new*
+    `POST /funding`/instant-send code paths use the real rate; the *old*
+    per-transfer placeholder-rate concern in #9 is moot now, since that code
+    path itself is gone — see #9's own update below for what's still actually
+    open there).
+    **Environment note:** `SUPABASE_DB_URL` (new, `.env.example`) and
+    `backend/scripts/run-migration.ts` (new) exist because this environment
+    had no way to run `supabase db push` (no CLI login, no local Docker) —
+    applies a single `.sql` file directly via a Postgres connection string,
+    used once to apply `supabase/migrations/20260826150000_add_funding_requests.sql`.
+    Verified live, in order: funded a real sender via a real Transak session
+    (confirmed through `backend/scripts/selftest-webhook-e2e.ts` — its own
+    isolated process avoids the Transak-access-token-invalidation collision a
+    hand-rolled version hit in an earlier sync), confirmed the real balance
+    increased (`0` → `116.428667`); sent instantly to a real recipient with
+    sufficient funds — real `solana_tx_signature`, confirmed `finalized`
+    on-chain, both balances moved by the exact expected amount; attempted a
+    send exceeding balance — clean `400`, `code: "INSUFFICIENT_BALANCE"`,
+    balance provably untouched. Also regression-checked existing validation
+    (bad recipient, negative amount, bad sender on `POST /funding`) — all still
+    behave correctly, none of it silently broken by the rewrite.
+    **Not done, flagged above, real follow-up work:** the frontend has not
+    been touched — `createTransfer()`'s response typing and
+    `kobo-app.tsx`'s `applySession()` still assume the old
+    always-returns-`onramp` contract, which is no longer true. See the
+    "Known integration gap" note under `POST /transfers` above.
+
 ## Still open
 
 These still need a decision — nothing below has been silently resolved or guessed at.
@@ -607,48 +835,68 @@ These still need a decision — nothing below has been silently resolved or gues
    (and now can target the frontend's real origin — confirmed as
    `http://localhost:3000` for dev, see Resolved #2).
 
-8. **No fiat/EUR balance source exists on the backend — confirmed, sidebar wiring
-   attempted and deliberately not done.** The only balance endpoint
-   (`GET /balances/:userId`) is a recipient's post-transfer USDC balance, not a
-   sender's spendable EUR balance. The frontend's sidebar "EUR/GBP/USD balance" is
-   pure mock data with nothing to back it once real accounts exist. Not clear
-   whether fiat balance tracking is even in scope for the backend — needs a
-   decision on whether/where that gets built.
+8. **RESOLVED — see "Resolved this sync" #12.** ~~No fiat/EUR balance source
+   exists on the backend.~~ Sender-side balance now has a real backend concept —
+   `POST /funding` + the balance-checked instant-send path in `POST /transfers`.
+   Left in place (not deleted) for history — the previous open question (and the
+   investigation that superseded it earlier the same day) is quoted below.
+   > **No fiat/EUR balance source exists on the backend — confirmed, sidebar
+   > wiring attempted and deliberately not done.** The only balance endpoint
+   > (`GET /balances/:userId`) is a recipient's post-transfer USDC balance, not a
+   > sender's spendable EUR balance. The frontend's sidebar "EUR/GBP/USD balance"
+   > is pure mock data with nothing to back it once real accounts exist. Not
+   > clear whether fiat balance tracking is even in scope for the backend —
+   > needs a decision on whether/where that gets built.
+   >
+   > **Investigated this sync, while attempting to wire the sidebar to
+   > `GET /balances/:userId` using `CURRENT_USER.id`** (the real sender uuid from
+   > the previous sync). Confirmed against `backend/src/routes/webhooks.ts`
+   > (lines ~203-221) and the live `balances` table: a row is written only for
+   > `transfer.recipient_id`, never `sender_id` — a sender never accumulates a
+   > `balances` row under the current data model. [...] **Decision: sidebar left
+   > on mock data for now**, pending a real product decision on what "sender
+   > balance" should even mean here [...]
+   The product decision landed later the same day —
+   `KOBO_BUILD_PLAN.md`'s "Sender-side balance — SUPERSEDED" — and this sync
+   built it. The sidebar display itself is still a separate, not-yet-done
+   frontend task (see "Resolved this sync" #12's "Known integration gap" note).
 
-   **Investigated this sync, while attempting to wire the sidebar to
-   `GET /balances/:userId` using `CURRENT_USER.id`** (the real sender uuid from the
-   previous sync). Confirmed against `backend/src/routes/webhooks.ts` (lines
-   ~203-221) and the live `balances` table: a row is written only for
-   `transfer.recipient_id`, never `sender_id` — a sender never accumulates a
-   `balances` row under the current data model. The two rows that exist in
-   `balances` right now both belong to recipient users. This means
-   `GET /balances/{CURRENT_USER.id}` doesn't just have a currency-label mismatch
-   (`usdc_balance` vs. the card's "EUR BALANCE") — it would return
-   `{ usdc_balance: 0, updated_at: null }` **permanently**, regardless of real
-   transfer activity, since nothing ever writes a row keyed to a sender's id.
-   Wiring the sidebar to it as literally specified would replace a plausible mock
-   balance with a real but frozen `€0.00` that never moves even after a confirmed
-   transfer — a visible regression for Demo Day, not a fix. **Decision: sidebar
-   left on mock data for now**, pending a real product decision on what "sender
-   balance" should even mean here — e.g. their EUR bank/SEPA balance (nothing in
-   this build touches that), vs. rescoping the sidebar to show something the
-   backend actually tracks. Not guessed at or silently patched around.
-
-9. **`amount_usdc` is computed with a placeholder rate (1.08), server-side —
-   frontend half resolved this sync, backend half still open.** Was: the frontend
-   independently showed its own random-jittered rate client-side. Now: the header
-   ticker and every UI element sharing that same `rate` state (transfer summary
-   panel, success dialog) show a real live rate from the new `GET /rate`
-   (Transak's actual public quote — see that section above). **Still open:**
-   `POST /transfers`' `amount_usdc` in `backend/src/routes/transfers.ts` still uses
-   its own hardcoded placeholder (1.08), a separate code path this sync didn't
-   touch — so the two numbers still won't match, and the gap may now read as
-   *more* visible (a real ~1.1-1.3-ish market rate quoted client-side vs. a fixed
-   1.08 used server-side) rather than less. Whoever owns `POST /transfers` should
-   have it call the same `getMarketRate()` (`backend/src/lib/transak.ts`) the new
-   `/rate` endpoint uses, so both sides quote off the same real number — not
-   guessed at or changed here since it's a different endpoint's behavior.
+9. **RESOLVED for `POST /transfers` and `POST /funding` — see "Resolved this
+   sync" #10 and #12.** ~~`amount_usdc` computed with a placeholder rate (1.08),
+   server-side.~~ Both the frontend (header ticker etc., #10) and now the backend
+   (`POST /transfers`, `POST /funding`, both via `getMarketRate()`, #12) quote
+   off the same real live rate — the old hardcoded `PLACEHOLDER_EUR_TO_USDC_RATE`
+   constant in `transfers.ts` is deleted, not just unused. Left in place for
+   history — the previous open question is quoted below.
+   > **`amount_usdc` is computed with a placeholder rate (1.08), server-side**,
+   > explicitly flagged in the code as temporary. The frontend independently
+   > shows its own live-ish random-jittered rate client-side for the "you send"
+   > quote. These two numbers will not match today. Whoever owns the real
+   > quoted-rate source (Transak's actual quote? a rates API?) needs to be
+   > decided — right now neither side has a real one.
 
 10. **RESOLVED.** ~~`frontend/` isn't on `main` yet.~~ `restructure-frontend-folder`
     and `main` have been merged both directions — the monorepo layout (`backend/` +
     `frontend/` both under `main`) is complete. See the header above.
+
+11. **Frontend not wired to real sender balance funding + instant send.** The
+    backend half landed this sync (`POST /funding`, rewritten `POST /transfers`,
+    extended `POST /webhooks/onramp` — see "Resolved this sync" #12) and was
+    explicitly scoped as backend-only; the frontend was deliberately not
+    touched. Concretely still needed:
+    - An Add Funds flow calling `POST /funding`, rendering the returned
+      `onramp.widgetUrl` the same way checkout already does today (the widget
+      mechanics are identical — same `createWidgetSession` shape — so this
+      should be able to reuse the existing embedded/redirect widget components
+      as-is, just pointed at a different endpoint/session).
+    - `lib/kobo/api.ts`'s `createTransfer()` and its `CreateTransferResponse`
+      type need to drop the now-always-absent `onramp` field, and
+      `components/kobo/kobo-app.tsx`'s `applySession()`/`startOnramp()` need to
+      stop assuming `POST /transfers` always returns a widget session to open —
+      it now sometimes settles instantly (`200`/`202`) and sometimes 400s with
+      `code: "INSUFFICIENT_BALANCE"`, needing a real "prompt Add Funds" UI path
+      that doesn't exist yet.
+    - Sidebar balance display ("Still open" #8, resolved on the backend side)
+      still needs its actual frontend wiring decided/built — this is the
+      dependency that was missing when that item was investigated and
+      deliberately left on mock data.

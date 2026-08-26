@@ -19,8 +19,9 @@
 ## 1. Where things actually stand (as of this doc)
 
 **Backend, real and tested:**
-- `POST /users`, `POST /transfers`, `GET /transfers/:id`, `GET /balances/:userId`, `POST /webhooks/onramp` (Transak JWT-verified)
-- Real Solana devnet settlement, real Transak staging sessions, retry/idempotency/failure handling
+- `POST /users`, `POST /transfers`, `GET /transfers/:id`, `GET /balances/:userId`, `POST /webhooks/onramp` (Transak JWT-verified), `GET /rate` (real Transak quote), `POST /funding` (NEW)
+- Real Solana devnet settlement, real Transak staging sessions, retry/idempotency/failure handling — now shared via `settleTransfer()` between the webhook path and `POST /transfers`' new instant-send path, not forked
+- Real sender balance funding + instant send: `POST /funding` tops up a sender's real balance via Transak (lands in Kobo's pooled wallet), `POST /transfers` is now balance-checked and sends instantly when funded (no more per-transfer Transak session) — see API_CONTRACT.md "Resolved this sync" #12 for full detail, verified live end to end (fund → real balance increase → instant send → real Solana tx → real balance debit/credit → insufficient-balance 400)
 - CORS, UUID validation on transfer endpoints
 
 **Frontend, real and tested:**
@@ -32,8 +33,12 @@
 **Still mock, in priority order:**
 1. ~~Sender identity~~ — RESOLVED. CURRENT_USER now carries a real users.id (role:
    "sender"), wired via NEXT_PUBLIC_KOBO_SENDER_ID. See API_CONTRACT.md for detail.
-2. Balance display — sidebar still reads local mock data. Investigated and
-   deliberately NOT wired — see "Decided" below.
+2. Balance display — sidebar still reads local mock data. Backend half now
+   exists (real sender balances, `GET /balances/:userId` returns real data for
+   senders too — see item on `POST /funding` above and API_CONTRACT.md "Still
+   open" #8, resolved). Frontend sidebar wiring itself is still not done — see
+   API_CONTRACT.md "Still open" #11 for the concrete remaining pieces (Add
+   Funds UI, `createTransfer()`'s response contract, sidebar display).
 3. No auth anywhere — any client can call any endpoint as any user
 4. ~~Wallet input placeholder copy~~ — RESOLVED, copy fixed to reflect Solana
    wallet-address-only input.

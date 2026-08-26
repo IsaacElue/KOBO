@@ -1,27 +1,81 @@
 import { Router } from "express";
 import { supabase } from "../lib/supabase";
-import { verifyWebhook } from "../lib/transak";
-import {
-  NonRetryableTransferError,
-  pollConfirmation,
-  sendUsdcTransfer,
-  sleep,
-} from "../lib/solana";
+import { verifyWebhook, type TransakWebhookData } from "../lib/transak";
+import { creditBalance } from "../lib/balances";
+import { settleTransfer } from "../lib/settlement";
 
 export const webhooksRouter = Router();
 
-const MAX_SEND_ATTEMPTS = 3;
+// Correlation ids for funding sessions (POST /funding) are prefixed so this
+// handler can tell "top up my own balance" apart from "send to a recipient"
+// without an extra lookup — a funding request has no recipient_id and never
+// triggers a Solana send from here, it only credits the sender's balance.
+const FUNDING_PREFIX = "fund_";
 
-async function markFailed(transferId: string, failureReason: string) {
-  console.error(`Transfer ${transferId} marked failed: ${failureReason}`);
-  const { data, error } = await supabase
-    .from("transfers")
-    .update({ status: "failed", failure_reason: failureReason })
-    .eq("id", transferId)
+/**
+ * Handles a confirmed *funding* webhook: credits the sender's balance.
+ * Claims the funding request first (conditional update, status must still be
+ * 'pending') before crediting — unlike a Solana send, crediting a balance has
+ * no natural idempotency key, so a retried/duplicate webhook call must be
+ * blocked from crediting twice by the row's own status transition instead.
+ */
+async function handleFundingWebhook(
+  fundingRequestId: string,
+  webhookData: TransakWebhookData
+): Promise<{ status: number; body: unknown }> {
+  const { data: fundingRequest, error: fetchError } = await supabase
+    .from("funding_requests")
+    .select("id, sender_id, amount_usdc, status")
+    .eq("id", fundingRequestId)
+    .maybeSingle();
+
+  if (fetchError) {
+    return { status: 500, body: { error: fetchError.message } };
+  }
+  if (!fundingRequest) {
+    return { status: 404, body: { error: "No funding request matches this webhook's partnerOrderId/session" } };
+  }
+  if (fundingRequest.status !== "pending") {
+    return {
+      status: 409,
+      body: { error: `Funding request is in status '${fundingRequest.status}', expected 'pending'` },
+    };
+  }
+  if (!fundingRequest.amount_usdc) {
+    return { status: 422, body: { error: "Funding request has no amount_usdc set" } };
+  }
+
+  const { data: claimed, error: claimError } = await supabase
+    .from("funding_requests")
+    .update({ status: "confirmed", onramp_reference: webhookData.id ?? null })
+    .eq("id", fundingRequestId)
+    .eq("status", "pending")
     .select()
-    .single();
-  if (error) throw error;
-  return data;
+    .maybeSingle();
+
+  if (claimError) {
+    return { status: 500, body: { error: claimError.message } };
+  }
+  if (!claimed) {
+    return { status: 409, body: { error: "Funding request already processed (concurrent webhook)" } };
+  }
+
+  try {
+    await creditBalance(fundingRequest.sender_id, fundingRequest.amount_usdc);
+  } catch (err) {
+    // Claimed but the credit itself failed — don't leave it silently stuck
+    // 'confirmed' with nothing actually credited. Visible and reported, not
+    // swallowed, same principle as a failed transfer.
+    const message = err instanceof Error ? err.message : String(err);
+    console.error(`Funding request ${fundingRequestId} claimed but balance credit failed: ${message}`);
+    await supabase
+      .from("funding_requests")
+      .update({ status: "failed", failure_reason: message })
+      .eq("id", fundingRequestId);
+    return { status: 500, body: { error: message } };
+  }
+
+  return { status: 200, body: claimed };
 }
 
 // Real Transak on-ramp completion callback. The payload's `data` field is a
@@ -47,25 +101,51 @@ webhooksRouter.post("/onramp", async (req, res) => {
     return res.status(200).json({ received: true, eventID });
   }
 
-  // partnerOrderId is the transfer id we passed at session-creation time —
-  // the most direct correlation. Fall back to matching our stored
+  // partnerOrderId is the transfer/funding id we passed at session-creation
+  // time — the most direct correlation. Fall back to matching our stored
   // onramp_session_id against Transak's order id if partnerOrderId wasn't
   // echoed back (unconfirmed against a live payload — see verifyWebhook doc
   // comment in lib/transak.ts).
-  const transfer_id = webhookData.partnerOrderId ?? null;
-  const onramp_session_id = webhookData.id ?? null;
+  const partnerOrderId: string | null = webhookData.partnerOrderId ?? null;
+  const onrampSessionId: string | null = webhookData.id ?? null;
 
-  if (!transfer_id && !onramp_session_id) {
+  if (!partnerOrderId && !onrampSessionId) {
     return res.status(400).json({ error: "Webhook payload has no partnerOrderId or order id to match against" });
+  }
+
+  if (partnerOrderId?.startsWith(FUNDING_PREFIX)) {
+    const fundingRequestId = partnerOrderId.slice(FUNDING_PREFIX.length);
+    const result = await handleFundingWebhook(fundingRequestId, webhookData);
+    return res.status(result.status).json(result.body);
+  }
+
+  if (!partnerOrderId) {
+    // No partnerOrderId echoed back — check whether this session belongs to
+    // a pending funding request before assuming it's a transfer. Collision
+    // risk between the two tables' onramp_session_id values is effectively
+    // zero: each is a unique Transak session id, generated once, for
+    // exactly one purpose.
+    const { data: fundingBySession, error: fundingLookupError } = await supabase
+      .from("funding_requests")
+      .select("id")
+      .eq("onramp_session_id", onrampSessionId)
+      .maybeSingle();
+    if (fundingLookupError) {
+      return res.status(500).json({ error: fundingLookupError.message });
+    }
+    if (fundingBySession) {
+      const result = await handleFundingWebhook(fundingBySession.id, webhookData);
+      return res.status(result.status).json(result.body);
+    }
   }
 
   const lookupQuery = supabase
     .from("transfers")
     .select("id, recipient_id, amount_usdc, status, solana_tx_signature, retry_count");
 
-  const { data: transfer, error: fetchError } = transfer_id
-    ? await lookupQuery.eq("id", transfer_id).maybeSingle()
-    : await lookupQuery.eq("onramp_session_id", onramp_session_id).maybeSingle();
+  const { data: transfer, error: fetchError } = partnerOrderId
+    ? await lookupQuery.eq("id", partnerOrderId).maybeSingle()
+    : await lookupQuery.eq("onramp_session_id", onrampSessionId).maybeSingle();
 
   if (fetchError) {
     return res.status(500).json({ error: fetchError.message });
@@ -84,19 +164,6 @@ webhooksRouter.post("/onramp", async (req, res) => {
 
   const transferId = transfer.id;
 
-  const { data: recipient, error: recipientError } = await supabase
-    .from("users")
-    .select("id, wallet_address")
-    .eq("id", transfer.recipient_id)
-    .maybeSingle();
-
-  if (recipientError) {
-    return res.status(500).json({ error: recipientError.message });
-  }
-  if (!recipient) {
-    return res.status(404).json({ error: "Recipient not found" });
-  }
-
   const { error: onrampUpdateError } = await supabase
     .from("transfers")
     .update({ status: "onramp_complete", onramp_reference: webhookData.id ?? null })
@@ -106,127 +173,6 @@ webhooksRouter.post("/onramp", async (req, res) => {
     return res.status(500).json({ error: onrampUpdateError.message });
   }
 
-  // Idempotency guard — the critical piece against double-sends. If a
-  // signature is already on the row (e.g. a prior attempt broadcast the
-  // transaction but a later step in this handler failed), don't send
-  // again, just proceed to confirm/finalize.
-  let signature = transfer.solana_tx_signature ?? null;
-
-  if (!signature) {
-    let lastError: Error | null = null;
-
-    for (let attempt = 1; attempt <= MAX_SEND_ATTEMPTS; attempt++) {
-      try {
-        signature = await sendUsdcTransfer(recipient.wallet_address, transfer.amount_usdc);
-        break;
-      } catch (err) {
-        if (err instanceof NonRetryableTransferError) {
-          const failed = await markFailed(transferId, err.message);
-          return res.status(422).json(failed);
-        }
-
-        lastError = err instanceof Error ? err : new Error(String(err));
-
-        const { error: retryCountError } = await supabase
-          .from("transfers")
-          .update({ retry_count: attempt })
-          .eq("id", transferId);
-        if (retryCountError) {
-          return res.status(500).json({ error: retryCountError.message });
-        }
-
-        if (attempt < MAX_SEND_ATTEMPTS) {
-          const backoffMs = 1000 * 2 ** (attempt - 1); // 1s, 2s
-          console.warn(
-            `Transient Solana send error on attempt ${attempt}/${MAX_SEND_ATTEMPTS} for transfer ${transferId}: ${lastError.message}. Retrying in ${backoffMs}ms.`
-          );
-          await sleep(backoffMs);
-        }
-      }
-    }
-
-    if (!signature) {
-      const failed = await markFailed(
-        transferId,
-        `Transient Solana error, exhausted ${MAX_SEND_ATTEMPTS} attempts: ${lastError?.message}`
-      );
-      return res.status(502).json(failed);
-    }
-  }
-
-  const { error: sentUpdateError } = await supabase
-    .from("transfers")
-    .update({ status: "sent", solana_tx_signature: signature })
-    .eq("id", transferId);
-
-  if (sentUpdateError) {
-    return res.status(500).json({ error: sentUpdateError.message });
-  }
-
-  let confirmResult: "confirmed" | "timeout";
-  try {
-    confirmResult = await pollConfirmation(signature, 45000);
-  } catch (err) {
-    const message =
-      err instanceof Error ? err.message : `Confirmation failed: ${err}`;
-    const failed = await markFailed(transferId, message);
-    return res.status(502).json(failed);
-  }
-
-  if (confirmResult === "timeout") {
-    console.warn(
-      `Transfer ${transferId} signature ${signature} not confirmed within timeout. ` +
-        "Leaving status 'sent' — the transaction may still land; check explorer.solana.com/?cluster=devnet."
-    );
-    const { data: sent, error: sentFetchError } = await supabase
-      .from("transfers")
-      .select()
-      .eq("id", transferId)
-      .single();
-    if (sentFetchError) {
-      return res.status(500).json({ error: sentFetchError.message });
-    }
-    return res.status(202).json(sent);
-  }
-
-  const { data: confirmed, error: confirmUpdateError } = await supabase
-    .from("transfers")
-    .update({ status: "confirmed" })
-    .eq("id", transferId)
-    .select()
-    .single();
-
-  if (confirmUpdateError) {
-    return res.status(500).json({ error: confirmUpdateError.message });
-  }
-
-  // Chain is confirmed at this point — balances table is our display layer
-  // from here, not re-derived from Solana on every read.
-  const { data: existingBalance, error: balanceFetchError } = await supabase
-    .from("balances")
-    .select("id, usdc_balance")
-    .eq("user_id", transfer.recipient_id)
-    .maybeSingle();
-
-  if (balanceFetchError) {
-    return res.status(500).json({ error: balanceFetchError.message });
-  }
-
-  const newBalance = (existingBalance?.usdc_balance ?? 0) + transfer.amount_usdc;
-
-  const { error: balanceUpsertError } = await supabase.from("balances").upsert(
-    {
-      ...(existingBalance ? { id: existingBalance.id } : {}),
-      user_id: transfer.recipient_id,
-      usdc_balance: newBalance,
-      updated_at: new Date().toISOString(),
-    },
-    { onConflict: "user_id" }
-  );
-
-  if (balanceUpsertError) {
-    return res.status(500).json({ error: balanceUpsertError.message });
-  }
-
-  return res.json(confirmed);
+  const result = await settleTransfer(transfer);
+  return res.status(result.httpStatus).json(result.body);
 });

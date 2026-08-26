@@ -1,16 +1,19 @@
 import { Router } from "express";
 import { supabase } from "../lib/supabase";
-import { createWidgetSession } from "../lib/transak";
+import { getMarketRate } from "../lib/transak";
+import { creditBalance, debitBalanceIfSufficient } from "../lib/balances";
+import { settleTransfer } from "../lib/settlement";
 
 export const transfersRouter = Router();
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-// PLACEHOLDER conversion rate — Person A's on-ramp integration will supply
-// the real quoted rate per transfer. Swap this out before launch.
-const PLACEHOLDER_EUR_TO_USDC_RATE = 1.08;
-
+// No parallel/legacy per-send Transak path is kept alongside this — every
+// send is now balance-checked and, if funded, instant. Insufficient balance
+// is a 400 telling the frontend to prompt Add Funds (POST /funding), not a
+// fallback into a per-transfer Transak session. See KOBO_BUILD_PLAN.md
+// "Sender-side balance — SUPERSEDED".
 transfersRouter.post("/", async (req, res) => {
   const { sender_id, recipient_id, amount_eur } = req.body ?? {};
 
@@ -19,7 +22,9 @@ transfersRouter.post("/", async (req, res) => {
       error: "sender_id, recipient_id, and numeric amount_eur are required",
     });
   }
-
+  if (amount_eur <= 0) {
+    return res.status(400).json({ error: "amount_eur must be positive" });
+  }
   if (!UUID_RE.test(sender_id)) {
     return res.status(400).json({ error: "sender_id must be a valid UUID" });
   }
@@ -53,9 +58,24 @@ transfersRouter.post("/", async (req, res) => {
     return res.status(400).json({ error: "Recipient not found" });
   }
 
-  const amount_usdc = Number(
-    (amount_eur * PLACEHOLDER_EUR_TO_USDC_RATE).toFixed(6)
-  );
+  let rate: number;
+  try {
+    rate = await getMarketRate("EUR");
+  } catch (err) {
+    return res.status(502).json({
+      error: `Failed to fetch conversion rate: ${(err as Error).message}`,
+    });
+  }
+  const amount_usdc = Number((amount_eur * rate).toFixed(6));
+
+  const debited = await debitBalanceIfSufficient(sender_id, amount_usdc);
+  if (!debited) {
+    return res.status(400).json({
+      error: "Insufficient balance — add funds before sending",
+      code: "INSUFFICIENT_BALANCE",
+      required_usdc: amount_usdc,
+    });
+  }
 
   const { data: transfer, error: insertError } = await supabase
     .from("transfers")
@@ -70,44 +90,25 @@ transfersRouter.post("/", async (req, res) => {
     .single();
 
   if (insertError) {
+    // Balance already debited — refund immediately, since nothing
+    // downstream was ever created to track this attempt.
+    await creditBalance(sender_id, amount_usdc);
     return res.status(500).json({ error: insertError.message });
   }
 
-  let onramp: { sessionId: string | null; widgetUrl: string };
-  try {
-    onramp = await createWidgetSession({
-      amountEur: amount_eur,
-      recipientWalletAddress: recipient.wallet_address,
-      partnerOrderId: transfer.id,
-      userIp: req.ip || "127.0.0.1",
-    });
-  } catch (err) {
-    // Session creation failed — don't leave a transfer row with no way to
-    // ever fund it. Roll back rather than leaving orphaned 'pending' state.
-    await supabase.from("transfers").delete().eq("id", transfer.id);
-    return res.status(502).json({
-      error: `Failed to create Transak widget session: ${(err as Error).message}`,
-    });
+  const result = await settleTransfer(transfer);
+
+  const resultStatus = (result.body as { status?: string } | null)?.status;
+  if (resultStatus === "failed") {
+    // Every 'failed' outcome from settleTransfer happens either before a
+    // successful broadcast or after the chain itself rejected the
+    // transaction — no funds ever moved either way, so refunding here is
+    // always correct. ('sent'/timeout and 'confirmed' are never refunded:
+    // the send may still land, or already has.)
+    await creditBalance(sender_id, amount_usdc);
   }
 
-  const { data: updated, error: updateError } = await supabase
-    .from("transfers")
-    .update({ onramp_session_id: onramp.sessionId })
-    .eq("id", transfer.id)
-    .select()
-    .single();
-
-  if (updateError) {
-    return res.status(500).json({ error: updateError.message });
-  }
-
-  return res.status(201).json({
-    ...updated,
-    onramp: {
-      sessionId: onramp.sessionId,
-      widgetUrl: onramp.widgetUrl,
-    },
-  });
+  return res.status(result.httpStatus).json(result.body);
 });
 
 transfersRouter.get("/:id", async (req, res) => {
