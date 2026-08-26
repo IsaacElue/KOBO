@@ -45,7 +45,7 @@ export function AddRecipientDialog({
     e.preventDefault();
     const trimmedWallet = wallet.trim();
     if (!trimmedWallet) {
-      setError("Enter a wallet address or phone number.");
+      setError("Enter a Solana wallet address.");
       return;
     }
     if (!isPlausibleSolanaAddress(trimmedWallet)) {
@@ -99,7 +99,7 @@ export function AddRecipientDialog({
             </div>
             <div className="flex flex-col gap-1.5">
               <label htmlFor="recipient-wallet" className="text-sm font-medium text-kobo-ink">
-                Wallet address or phone number
+                Solana wallet address
               </label>
               <Input
                 id="recipient-wallet"
@@ -108,7 +108,7 @@ export function AddRecipientDialog({
                   setWallet(e.target.value);
                   if (error) setError("");
                 }}
-                placeholder="0x… or +234…"
+                placeholder="e.g. 7xKX...gAsU"
                 aria-invalid={!!error}
                 aria-describedby={error ? "recipient-wallet-error" : undefined}
               />

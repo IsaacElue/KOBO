@@ -64,10 +64,13 @@ describe("recipient picker", () => {
 
     const dialog = await screen.findByRole("dialog", { name: /add new recipient/i });
     await user.click(within(dialog).getByRole("button", { name: /add recipient/i }));
-    expect(within(dialog).getByRole("alert")).toHaveTextContent(/enter a wallet address/i);
+    expect(within(dialog).getByRole("alert")).toHaveTextContent(/enter a solana wallet address/i);
 
     await user.type(within(dialog).getByLabelText(/name/i), "Folake Adeyemi");
-    await user.type(within(dialog).getByLabelText(/wallet address or phone number/i), "0xFEED1234");
+    await user.type(
+      within(dialog).getByLabelText(/solana wallet address/i),
+      "7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU"
+    );
     await user.click(within(dialog).getByRole("button", { name: /add recipient/i }));
 
     expect(screen.queryByRole("dialog", { name: /add new recipient/i })).not.toBeInTheDocument();
