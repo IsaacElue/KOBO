@@ -130,11 +130,21 @@ Same shape as the recipient fix: a real `POST /users` call with `role: "sender"`
 ### 3b. Balance wiring (today)
 Frontend swaps mock sidebar balance for a real `GET /balances/:userId` call against the real signed-in user. Backend needs no changes — endpoint is built and tested.
 
-### 3c. Basic auth (this week, scoped)
-- Use Supabase Auth (already the stack's chosen auth layer) — email/password or magic link, whichever is faster to wire given the timeline.
-- Every `POST`/sensitive `GET` endpoint checks for a valid session before acting. No session → 401.
-- `users.id` becomes tied to the authenticated Supabase Auth user, not a client-supplied value.
-- **Not in scope this week:** multi-factor auth, password reset flows, session refresh hardening, rate limiting. Flag these as known gaps, don't build them under demo pressure.
+### 3c. Real auth — now being built, not deferred (superseded 2026-08-26)
+
+Earlier scope said auth was minimal/deferred. Decision: build it for real now, Revolut-style, free-tier only (no paid API/service spend).
+
+- **Signup**: real email + password via Supabase Auth (already the stack's chosen auth layer, free at this scale). Creates a real `auth.users` row; `users` table gets a foreign key to it, replacing the single hardcoded `NEXT_PUBLIC_KOBO_SENDER_ID` demo-sender scheme entirely.
+- **PIN**: set once right after signup. The PIN is NOT the account credential — it's a fast-unlock layer on top of an already-real, already-authenticated Supabase session (same pattern as Revolut/banking apps: full login once, PIN/biometric to reopen quickly after). Stored server-side, hashed, verified via a real endpoint.
+- **Persistence**: a valid session persists locally (same device/browser) so returning users see the PIN screen, not full email/password, matching the "first time = full signup, after that = just PIN" flow described.
+- **Mobile-ready**: this pattern (real session + local fast-unlock) carries forward cleanly to a future native mobile app without rearchitecting.
+- Sequenced: backend auth foundation first (everything else depends on it), then frontend PIN UI, then Settings (needs real accounts to manage), then Overview (independent), then Activity (market data, last — most exploratory).
+
+### New pages (2026-08-26)
+- **Overview**: clean, mostly-static product page — offerings, solutions, vision. No backend dependency.
+- **Settings**: profile, email, password change, wallet, logout, account details, support. Depends on real auth existing.
+- **Activity**: a gamified crypto/stablecoin performance view — real market data (free-tier APIs only: CoinGecko public API, Jupiter's Solana price feed — no paid keys), plus the user's real transfer history (already exists as data). Kept simple, not overwhelming — charts/prices/news alongside real transfers, not a full trading dashboard.
+- **Recipients**: already good, no changes needed right now.
 
 ### 3d. Database
 - Revisit the earlier-flagged `wallet_address` uniqueness gap (multiple `users` rows sharing one wallet, discovered during the balances health check) — decide now whether to add a uniqueness constraint, since auth work will touch this table anyway.
