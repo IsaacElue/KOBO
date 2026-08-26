@@ -337,13 +337,18 @@ File refs are all under `frontend/`:
   (network error or an unexpected `4xx`/`5xx`) shows
   `toast.error("Couldn't add recipient — please try again.")`, matching the generic
   toast style already used for `POST /transfers` failures.
-- Mock recipients (`lib/kobo/mock-data.ts`) use wallet strings like `0x7a3f…C41d`
-  (Ethereum-style, and pre-truncated for display — not full addresses) and ids like
-  `rcp_adaeze`. None of these ids are real-backend `uuid`s, so none of them would
-  resolve against `users` even after `POST /users` is wired up — they're display
-  fixtures, not seed data. (Recipient wiring is per-recipient and only applies to
-  ones added through the dialog above — the pre-seeded mock recipients shown by
-  default are untouched.)
+- Mock recipients (`lib/kobo/mock-data.ts`) — **`RECIPIENTS[0]` ("Adaeze Okonkwo",
+  the default/pre-selected recipient) is the one exception, now real** (real `uuid`
+  and real Solana `wallet_address`, via `NEXT_PUBLIC_KOBO_DEFAULT_RECIPIENT_ID`/
+  `_WALLET` — see "Resolved this sync" #11 below); this was a real bug, not a mock
+  gap, since it's the recipient any fresh page load sends to by default. The other
+  three (`rcp_chidi`, `rcp_ngozi`, `rcp_emeka`) are still fake — Ethereum-style
+  wallet strings like `0x1b8e…9F02` (pre-truncated for display, not full addresses)
+  and non-`uuid` ids that wouldn't resolve against `users`. They're only reachable
+  by explicitly selecting them via the picker, not on a fresh default send — lower
+  priority, not fixed here. (Recipient wiring is otherwise per-recipient — ones
+  added through the dialog are real; the three still-mock pre-seeded ones are
+  untouched.)
 - `CURRENT_USER` (`lib/kobo/mock-data.ts`) — the app's one demo sender, there being
   no auth/login yet (see `KOBO_BUILD_PLAN.md` ground rules) — now carries a real
   `users.id`. A real `role: "sender"` row (`{ name: "Tomiwa M.", country: "IE" }`,
@@ -484,6 +489,46 @@ File refs are all under `frontend/`:
     touch: `POST /transfers`' own `amount_usdc` still uses a separate hardcoded
     placeholder rate server-side.
 
+11. **Default/pre-selected recipient wired to a real `users` row — real bug, not
+    an edge case.** On every fresh page load (no prior "add recipient" action),
+    `RECIPIENTS[0]` (`lib/kobo/mock-data.ts`, "Adaeze Okonkwo") was a fabricated
+    id/wallet, same as the old sender/other-recipients pattern — meaning the very
+    first send a real user would try, using only the app's default state, 400'd at
+    `POST /transfers` (`recipient_id` not found). Same pattern as every other
+    real-data fix today: created one real `role: "recipient"` row via `POST /users`
+    (`{ name: "Adaeze Okonkwo", country: "NG", wallet_address: <real Solana pubkey>
+    }`, matching the fixture's existing display values), and wired `RECIPIENTS[0]`'s
+    `id`/`wallet` to it via two new env vars, `NEXT_PUBLIC_KOBO_DEFAULT_RECIPIENT_ID`
+    / `_WALLET` (`.env.example`), falling back to the old fake id/wallet in mock
+    mode — same pattern as `NEXT_PUBLIC_KOBO_SENDER_ID`. `name`/`initials`/`meta`/
+    `lastSent` are unchanged display fixtures.
+    **Flagged before changing, per instruction — not guessed at:** the old wallet
+    display text (`"0x7a3f…C41d"`) is a manually-truncated fake Ethereum-style
+    string with no real relationship to any Solana address (Solana pubkeys are
+    base58, never `0x`-prefixed), so it genuinely could not be preserved verbatim
+    for a real wallet. Decided: show the full real address, matching how every
+    other real recipient (added via the dialog) already displays — no new
+    formatting convention invented.
+    **Bug found and fixed as a direct consequence:** `recipient-picker.tsx`'s
+    collapsed-header wallet span (`<span className="hidden font-mono ... sm:inline">`)
+    had no `truncate`/width constraint at all — every *other* wallet display in the
+    app (`recipients-screen.tsx`, `success-dialog.tsx`) already had `truncate`.
+    This was a latent, pre-existing gap for any real recipient (the full-length
+    real addresses added via the dialog were already silently exposed to it), not
+    something newly introduced here — just newly hit by making the *default*
+    recipient real, so it's now the common case instead of a rare one. Fixed by
+    adding `max-w-[140px] truncate` to that span.
+    Also updated `TRANSFER_HISTORY[0].recipientId` (`lib/kobo/mock-data.ts`) to the
+    same real id — it was hardcoded to the old fake `"rcp_adaeze"` string, and
+    `components/kobo/recent-transfers.tsx` silently drops any history row whose
+    `recipientId` doesn't resolve against the current `recipients` list
+    (`if (!recipient) return null`) — leaving it unfixed would have made the
+    "Adaeze Okonkwo · Sent €200 on 12 Aug" row silently vanish from Recent
+    Transfers the moment the default recipient's id changed.
+    Verified live: fresh browser context (no prior localStorage/session state),
+    confirmed a real transfer using **only** default page-load state —
+    `POST /transfers` → `201`, both `sender_id` and `recipient_id` real uuids.
+
 ## Still open
 
 These still need a decision — nothing below has been silently resolved or guessed at.
@@ -514,19 +559,23 @@ These still need a decision — nothing below has been silently resolved or gues
    > Resolved #3). Needs frontend work: call it, handle its `400`s, and use the
    > returned `id` as the real `recipient_id`.
 
-3. **Wallet address format mismatch — partially addressed.** Backend requires
-   Solana base58 pubkeys (`wallet_address`, validated via `new PublicKey(...)` on
-   both `POST /users` and at send time). The "Add new recipient" form's own
-   submission is now validated client-side to match (see "Resolved this sync" #8) —
-   that half of this item is closed. Still open: the form's wallet input
-   **placeholder** (`"0x… or +234…"`) was deliberately left unchanged (no copy
-   changes wanted in that pass) and now describes a format the field will actually
-   reject; and the pre-existing **mock/demo recipients** (`lib/kobo/mock-data.ts`,
-   `0x7a3f…C41d` etc., also pre-truncated for display — not full addresses) are
-   still Ethereum-style and were never routed through `POST /users` to begin with,
-   so they still wouldn't resolve as real `recipient_id`s against `users`. Needs a
-   decision on updating the placeholder copy and on what (if anything) replaces the
-   mock recipients once real ones exist.
+3. **Wallet address format mismatch — mostly addressed.** Backend requires Solana
+   base58 pubkeys (`wallet_address`, validated via `new PublicKey(...)` on both
+   `POST /users` and at send time). The "Add new recipient" form's own submission
+   is validated client-side to match (see "Resolved this sync" #8). The form's
+   wallet input **placeholder** copy was since corrected to `"e.g. 7xKX...gAsU"`
+   (Solana-only, no more `"0x… or +234…"` — landed outside this doc's own
+   "Resolved this sync" log, by a separate commit). `RECIPIENTS[0]` ("Adaeze
+   Okonkwo", the default recipient) is now real too — see "Resolved this sync"
+   #11. **Still open:** the other three pre-seeded **mock recipients**
+   (`lib/kobo/mock-data.ts` — `rcp_chidi`/`Chidi Balogun`, `rcp_ngozi`/`Ngozi Eze`,
+   `rcp_emeka`/`Emeka Nwachukwu`, wallets like `0x1b8e…9F02`) are still
+   Ethereum-style, pre-truncated display strings with fake ids, never routed
+   through `POST /users` — selecting any of them for a send still 400s at
+   `POST /transfers`, same failure mode `RECIPIENTS[0]` had before this sync, just
+   reachable only via an explicit picker selection now instead of the default
+   state. Needs a decision on whether to fix all three the same way, or something
+   else (they're seldom-selected demo flavor, not the default path).
 
 4. **`onramp_reference` timing mismatch — still open, symptom worked around.**
    Frontend treats `onramp_reference` as available immediately after

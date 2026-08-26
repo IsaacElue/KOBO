@@ -27,6 +27,7 @@
 - Real onramp shape consumption, real `GET /transfers/:id` polling (not postMessage-trusting)
 - `failed` status UI wired to real backend data
 - "Add new recipient" now calls real `POST /users` — tested live via Playwright, confirmed in Supabase
+- The default/pre-selected recipient ("Adaeze Okonkwo") is now a real `users` row too — a fresh page load can send a real transfer using only default state, no prior "add recipient" action needed
 
 **Still mock, in priority order:**
 1. ~~Sender identity~~ — RESOLVED. CURRENT_USER now carries a real users.id (role:
@@ -42,6 +43,19 @@
    (backend, proxying Transak's Get Price) and wired the frontend to it — same
    `rate` state also feeds the transfer summary panel and success dialog, so
    those are real now too. See API_CONTRACT.md "Resolved this sync" #10.
+6. ~~Default/pre-selected recipient~~ — RESOLVED, and this one was a real bug, not
+   a mock gap: any user's very first send, using only the app's default state,
+   400'd at `POST /transfers` (fabricated recipient id). Now a real `users` row —
+   same pattern as every other real-data fix, wired via
+   `NEXT_PUBLIC_KOBO_DEFAULT_RECIPIENT_ID`/`_WALLET`. Fixed a related latent bug
+   found in the process: `recipient-picker.tsx`'s compact header wallet display
+   had no CSS truncation, unlike every other wallet display in the app — harmless
+   with short fake addresses, but a real overflow risk once that slot could show a
+   full-length real address (which it now does by default). The other three
+   pre-seeded recipients (Chidi, Ngozi, Emeka) are still fake — see API_CONTRACT.md
+   "Still open" #3 — but they're only reachable by explicitly picking them, not on
+   a fresh default send, so lower priority. See API_CONTRACT.md "Resolved this
+   sync" #11 for full detail, including the wallet-display-format decision.
 
 **Decided (2026-08-25):**
 - Overview / Activity / Settings screens are intentionally stubbed for now. Send

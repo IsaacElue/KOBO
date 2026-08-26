@@ -48,7 +48,7 @@ export function RecipientPicker({
           </div>
           <div className="truncate text-[13.5px] text-[#7B959B]">{selected.meta}</div>
         </div>
-        <span className="hidden font-mono text-[12.5px] text-[#9BB2B8] sm:inline">
+        <span className="hidden max-w-[140px] truncate font-mono text-[12.5px] text-[#9BB2B8] sm:inline">
           {selected.wallet}
         </span>
         <span className="text-[13.5px] font-medium text-kobo-teal-600">

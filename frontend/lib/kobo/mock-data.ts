@@ -35,13 +35,25 @@ const BASE_USDC_RATE: Record<CurrencyCode, number> = {
   USD: 1.0,
 };
 
+/**
+ * The default/pre-selected recipient shown on every fresh load must be a real
+ * `users.id` — sending to a fabricated id 400s at `POST /transfers`. `id` and
+ * `wallet` are the real uuid/address of a `role: "recipient"` row created via
+ * `POST /users` (`{ name: "Adaeze Okonkwo", country: "NG" }`, matching this
+ * fixture's existing display values) — see NEXT_PUBLIC_KOBO_DEFAULT_RECIPIENT_ID
+ * / _WALLET in `.env.example`. Falls back to the old fake id/wallet in mock mode.
+ * `name`/`initials`/`meta`/`lastSent` are unchanged display fixtures, same as
+ * `CURRENT_USER`'s `name`/`initials`/`iban` above.
+ */
+const DEFAULT_RECIPIENT_ID = process.env.NEXT_PUBLIC_KOBO_DEFAULT_RECIPIENT_ID || "rcp_adaeze";
+
 export const RECIPIENTS: Recipient[] = [
   {
-    id: "rcp_adaeze",
+    id: DEFAULT_RECIPIENT_ID,
     name: "Adaeze Okonkwo",
     initials: "AO",
     meta: "Sister · Lagos, NG · USDC wallet",
-    wallet: "0x7a3f…C41d",
+    wallet: process.env.NEXT_PUBLIC_KOBO_DEFAULT_RECIPIENT_WALLET || "0x7a3f…C41d",
     lastSent: "Sent €200 on 12 Aug",
   },
   {
@@ -71,7 +83,7 @@ export const RECIPIENTS: Recipient[] = [
 ];
 
 export const TRANSFER_HISTORY: TransferHistoryItem[] = [
-  { id: "txn_1", recipientId: "rcp_adaeze", reference: "KB-9182-EU", date: "12 Aug", amountEur: 200, status: "Delivered" },
+  { id: "txn_1", recipientId: DEFAULT_RECIPIENT_ID, reference: "KB-9182-EU", date: "12 Aug", amountEur: 200, status: "Delivered" },
   { id: "txn_2", recipientId: "rcp_chidi", reference: "KB-9114-EU", date: "28 Jul", amountEur: 120, status: "Delivered" },
   { id: "txn_3", recipientId: "rcp_ngozi", reference: "KB-9077-EU", date: "3 Jul", amountEur: 75, status: "Delivered" },
   { id: "txn_4", recipientId: "rcp_emeka", reference: "KB-8990-EU", date: "19 Jun", amountEur: 310, status: "Refunded" },
