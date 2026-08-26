@@ -41,13 +41,19 @@ export function AuthGate() {
 
   // Catches a session dying anywhere else — a 401 from a protected call
   // (lib/kobo/api.ts's handleUnauthorized) or the header's logout button —
-  // and bounces back to login, not just whatever triggered it locally.
+  // and bounces back to login, not just whatever triggered it locally. Also
+  // picks up a still-valid session being *updated* in place (a Settings
+  // profile edit syncs the cached user via updateStoredUser) so the header
+  // name refreshes without a reload.
   useEffect(() => {
     if (mock) return;
     return onAuthChange(() => {
-      if (!getStoredAuth()) {
+      const stored = getStoredAuth();
+      if (!stored) {
         setAuth(null);
         setPhase((p) => (p === "signup" ? p : "login"));
+      } else {
+        setAuth(stored);
       }
     });
   }, [mock]);

@@ -62,6 +62,18 @@ export function clearStoredAuth() {
   notify();
 }
 
+/**
+ * Merges a partial user into the persisted session (keeping the tokens
+ * untouched) and notifies listeners — so a profile edit in Settings
+ * (`PATCH /auth/profile`) flows through to anything reading the stored user,
+ * e.g. the header name, without a reload. No-op if there's no stored session.
+ */
+export function updateStoredUser(patch: Partial<AuthUser>) {
+  const stored = getStoredAuth();
+  if (!stored) return;
+  setStoredAuth({ ...stored, user: { ...stored.user, ...patch } });
+}
+
 async function errorMessage(res: Response): Promise<string> {
   const body: { error?: string } | null = await res.json().catch(() => null);
   return body?.error ?? `Request failed: ${res.status}`;

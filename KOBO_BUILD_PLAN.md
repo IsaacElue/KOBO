@@ -19,7 +19,8 @@
 ## 1. Where things actually stand (as of this doc)
 
 **Backend, real and tested:**
-- `POST /users`, `POST /transfers`, `GET /transfers/:id`, `GET /balances/:userId`, `POST /webhooks/onramp` (Transak JWT-verified), `GET /rate` (real Transak quote), `POST /funding` (NEW)
+- `POST /users`, `POST /transfers`, `GET /transfers/:id`, `GET /balances/:userId`, `POST /webhooks/onramp` (Transak JWT-verified), `GET /rate` (real Transak quote), `POST /funding`
+- Auth: `POST /auth/signup|login|refresh|logout|pin|pin/verify`, plus `GET /auth/me`, `PATCH /auth/profile`, `POST /auth/password` (NEW this sync — Settings; see API_CONTRACT.md "Resolved this sync" #17)
 - Real Solana devnet settlement, real Transak staging sessions, retry/idempotency/failure handling — now shared via `settleTransfer()` between the webhook path and `POST /transfers`' new instant-send path, not forked
 - Real sender balance funding + instant send: `POST /funding` tops up a sender's real balance via Transak (lands in Kobo's pooled wallet), `POST /transfers` is now balance-checked and sends instantly when funded (no more per-transfer Transak session) — see API_CONTRACT.md "Resolved this sync" #12 for full detail, verified live end to end (fund → real balance increase → instant send → real Solana tx → real balance debit/credit → insufficient-balance 400)
 - CORS, UUID validation on transfer endpoints
@@ -139,11 +140,12 @@ Earlier scope said auth was minimal/deferred. Decision: build it for real now, R
 - **Persistence**: a valid session persists locally (same device/browser) so returning users see the PIN screen, not full email/password, matching the "first time = full signup, after that = just PIN" flow described.
 - **Mobile-ready**: this pattern (real session + local fast-unlock) carries forward cleanly to a future native mobile app without rearchitecting.
 - **DONE (backend + frontend), 2026-08-26:** signup, login, PIN set/verify, session refresh/logout all built and verified live end-to-end (real signup -> PIN -> reload -> PIN unlock -> real transfer -> logout -> reload -> full login). `NEXT_PUBLIC_KOBO_SENDER_ID` fully removed. See API_CONTRACT.md's `POST /auth/*` section.
-- Sequenced: ~~backend auth foundation first~~, ~~then frontend PIN UI~~ — both done. Next: Settings (needs real accounts to manage), then Overview (independent), then Activity (market data, last — most exploratory).
+- Sequenced: ~~backend auth foundation first~~, ~~then frontend PIN UI~~, ~~then Settings~~ — all done. Next: Overview (independent), then Activity (market data, last — most exploratory).
 
 ### New pages (2026-08-26)
 - **Overview**: clean, mostly-static product page — offerings, solutions, vision. No backend dependency.
 - **Settings**: profile, email, password change, wallet, logout, account details, support. Depends on real auth existing.
+  **DONE (backend + frontend), 2026-08-27.** `GET /auth/me` + `PATCH /auth/profile` + `POST /auth/password` (new), `components/kobo/settings-screen.tsx` wired at `SETTINGS_INDEX`. Editable: name, country, password (current-password re-entry check; session revoked on change → user re-logs in). Read-only: email, member-since, linked wallet address. **Email change deferred** — needs a confirmation-email integration (free-tier send limits), same reason the receipt/email work is out of scope; shown read-only with a "contact support" line, not silently unchangeable. **Wallet** labelled as an address that "isn't used to hold or move your money" (Kobo sends from its pooled wallet), kept in case direct payouts are added later — plain accurate copy, flagged for review. Logout reuses the header's flow via a shared `logout-confirm-dialog.tsx`. See API_CONTRACT.md "Resolved this sync" #17.
 - **Activity**: a gamified crypto/stablecoin performance view — real market data (free-tier APIs only: CoinGecko public API, Jupiter's Solana price feed — no paid keys), plus the user's real transfer history (already exists as data). Kept simple, not overwhelming — charts/prices/news alongside real transfers, not a full trading dashboard.
 - **Recipients**: already good, no changes needed right now.
 

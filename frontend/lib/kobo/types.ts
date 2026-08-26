@@ -126,6 +126,22 @@ export interface AuthUser {
   wallet_address: string;
 }
 
+/**
+ * `GET /auth/me` / `PATCH /auth/profile` response `user` — the caller's own
+ * full profile. Superset of `AuthUser`: adds `email` (which lives on the
+ * Supabase Auth account, not the `users` row) and `created_at` (member-since),
+ * neither of which any `POST /auth/*` response includes. Settings-only.
+ */
+export interface UserProfile {
+  id: string;
+  name: string;
+  role: UserRole;
+  country: string;
+  wallet_address: string;
+  email: string | null;
+  created_at: string;
+}
+
 /** The `session` field on every `POST /auth/*` response — real Supabase Auth tokens, stored as-is (see lib/kobo/auth.ts). */
 export interface AuthSession {
   access_token: string;

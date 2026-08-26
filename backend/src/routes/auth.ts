@@ -1,4 +1,5 @@
 import { Router } from "express";
+import type { User } from "@supabase/supabase-js";
 import bcrypt from "bcryptjs";
 import { supabase } from "../lib/supabase";
 import { requireAuth, resolveKoboUser } from "../lib/auth";
@@ -7,6 +8,24 @@ import { isPlausibleSolanaAddress } from "../lib/validation";
 export const authRouter = Router();
 
 const PIN_RE = /^\d{4,6}$/;
+
+/**
+ * The caller's full own profile — the linked `users` row plus the email,
+ * which lives on the Supabase Auth account (`auth.users`), not the profile
+ * row. Shared by `GET /auth/me` and the `PATCH /auth/profile` response so
+ * both return exactly the same shape. `null` if signup never linked a
+ * `users` row to this auth account (shouldn't happen post-`/signup`).
+ */
+async function ownProfile(authUser: User) {
+  const { data, error } = await supabase
+    .from("users")
+    .select("id, name, role, country, wallet_address, created_at")
+    .eq("auth_user_id", authUser.id)
+    .maybeSingle();
+  if (error) throw error;
+  if (!data) return null;
+  return { ...data, email: authUser.email ?? null };
+}
 
 function sessionBody(session: { access_token: string; refresh_token: string; expires_at?: number }) {
   return {
@@ -180,4 +199,121 @@ authRouter.post("/pin/verify", requireAuth, async (req, res) => {
 
   const success = await bcrypt.compare(pin, data.pin_hash);
   return res.status(200).json({ success });
+});
+
+/**
+ * The authenticated caller's own full profile — name, country,
+ * wallet_address, role, member-since (`created_at`), and the email from
+ * their Supabase Auth account. There was no existing endpoint that returned
+ * a sender their own email or `created_at`: `POST /auth/login`'s `user` is
+ * `resolveKoboUser`'s column set (no `email`, no `created_at`) and
+ * `requireAuth` only attaches the raw Supabase Auth user. The Settings page
+ * needs both, so this exists. Own resource only — the profile is always
+ * resolved from the verified session, never from a client-supplied id.
+ */
+authRouter.get("/me", requireAuth, async (req, res) => {
+  let profile;
+  try {
+    profile = await ownProfile(req.authUser!);
+  } catch (err) {
+    return res.status(500).json({ error: (err as Error).message });
+  }
+  if (!profile) {
+    return res.status(403).json({ error: "No account linked to this session" });
+  }
+  return res.json({ user: profile });
+});
+
+/**
+ * Updates the authenticated caller's own `name` and/or `country`. Same
+ * ownership pattern as `POST /auth/pin` and every sender-facing endpoint:
+ * the row updated is the one linked to the verified session
+ * (`resolveKoboUser` -> `.eq("id", koboUser.id)`), never a client-supplied
+ * id. `email` is deliberately not editable here — changing it needs a
+ * confirmation-email round trip Kobo has no mailer for yet (see
+ * KOBO_BUILD_PLAN.md); `wallet_address` and `role` aren't editable either
+ * (a sender's wallet_address is a never-read placeholder, and role isn't a
+ * user-facing concept).
+ */
+authRouter.patch("/profile", requireAuth, async (req, res) => {
+  const { name, country } = req.body ?? {};
+  const updates: { name?: string; country?: string } = {};
+
+  if (name !== undefined) {
+    if (typeof name !== "string" || !name.trim()) {
+      return res.status(400).json({ error: "name must be a non-empty string" });
+    }
+    updates.name = name.trim();
+  }
+  if (country !== undefined) {
+    if (typeof country !== "string" || !country.trim()) {
+      return res.status(400).json({ error: "country must be a non-empty string" });
+    }
+    updates.country = country.trim();
+  }
+  if (Object.keys(updates).length === 0) {
+    return res.status(400).json({ error: "provide at least one of: name, country" });
+  }
+
+  const koboUser = await resolveKoboUser(req.authUser!.id);
+  if (!koboUser) {
+    return res.status(403).json({ error: "No account linked to this session" });
+  }
+
+  const { error } = await supabase.from("users").update(updates).eq("id", koboUser.id);
+  if (error) {
+    return res.status(500).json({ error: error.message });
+  }
+
+  try {
+    return res.json({ user: await ownProfile(req.authUser!) });
+  } catch (err) {
+    return res.status(500).json({ error: (err as Error).message });
+  }
+});
+
+/**
+ * Changes the authenticated caller's account password via Supabase Auth's
+ * own admin update — no custom credential scheme, same principle as the
+ * rest of `/auth/*`. Requires the current password as a re-entry check
+ * first (Supabase's `admin.updateUserById` does not itself ask for it): a
+ * fresh `signInWithPassword` is the real verification, not a locally stored
+ * hash. On success the current session is revoked server-side too, so a
+ * password change always means "log back in with the new one" everywhere —
+ * the frontend then sends the user to the login screen.
+ */
+authRouter.post("/password", requireAuth, async (req, res) => {
+  const { current_password, new_password } = req.body ?? {};
+
+  if (typeof current_password !== "string" || !current_password) {
+    return res.status(400).json({ error: "current_password is required" });
+  }
+  if (typeof new_password !== "string" || new_password.length < 8) {
+    return res.status(400).json({ error: "new_password is required and must be at least 8 characters" });
+  }
+  if (new_password === current_password) {
+    return res.status(400).json({ error: "new_password must be different from your current password" });
+  }
+
+  const email = req.authUser!.email;
+  if (!email) {
+    return res.status(400).json({ error: "This account has no email address to re-verify against" });
+  }
+
+  const recheck = await supabase.auth.signInWithPassword({ email, password: current_password });
+  if (recheck.error || !recheck.data.session) {
+    return res.status(400).json({ error: "Current password is incorrect" });
+  }
+
+  const updated = await supabase.auth.admin.updateUserById(req.authUser!.id, { password: new_password });
+  if (updated.error) {
+    return res.status(500).json({ error: updated.error.message });
+  }
+
+  // Best-effort: the password already changed successfully, so a failure to
+  // revoke here shouldn't fail the request — the frontend logs out locally
+  // regardless.
+  await supabase.auth.admin.signOut(req.authToken!, "global").catch(() => {});
+
+  return res.status(200).json({ success: true });
 });

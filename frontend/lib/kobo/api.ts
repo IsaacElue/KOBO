@@ -11,10 +11,11 @@ import type {
   RateResponse,
   TransferRecord,
   TransferStatus,
+  UserProfile,
 } from "./types";
-import { randomRate } from "./mock-data";
+import { CURRENT_USER, randomRate } from "./mock-data";
 import { API_URL, isMockMode } from "./config";
-import { getValidAccessToken, handleUnauthorized } from "./auth";
+import { getValidAccessToken, handleUnauthorized, updateStoredUser } from "./auth";
 
 export { isMockMode };
 
@@ -49,6 +50,21 @@ export interface ApiError extends Error {
 // first, same spirit as the old static BALANCES fixture it replaces, but now a
 // single real USDC figure instead of one per fiat currency.
 let mockBalanceUsdc = 2000;
+
+// Mock-mode profile + password, mutated by updateProfile/changePassword so a
+// mock demo of Settings behaves like the real thing (edits stick for the
+// session, a wrong current password is rejected). Resets on a full reload,
+// same as mockBalanceUsdc above.
+const mockProfile: UserProfile = {
+  id: CURRENT_USER.id,
+  name: CURRENT_USER.name,
+  role: "sender",
+  country: "IE",
+  wallet_address: "6Cx1cZ8mKpP1s6xM4mE9pN2vQ7wR3tYb5uH8jK4dLzAa",
+  email: "you@example.com",
+  created_at: "2026-06-01T09:00:00.000Z",
+};
+let mockPassword = "password123";
 
 /**
  * `POST /transfers`. No longer creates a Transak session — the backend is
@@ -144,6 +160,94 @@ async function mockCreateUser(req: CreateUserRequest): Promise<CreateUserRespons
     wallet_address: req.wallet_address,
     created_at: new Date().toISOString(),
   };
+}
+
+/**
+ * `GET /auth/me`. The signed-in sender's own full profile — name, country,
+ * wallet_address, email, and member-since (`created_at`). The only endpoint
+ * that returns a sender their own email/`created_at` (no `POST /auth/*`
+ * response carries either). Settings-only. Shape confirmed against the real
+ * backend — see API_CONTRACT.md.
+ */
+export async function getProfile(): Promise<UserProfile> {
+  if (!isMockMode()) {
+    const res = await fetch(`${API_URL}/auth/me`, { headers: await authHeaders() });
+    if (res.status === 401) {
+      handleUnauthorized();
+      throw new Error("Your session has expired — please sign in again");
+    }
+    if (!res.ok) {
+      const body: { error?: string } | null = await res.json().catch(() => null);
+      throw new Error(body?.error ?? `GET /auth/me failed: ${res.status}`);
+    }
+    const body: { user: UserProfile } = await res.json();
+    return body.user;
+  }
+  return { ...mockProfile };
+}
+
+/**
+ * `PATCH /auth/profile`. Updates the signed-in sender's own `name`/`country`.
+ * On success also syncs the persisted session's cached user (so the header
+ * name updates without a reload). Shape confirmed against the real backend —
+ * see API_CONTRACT.md.
+ */
+export async function updateProfile(updates: { name?: string; country?: string }): Promise<UserProfile> {
+  if (!isMockMode()) {
+    const res = await fetch(`${API_URL}/auth/profile`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", ...(await authHeaders()) },
+      body: JSON.stringify(updates),
+    });
+    if (res.status === 401) {
+      handleUnauthorized();
+      throw new Error("Your session has expired — please sign in again");
+    }
+    if (!res.ok) {
+      const body: { error?: string } | null = await res.json().catch(() => null);
+      throw new Error(body?.error ?? `PATCH /auth/profile failed: ${res.status}`);
+    }
+    const body: { user: UserProfile } = await res.json();
+    updateStoredUser({ name: body.user.name, country: body.user.country });
+    return body.user;
+  }
+
+  await new Promise((r) => setTimeout(r, 200));
+  if (updates.name !== undefined) mockProfile.name = updates.name.trim();
+  if (updates.country !== undefined) mockProfile.country = updates.country.trim();
+  return { ...mockProfile };
+}
+
+/**
+ * `POST /auth/password`. Changes the signed-in sender's account password via
+ * Supabase Auth. Requires the current password as a re-entry check. The
+ * backend revokes the session on success, so the caller must send the user
+ * back to login afterward. Shape confirmed against the real backend — see
+ * API_CONTRACT.md.
+ */
+export async function changePassword(currentPassword: string, newPassword: string): Promise<void> {
+  if (!isMockMode()) {
+    const res = await fetch(`${API_URL}/auth/password`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...(await authHeaders()) },
+      body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }),
+    });
+    if (res.status === 401) {
+      handleUnauthorized();
+      throw new Error("Your session has expired — please sign in again");
+    }
+    if (!res.ok) {
+      const body: { error?: string } | null = await res.json().catch(() => null);
+      throw new Error(body?.error ?? `POST /auth/password failed: ${res.status}`);
+    }
+    return;
+  }
+
+  await new Promise((r) => setTimeout(r, 200));
+  if (currentPassword !== mockPassword) throw new Error("Current password is incorrect");
+  if (newPassword.length < 8) throw new Error("new_password is required and must be at least 8 characters");
+  if (newPassword === currentPassword) throw new Error("new_password must be different from your current password");
+  mockPassword = newPassword;
 }
 
 /**

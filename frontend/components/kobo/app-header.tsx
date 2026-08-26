@@ -3,16 +3,7 @@
 import { useEffect, useState } from "react";
 import { Input } from "@/components/ui/input";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
+import { LogoutConfirmDialog } from "@/components/kobo/logout-confirm-dialog";
 import { Search } from "lucide-react";
 
 export function AppHeader({
@@ -73,28 +64,11 @@ export function AppHeader({
       </div>
 
       {onLogout && (
-        <AlertDialog open={confirmingLogout} onOpenChange={setConfirmingLogout}>
-          <AlertDialogContent>
-            <AlertDialogHeader>
-              <AlertDialogTitle>Log out?</AlertDialogTitle>
-              <AlertDialogDescription>
-                You&apos;ll need your PIN to get back in on this device, or your email and
-                password on a new one.
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-            <AlertDialogFooter>
-              <AlertDialogCancel>Cancel</AlertDialogCancel>
-              <AlertDialogAction
-                onClick={() => {
-                  setConfirmingLogout(false);
-                  onLogout();
-                }}
-              >
-                Log out
-              </AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
+        <LogoutConfirmDialog
+          open={confirmingLogout}
+          onOpenChange={setConfirmingLogout}
+          onConfirm={onLogout}
+        />
       )}
     </header>
   );

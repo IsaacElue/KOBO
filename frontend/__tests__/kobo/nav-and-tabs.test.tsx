@@ -16,8 +16,8 @@ describe("Request tab", () => {
   });
 });
 
-describe("non-Send, non-Recipients nav items", () => {
-  test.each(NAV_ITEMS.filter((n) => n !== "Send money" && n !== "Recipients"))(
+describe("non-Send, non-Recipients, non-Settings nav items", () => {
+  test.each(NAV_ITEMS.filter((n) => n !== "Send money" && n !== "Recipients" && n !== "Settings"))(
     "%s renders the 'isn't built yet' empty state with a working button back to Send",
     async (label) => {
       const { user } = await renderKoboApp();
@@ -40,5 +40,16 @@ describe("Recipients nav item", () => {
     expect(screen.getByRole("heading", { name: "Recipients" })).toBeInTheDocument();
     expect(screen.queryByText(/isn't built yet/i)).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: /add recipient/i })).toBeInTheDocument();
+  });
+});
+
+describe("Settings nav item", () => {
+  test("renders the real Settings screen, not the placeholder", async () => {
+    const { user } = await renderKoboApp();
+
+    await user.click(screen.getByRole("button", { name: "Settings" }));
+    expect(await screen.findByRole("heading", { name: "Settings" })).toBeInTheDocument();
+    expect(screen.queryByText(/isn't built yet/i)).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /update password/i })).toBeInTheDocument();
   });
 });

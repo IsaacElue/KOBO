@@ -13,6 +13,11 @@ resolves mismatch #5").
 `restructure-frontend-folder` are now fully merged (both directions), so this is a
 single monorepo branch, not a pending PR.
 
+**Latest addition (Settings, this sync):** three new session-gated endpoints —
+`GET /auth/me`, `PATCH /auth/profile`, `POST /auth/password` — plus the real
+Settings page consuming them. Full detail in the new `/auth/*` subsection and
+"Resolved this sync" #17. Everything below this line predates it and is unchanged.
+
 **Since the last sync:** frontend now matches the real `{ sessionId, widgetUrl }`
 onramp shape and picks redirect-vs-embedded itself, including the outer `id` field
 (`transfer_id` is gone) (Resolved #1); the `TRANSAK_REFERRER_DOMAIN` question is
@@ -48,6 +53,9 @@ below, these were "Still open" #1 and #5).
 ## `POST /auth/signup`, `POST /auth/login`, `POST /auth/refresh`, `POST /auth/logout`, `POST /auth/pin`, `POST /auth/pin/verify`
 
 **Frontend now wired to all six of these — see "Resolved this sync" #16.**
+**Three more `/auth/*` endpoints added this sync for Settings — `GET /auth/me`,
+`PATCH /auth/profile`, `POST /auth/password` — documented in their own section
+just below `POST /auth/pin/verify`. See "Resolved this sync" #17.**
 
 Real auth, per `KOBO_BUILD_PLAN.md`'s "3c. Real auth" — Supabase Auth for the
 real account (email+password), a separate server-verified PIN as a
@@ -174,6 +182,102 @@ recipients (`role: "recipient"`) and now reject `role: "sender"` with a
 pointer to this endpoint. All test accounts/rows created during verification
 were deleted afterward (`auth.users` deletion cascades to the linked `users`
 row via `on delete cascade`, confirmed working as part of that cleanup).
+
+---
+
+## `GET /auth/me`, `PATCH /auth/profile`, `POST /auth/password` — **NEW this sync (Settings)**
+
+Added for the Settings page (`KOBO_BUILD_PLAN.md`'s "New pages" → Settings).
+All three `requireAuth` and act on the caller's own account only — resolved
+from the verified session, never from a client-supplied id, same ownership
+pattern as `POST /auth/pin`. **Frontend is wired to all three** — see
+"Resolved this sync" #17.
+
+### `GET /auth/me` — requires a valid session
+
+The signed-in sender's own full profile. This is the **only** endpoint that
+returns a sender their own `email` (it lives on the Supabase Auth account,
+not the `users` row) and `created_at` (member-since) — `POST /auth/login`'s
+`user` is `resolveKoboUser`'s narrower column set, and `requireAuth` only
+attaches the raw Supabase Auth user. The Settings page needs both, so this
+exists. Investigated first, per instruction: no prior endpoint covered this.
+
+**Header:** `Authorization: Bearer <access_token>`
+
+**Success — `200`:**
+```json
+{
+  "user": {
+    "id": "uuid",
+    "name": "string",
+    "role": "sender",
+    "country": "string",
+    "wallet_address": "string",
+    "email": "string | null",
+    "created_at": "2026-08-26T23:31:55.506Z"
+  }
+}
+```
+
+**Error responses:**
+- `401` — `{ "error": "Missing or invalid Authorization header" }` / `"Invalid or expired session" }`
+- `403` — `{ "error": "No account linked to this session" }` — valid Supabase session, no matching `users` row (shouldn't happen post-signup).
+- `500` — `{ "error": "<message>" }`
+
+### `PATCH /auth/profile` — requires a valid session
+
+Updates the caller's own `name` and/or `country`. `email` is deliberately
+**not** editable here (needs a confirmation-email round trip Kobo has no
+mailer for yet — see `KOBO_BUILD_PLAN.md`; deferred, not built);
+`wallet_address` and `role` aren't editable either (a sender's
+`wallet_address` is a never-read placeholder — see `GET /auth/me`'s note and
+`POST /transfers` — and `role` isn't a user-facing concept).
+
+**Header:** `Authorization: Bearer <access_token>`
+**Request body:** `{ "name"?: "string", "country"?: "string" }` — at least one required; each, if present, must be a non-empty string (trimmed server-side).
+
+**Success — `200`:** `{ "user": { ...same shape as GET /auth/me } }` (the updated profile).
+
+**Error responses:**
+- `401` — the two session errors.
+- `400` — `{ "error": "name must be a non-empty string" }` / `"country must be a non-empty string" }` / `"provide at least one of: name, country" }`
+- `403` — `{ "error": "No account linked to this session" }`
+- `500` — `{ "error": "<message>" }`
+
+### `POST /auth/password` — requires a valid session
+
+Changes the caller's account password via Supabase Auth's own
+`admin.updateUserById` — no custom credential scheme, same principle as the
+rest of `/auth/*`. Requires the **current password** as a re-entry check
+first (standard security practice; `admin.updateUserById` doesn't itself ask
+for it): the check is a fresh `supabase.auth.signInWithPassword`, not a
+locally stored hash. On success the **current session is revoked
+server-side** (`admin.signOut(token, "global")`, best-effort — the password
+already changed, so a revoke failure doesn't fail the request), so a
+password change always means "log back in with the new one." The frontend
+then routes the user to the login screen.
+
+**Header:** `Authorization: Bearer <access_token>`
+**Request body:** `{ "current_password": "string", "new_password": "string (min 8 chars, ≠ current)" }`
+
+**Success — `200`:** `{ "success": true }`
+
+**Error responses:**
+- `401` — the two session errors.
+- `400` — `{ "error": "current_password is required" }` / `"new_password is required and must be at least 8 characters" }` / `"new_password must be different from your current password" }` / `"This account has no email address to re-verify against" }`
+- `400` — `{ "error": "Current password is incorrect" }` — the re-entry check failed.
+- `500` — `{ "error": "<message>" }` — the Supabase password update itself errored.
+
+**Verified live, this sync (real accounts, deleted afterward — cascade
+confirmed):** `GET /auth/me` returns the real email + `created_at` a signup
+response never carried; `PATCH /auth/profile` updates `name` (persisted,
+re-read via `GET /auth/me`), rejects a blank name / empty body; `POST
+/auth/password` rejects a wrong current password (`400 "Current password is
+incorrect"`) and a too-short new one, accepts a valid change (`200`), after
+which the old access token `401`s, a login with the **old** password `401`s
+("Invalid email or password"), and a login with the **new** password
+`200`s. Logout-from-Settings reuses the existing `POST /auth/logout` (session
+dead afterward, `401`).
 
 ---
 
@@ -1185,6 +1289,50 @@ File refs are all under `frontend/`:
     logout -> `POST /auth/logout` `200` and the old access token immediately
     stopped working -> reload -> full login required again, not PIN. Test
     account and its transfer/balance rows deleted afterward.
+
+17. **Settings page — real profile management, backend + frontend.** Per
+    `KOBO_BUILD_PLAN.md`'s "New pages" → Settings. **Investigated first, per
+    instruction:** no existing endpoint returned a sender their own `email`
+    or `created_at` (`POST /auth/login`'s `user` omits both; `requireAuth`
+    only attaches the raw Supabase Auth user), so `GET /auth/me` was needed
+    and added — not assumed. Three new `/auth/*` endpoints (own section
+    above): `GET /auth/me` (full profile incl. email + member-since),
+    `PATCH /auth/profile` (name/country, own row only, same
+    `resolveKoboUser` → `.eq("id", …)` ownership pattern as `POST /auth/pin`),
+    `POST /auth/password` (Supabase `admin.updateUserById`, current-password
+    re-entry check via a fresh `signInWithPassword`, current session revoked
+    on success). Frontend: new `components/kobo/settings-screen.tsx` (wired
+    into `kobo-app.tsx` at `SETTINGS_INDEX`, replacing the "isn't built yet"
+    stub — matching how `RecipientsScreen` is wired), `getProfile()`/
+    `updateProfile()`/`changePassword()` in `lib/kobo/api.ts` (mock-gated
+    exactly like every other real call — mock mode has a real-shaped
+    `mockProfile`/`mockPassword` so a mock demo of Settings behaves like the
+    real thing), `updateStoredUser()` in `lib/kobo/auth.ts` + an `AuthGate`
+    tweak so a profile edit refreshes the header name without a reload.
+    **Logout reuses the existing flow, not a duplicate:** the header's
+    inline "Log out?" `AlertDialog` was extracted to a shared
+    `components/kobo/logout-confirm-dialog.tsx` used by both the header and
+    Settings; both call `AuthGate`'s same `onLogout` (→ `POST /auth/logout`).
+    **Deliberate scope calls, flagged:** (a) **email change deferred** — it
+    needs a real confirmation email (free-tier send limits; the build plan
+    already scopes an email-sending integration as a separate later task);
+    Settings shows the email read-only with a "contact support" line, clearly
+    not silently unchangeable. (b) **Wallet copy** — the Settings "Linked
+    address" section labels the sender `wallet_address` accurately as an
+    address that "isn't used to hold or move your money" (Kobo sends from its
+    pooled wallet), kept "in case direct wallet payouts are added later" —
+    plain language chosen to avoid implying custodial significance it doesn't
+    have; flagged for copy review.
+    **Verified live** (backend via real accounts against the running API,
+    deleted afterward — `auth.users`→`users` cascade re-confirmed; frontend
+    via `tsc --noEmit` clean + the full vitest suite, incl. a new
+    `settings-screen.test.tsx` and an updated `nav-and-tabs.test.tsx`; no
+    browser extension available this session for a Playwright pass): updated
+    a name (persisted, re-read via `GET /auth/me`); changed a password and
+    confirmed the old token + old-password login both `401` and the
+    new-password login `200`s; viewed wallet + account details (real email,
+    country, June-2026-style member-since); logout-from-Settings ends the
+    session (`401` after).
 
 ## Still open
 
