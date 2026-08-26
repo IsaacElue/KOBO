@@ -9,7 +9,7 @@ import { LogoutConfirmDialog } from "@/components/kobo/logout-confirm-dialog";
 import { SUPPORT_EMAIL } from "@/lib/kobo/mock-data";
 import { changePassword, getProfile, updateProfile } from "@/lib/kobo/api";
 import type { UserProfile } from "@/lib/kobo/types";
-import { Check, Copy, LifeBuoy, LogOut, Mail, ShieldCheck, Wallet } from "lucide-react";
+import { Check, Copy, LogOut, Mail } from "lucide-react";
 
 /**
  * Settings — profile, email, password, wallet, account details, support, and
@@ -173,7 +173,6 @@ export function SettingsScreen({
       <div className="flex max-w-2xl flex-col gap-5">
         {/* Profile */}
         <Section
-          icon={<ShieldCheck className="size-[18px] text-kobo-teal-600" strokeWidth={1.8} />}
           title="Profile"
           description="Your name as it appears on Kobo, and where you're sending from."
         >
@@ -220,13 +219,9 @@ export function SettingsScreen({
         </Section>
 
         {/* Email */}
-        <Section
-          icon={<Mail className="size-[18px] text-kobo-teal-600" strokeWidth={1.8} />}
-          title="Email address"
-          description="Used to sign in on a new device."
-        >
+        <Section title="Email address" description="Used to sign in on a new device.">
           <DetailRow label="Email" value={email} mono />
-          <p className="mt-3 text-[13.5px] leading-relaxed text-[#7B959B]">
+          <p className="mt-3 text-[13px] leading-relaxed text-[#7B959B]">
             Changing your email needs a confirmation link sent to both addresses, which
             isn&apos;t available yet.{" "}
             <a
@@ -241,7 +236,6 @@ export function SettingsScreen({
 
         {/* Password */}
         <Section
-          icon={<ShieldCheck className="size-[18px] text-kobo-teal-600" strokeWidth={1.8} />}
           title="Password"
           description="You'll be signed out and need to log in again with the new one."
         >
@@ -302,11 +296,8 @@ export function SettingsScreen({
         </Section>
 
         {/* Account details */}
-        <Section
-          icon={<ShieldCheck className="size-[18px] text-kobo-teal-600" strokeWidth={1.8} />}
-          title="Account details"
-        >
-          <div className="flex flex-col gap-2">
+        <Section title="Account details">
+          <div className="flex flex-col gap-1.5">
             <DetailRow label="Name" value={profile?.name ?? "—"} />
             <DetailRow label="Email" value={email} mono />
             <DetailRow label="Country" value={profile?.country ?? "—"} />
@@ -315,10 +306,7 @@ export function SettingsScreen({
         </Section>
 
         {/* Wallet */}
-        <Section
-          icon={<Wallet className="size-[18px] text-kobo-teal-600" strokeWidth={1.8} />}
-          title="Linked address"
-        >
+        <Section title="Linked address">
           <div className="flex items-center justify-between gap-3 rounded-2xl bg-[#F6FAFA] px-3.5 py-2.5">
             <span className="truncate font-mono text-[12.5px] text-[#5E7A81]">
               {profile?.wallet_address ?? "—"}
@@ -338,7 +326,7 @@ export function SettingsScreen({
               )}
             </Button>
           </div>
-          <p className="mt-3 text-[13.5px] leading-relaxed text-[#7B959B]">
+          <p className="mt-3 text-[13px] leading-relaxed text-[#7B959B]">
             Kobo sends USDC from its own pooled wallet, so this address isn&apos;t used to
             hold or move your money. It&apos;s kept on file in case direct wallet payouts
             are added later.
@@ -346,42 +334,38 @@ export function SettingsScreen({
         </Section>
 
         {/* Support */}
-        <Section
-          icon={<LifeBuoy className="size-[18px] text-kobo-teal-600" strokeWidth={1.8} />}
-          title="Help & support"
-        >
+        <Section title="Help & support">
           <p className="text-[14px] leading-relaxed text-[#5E7A81]">
             Something not working, or a question about a transfer? Email us and we&apos;ll
             usually reply within one business day.
           </p>
           <div className="mt-4">
-            <a href={`mailto:${SUPPORT_EMAIL}`}>
-              <Button
-                variant="outline"
-                className="h-auto gap-2 rounded-full border-kobo-ink/[0.14] px-5 py-2.5 text-[14px] hover:border-kobo-teal-600"
-              >
-                <Mail className="size-[15px]" strokeWidth={1.9} />
-                {SUPPORT_EMAIL}
-              </Button>
-            </a>
+            <Button
+              variant="outline"
+              onClick={() => {
+                window.location.href = `mailto:${SUPPORT_EMAIL}`;
+              }}
+              className="h-auto gap-2 rounded-full border-kobo-ink/[0.14] px-5 py-2.5 text-[14px] text-[#33565E] hover:border-kobo-teal-600 hover:text-kobo-ink"
+            >
+              <Mail className="size-[15px]" strokeWidth={1.9} />
+              {SUPPORT_EMAIL}
+            </Button>
           </div>
         </Section>
 
         {/* Log out */}
         {onLogout && (
-          <Section
-            icon={<LogOut className="size-[18px] text-kobo-teal-600" strokeWidth={1.8} />}
-            title="Log out"
-            description="End your session on this device."
-          >
-            <Button
-              variant="outline"
-              onClick={() => setLogoutOpen(true)}
-              className="h-auto gap-2 rounded-full border-destructive/30 px-5 py-2.5 text-[14px] text-destructive hover:border-destructive hover:bg-destructive/10 hover:text-destructive"
-            >
-              <LogOut className="size-[15px]" strokeWidth={1.9} />
-              Log out
-            </Button>
+          <Section title="Log out" description="End your session on this device.">
+            <div>
+              <Button
+                variant="outline"
+                onClick={() => setLogoutOpen(true)}
+                className="h-auto gap-2 rounded-full border-kobo-ink/[0.14] px-5 py-2.5 text-[14px] text-[#33565E] hover:border-kobo-teal-600 hover:text-kobo-ink"
+              >
+                <LogOut className="size-[15px]" strokeWidth={1.9} />
+                Log out
+              </Button>
+            </div>
           </Section>
         )}
       </div>
@@ -394,26 +378,19 @@ export function SettingsScreen({
 }
 
 function Section({
-  icon,
   title,
   description,
   children,
 }: {
-  icon: ReactNode;
   title: string;
   description?: string;
   children: ReactNode;
 }) {
   return (
-    <Card className="gap-0 rounded-[26px] border border-white/90 bg-white p-6 shadow-[0_24px_50px_-42px_rgba(11,31,36,0.7)] ring-0">
-      <div className="mb-4 flex items-start gap-3">
-        <div className="mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-full bg-[#F1F6F7]">
-          {icon}
-        </div>
-        <div className="min-w-0">
-          <h2 className="text-[17px] font-semibold tracking-tight text-kobo-ink">{title}</h2>
-          {description && <p className="mt-0.5 text-[13.5px] text-[#8AA3A9]">{description}</p>}
-        </div>
+    <Card className="gap-0 rounded-[28px] border border-white/90 bg-white p-6.5 shadow-[0_24px_50px_-42px_rgba(11,31,36,0.7)] ring-0">
+      <div className="mb-5">
+        <h2 className="text-base font-semibold tracking-tight text-kobo-ink">{title}</h2>
+        {description && <p className="mt-1 text-[13px] text-[#8AA3A9]">{description}</p>}
       </div>
       {children}
     </Card>
@@ -444,10 +421,14 @@ function Field({
 
 function DetailRow({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
   return (
-    <div className="flex items-center justify-between gap-3 rounded-2xl bg-[#F6FAFA] px-3.5 py-2.5">
-      <span className="text-[13px] text-[#8AA3A9]">{label}</span>
+    <div className="flex items-center justify-between gap-4 rounded-2xl bg-[#F6FAFA] px-3.5 py-2.5">
+      <span className="shrink-0 text-[13px] text-[#8AA3A9]">{label}</span>
       <span
-        className={`min-w-0 truncate text-[14px] text-kobo-ink ${mono ? "font-mono text-[12.5px]" : ""}`}
+        className={
+          mono
+            ? "min-w-0 text-right font-mono text-[12.5px] break-all text-kobo-ink"
+            : "min-w-0 truncate text-right text-[14px] text-kobo-ink"
+        }
       >
         {value}
       </span>
