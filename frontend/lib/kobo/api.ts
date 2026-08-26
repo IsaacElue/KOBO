@@ -13,6 +13,10 @@ import type {
   TransferStatus,
 } from "./types";
 import { randomRate } from "./mock-data";
+import { API_URL, isMockMode } from "./config";
+import { getValidAccessToken, handleUnauthorized } from "./auth";
+
+export { isMockMode };
 
 export const STATUS_LABEL: Record<TransferStatus, string> = {
   pending: "Securing your transfer",
@@ -28,11 +32,10 @@ export const FUNDING_STATUS_LABEL: Record<FundingStatus, string> = {
   failed: "Couldn't add funds",
 };
 
-const API_URL = process.env.NEXT_PUBLIC_KOBO_API_URL;
-
-/** True while there's no real backend configured — see NEXT_PUBLIC_KOBO_API_URL in .env.example. */
-export function isMockMode() {
-  return !API_URL;
+/** `Authorization: Bearer <token>` for a protected endpoint, or `{}` if there's no valid session (the request will then 401, same as today with no session at all). */
+async function authHeaders(): Promise<Record<string, string>> {
+  const token = await getValidAccessToken();
+  return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
 /** Thrown by `createTransfer()` on a `400`/`500` — `code`/`requiredUsdc` are only set for `INSUFFICIENT_BALANCE`. */
@@ -60,11 +63,15 @@ export async function createTransfer(req: CreateTransferRequest): Promise<Transf
   if (!isMockMode()) {
     const res = await fetch(`${API_URL}/transfers`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...(await authHeaders()) },
       body: JSON.stringify(req),
     });
     const body = await res.json().catch(() => null);
-    if (res.status === 400 || res.status === 500) {
+    if (res.status === 401) {
+      handleUnauthorized();
+      throw new Error("Your session has expired — please sign in again");
+    }
+    if (res.status === 400 || res.status === 403 || res.status === 500) {
       const err = new Error(body?.error ?? `POST /transfers failed: ${res.status}`) as ApiError;
       err.code = body?.code;
       err.requiredUsdc = body?.required_usdc;
@@ -162,7 +169,11 @@ export async function getRate(currency: CurrencyCode): Promise<number> {
  */
 export async function getBalance(userId: string): Promise<number> {
   if (!isMockMode()) {
-    const res = await fetch(`${API_URL}/balances/${userId}`);
+    const res = await fetch(`${API_URL}/balances/${userId}`, { headers: await authHeaders() });
+    if (res.status === 401) {
+      handleUnauthorized();
+      throw new Error("Your session has expired — please sign in again");
+    }
     if (!res.ok) throw new Error(`GET /balances/${userId} failed: ${res.status}`);
     const body: BalanceResponse = await res.json();
     return body.usdc_balance;
@@ -183,9 +194,13 @@ export async function createFunding(
   if (!isMockMode()) {
     const res = await fetch(`${API_URL}/funding`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...(await authHeaders()) },
       body: JSON.stringify(req),
     });
+    if (res.status === 401) {
+      handleUnauthorized();
+      throw new Error("Your session has expired — please sign in again");
+    }
     if (!res.ok) {
       const body: { error?: string } | null = await res.json().catch(() => null);
       throw new Error(body?.error ?? `POST /funding failed: ${res.status}`);
@@ -244,7 +259,11 @@ export async function getFundingRequest(
   opts?: { mockOutcome?: "confirmed" | "failed" }
 ): Promise<FundingRecord & { balance: number }> {
   if (!isMockMode()) {
-    const res = await fetch(`${API_URL}/funding/${id}`);
+    const res = await fetch(`${API_URL}/funding/${id}`, { headers: await authHeaders() });
+    if (res.status === 401) {
+      handleUnauthorized();
+      throw new Error("Your session has expired — please sign in again");
+    }
     if (!res.ok) throw new Error(`GET /funding/${id} failed: ${res.status}`);
     return res.json();
   }
@@ -325,7 +344,11 @@ export async function getTransfer(
   opts?: { mockOutcome?: "confirmed" | "failed" }
 ): Promise<TransferRecord> {
   if (!isMockMode()) {
-    const res = await fetch(`${API_URL}/transfers/${id}`);
+    const res = await fetch(`${API_URL}/transfers/${id}`, { headers: await authHeaders() });
+    if (res.status === 401) {
+      handleUnauthorized();
+      throw new Error("Your session has expired — please sign in again");
+    }
     if (!res.ok) throw new Error(`GET /transfers/${id} failed: ${res.status}`);
     return res.json();
   }

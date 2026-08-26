@@ -1,10 +1,10 @@
 import { Suspense } from "react";
-import { KoboApp } from "@/components/kobo/kobo-app";
+import { AuthGate } from "@/components/kobo/auth-gate";
 
 export default function Home() {
   return (
     <Suspense>
-      <KoboApp />
+      <AuthGate />
     </Suspense>
   );
 }

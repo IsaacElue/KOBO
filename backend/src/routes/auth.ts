@@ -91,6 +91,40 @@ authRouter.post("/login", async (req, res) => {
 });
 
 /**
+ * Exchanges a refresh token for a fresh session — how a returning visit stays
+ * signed in past the access token's ~1h expiry without re-entering a
+ * password. A thin proxy over Supabase's own refresh grant, same as
+ * login/signup; no separate token store or custom expiry logic here.
+ */
+authRouter.post("/refresh", async (req, res) => {
+  const { refresh_token } = req.body ?? {};
+  if (!refresh_token || typeof refresh_token !== "string") {
+    return res.status(400).json({ error: "refresh_token is required" });
+  }
+
+  const refreshed = await supabase.auth.refreshSession({ refresh_token });
+  if (refreshed.error || !refreshed.data.session) {
+    return res.status(401).json({ error: "Invalid or expired refresh token" });
+  }
+
+  return res.json({ session: sessionBody(refreshed.data.session) });
+});
+
+/**
+ * Revokes the session server-side (not just a client-side "forget the
+ * token") — `admin.signOut` with `"global"` scope invalidates the refresh
+ * token too, so a copy of it left in old storage can't be replayed after
+ * logout.
+ */
+authRouter.post("/logout", requireAuth, async (req, res) => {
+  const { error } = await supabase.auth.admin.signOut(req.authToken!, "global");
+  if (error) {
+    return res.status(500).json({ error: error.message });
+  }
+  return res.status(200).json({ success: true });
+});
+
+/**
  * Sets (or replaces) the caller's PIN. Not the account credential — a
  * fast-unlock layer on top of an already-authenticated session, so this
  * itself requires a valid session, same as pin/verify below. One PIN per

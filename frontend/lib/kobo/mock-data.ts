@@ -1,15 +1,17 @@
 import type { CurrencyCode, CurrencyMeta, Recipient, TransferHistoryItem } from "./types";
 
 /**
- * There's no auth/login yet (see KOBO_BUILD_PLAN.md), so this is the app's one
- * demo sender. `id` is the real `users.id` (uuid) of a `role: "sender"` row
- * created via `POST /users` — see NEXT_PUBLIC_KOBO_SENDER_ID in `.env.example`.
- * Falls back to a fake id in mock mode, where nothing validates it server-side.
- * `name`/`initials`/`iban` are just display fixtures (`iban` has no backend
- * column at all) and stay fixed regardless.
+ * Mock mode's only demo sender — `AuthGate` (components/kobo/auth-gate.tsx)
+ * skips real auth entirely in mock mode and renders `KoboApp` with no `user`
+ * prop, which defaults to this fixture. In real mode this is never read:
+ * `NEXT_PUBLIC_KOBO_SENDER_ID` (the old hardcoded-demo-sender scheme this
+ * used to fall back to) is gone — the real signed-in user's own `id`/`name`
+ * (from `POST /auth/signup` or `/login`, see lib/kobo/auth.ts) is used
+ * everywhere instead. `name`/`initials`/`iban` are just display fixtures
+ * (`iban` has no backend column at all) and stay fixed regardless.
  */
 export const CURRENT_USER = {
-  id: process.env.NEXT_PUBLIC_KOBO_SENDER_ID || "usr_tomiwa",
+  id: "usr_tomiwa",
   name: "Tomiwa M.",
   initials: "TM",
   iban: "4417",

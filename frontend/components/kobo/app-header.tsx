@@ -3,6 +3,16 @@
 import { useEffect, useState } from "react";
 import { Input } from "@/components/ui/input";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Search } from "lucide-react";
 
 export function AppHeader({
@@ -10,12 +20,16 @@ export function AppHeader({
   rate,
   userName,
   userInitials,
+  onLogout,
 }: {
   currencyCode: string;
   rate: string;
   userName: string;
   userInitials: string;
+  /** Omitted in mock mode — the avatar button then just isn't clickable, same as before this existed. */
+  onLogout?: () => void;
 }) {
+  const [confirmingLogout, setConfirmingLogout] = useState(false);
   // `rate` comes from a live fetch, so its value at server-render time and at the
   // client's initial (pre-hydration) render time can genuinely differ — that's a
   // real server/client mismatch, not a false positive to silence. Render a stable
@@ -44,7 +58,11 @@ export function AppHeader({
             1 {currencyCode} = {mounted ? rate : "····"} USDC
           </span>
         </div>
-        <button className="flex items-center gap-2.5 rounded-full border border-kobo-ink/[0.07] bg-white/70 py-1.5 pr-3.5 pl-1.5 transition-all hover:-translate-y-px hover:bg-white active:scale-[0.97]">
+        <button
+          onClick={onLogout ? () => setConfirmingLogout(true) : undefined}
+          aria-label={onLogout ? "Account menu — log out" : undefined}
+          className="flex items-center gap-2.5 rounded-full border border-kobo-ink/[0.07] bg-white/70 py-1.5 pr-3.5 pl-1.5 transition-all hover:-translate-y-px hover:bg-white active:scale-[0.97]"
+        >
           <Avatar>
             <AvatarFallback className="bg-gradient-to-br from-kobo-mint to-[#BFE7D1] font-semibold text-kobo-mint-dark">
               {userInitials}
@@ -53,6 +71,31 @@ export function AppHeader({
           <span className="text-[14.5px] font-medium text-kobo-ink">{userName}</span>
         </button>
       </div>
+
+      {onLogout && (
+        <AlertDialog open={confirmingLogout} onOpenChange={setConfirmingLogout}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Log out?</AlertDialogTitle>
+              <AlertDialogDescription>
+                You&apos;ll need your PIN to get back in on this device, or your email and
+                password on a new one.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={() => {
+                  setConfirmingLogout(false);
+                  onLogout();
+                }}
+              >
+                Log out
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      )}
     </header>
   );
 }

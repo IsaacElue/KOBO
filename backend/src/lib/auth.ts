@@ -7,6 +7,8 @@ declare global {
     interface Request {
       /** The verified Supabase Auth user for this request — set by requireAuth. */
       authUser?: User;
+      /** The raw bearer token that verified as authUser — set by requireAuth, so routes needing the literal token (e.g. POST /auth/logout) don't re-parse the header. */
+      authToken?: string;
     }
   }
 }
@@ -32,6 +34,7 @@ export const requireAuth: RequestHandler = async (req, res, next) => {
   }
 
   req.authUser = data.user;
+  req.authToken = token;
   next();
 };
 

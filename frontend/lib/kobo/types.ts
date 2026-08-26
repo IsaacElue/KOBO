@@ -116,3 +116,32 @@ export interface FundingRecord {
   failure_reason: string | null;
   created_at: string;
 }
+
+/** The `users` row for the authenticated sender — the `user` field on every `POST /auth/*` response. */
+export interface AuthUser {
+  id: string;
+  name: string;
+  role: "sender";
+  country: string;
+  wallet_address: string;
+}
+
+/** The `session` field on every `POST /auth/*` response — real Supabase Auth tokens, stored as-is (see lib/kobo/auth.ts). */
+export interface AuthSession {
+  access_token: string;
+  refresh_token: string;
+  expires_at: number;
+}
+
+export interface CreateSignupRequest {
+  email: string;
+  password: string;
+  name: string;
+  country: string;
+  wallet_address: string;
+}
+
+export interface CreateLoginRequest {
+  email: string;
+  password: string;
+}

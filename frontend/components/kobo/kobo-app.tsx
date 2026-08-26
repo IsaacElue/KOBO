@@ -46,7 +46,7 @@ import {
   STATUS_LABEL,
   type ApiError,
 } from "@/lib/kobo/api";
-import { formatAmount } from "@/lib/kobo/format";
+import { formatAmount, nameToInitials } from "@/lib/kobo/format";
 import { clearOnrampDraft, loadOnrampDraft } from "@/lib/kobo/onramp-draft";
 import { preferRedirectOnramp, type TransakBridgeEvent } from "@/lib/kobo/onramp-transak";
 import type {
@@ -76,7 +76,21 @@ function draftRecipient(recipientId: string, snapshot: { name: string; initials:
   };
 }
 
-export function KoboApp() {
+export function KoboApp({
+  authUser = CURRENT_USER,
+  onLogout,
+}: {
+  /**
+   * The signed-in sender — real (`AuthUser` from `POST /auth/signup`/`login`,
+   * see `AuthGate`) whenever real auth is in play, or the mock fixture
+   * (`CURRENT_USER`) when it isn't. Only `id`/`name` are actually used here;
+   * initials/IBAN are always derived from those, never trusted fields on the
+   * object itself, so either shape works without a mock-specific branch.
+   */
+  authUser?: { id: string; name: string };
+  /** Omitted in mock mode (AuthGate never renders a real auth shell around mock mode), present in real mode. */
+  onLogout?: () => void;
+} = {}) {
   const router = useRouter();
   const searchParams = useSearchParams();
 
@@ -138,7 +152,7 @@ export function KoboApp() {
   /** Same silent-retry treatment as refreshRate, for the same reason. */
   async function refreshBalance() {
     try {
-      setBalance(await getBalance(CURRENT_USER.id));
+      setBalance(await getBalance(authUser.id));
     } catch {
       // keep last known value
     }
@@ -224,7 +238,7 @@ export function KoboApp() {
   async function handleConfirmClick() {
     let currentBalance = balance;
     try {
-      currentBalance = await getBalance(CURRENT_USER.id);
+      currentBalance = await getBalance(authUser.id);
       setBalance(currentBalance);
     } catch {
       // Fall back to the last known balance for this pre-check — POST /transfers'
@@ -272,7 +286,7 @@ export function KoboApp() {
 
     try {
       const res = await createTransfer({
-        sender_id: CURRENT_USER.id,
+        sender_id: authUser.id,
         recipient_id: recipient.id,
         amount_eur: amt * currencyMeta.eurRate,
       });
@@ -325,7 +339,7 @@ export function KoboApp() {
     setFundingOnrampSession(null);
 
     try {
-      const res = await createFunding({ sender_id: CURRENT_USER.id, amount_eur: amountEur });
+      const res = await createFunding({ sender_id: authUser.id, amount_eur: amountEur });
       if (!res.onramp.widgetUrl) {
         toast.error("Couldn't start checkout — please try again.");
         setFundingStep("closed");
@@ -396,16 +410,10 @@ export function KoboApp() {
   }
 
   function handleAddRecipient(user: CreateUserResponse) {
-    const initials = user.name
-      .split(" ")
-      .filter(Boolean)
-      .slice(0, 2)
-      .map((w) => w[0]!.toUpperCase())
-      .join("") || "NR";
     const newRecipient: Recipient = {
       id: user.id,
       name: user.name,
-      initials,
+      initials: nameToInitials(user.name),
       meta: "New recipient · USDC wallet",
       wallet: user.wallet_address,
       lastSent: "No transfers yet",
@@ -455,7 +463,7 @@ export function KoboApp() {
         onSelect={setNavIndex}
         balanceLabel={`${currency} BALANCE`}
         balance={balanceStr}
-        iban={CURRENT_USER.iban}
+        iban={authUser.id.slice(-4).toUpperCase()}
         onAddFunds={openAddFunds}
       />
 
@@ -463,8 +471,9 @@ export function KoboApp() {
         <AppHeader
           currencyCode={currency}
           rate={rateStr}
-          userName={CURRENT_USER.name}
-          userInitials={CURRENT_USER.initials}
+          userName={authUser.name}
+          userInitials={nameToInitials(authUser.name)}
+          onLogout={onLogout}
         />
 
         {loading ? (

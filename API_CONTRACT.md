@@ -45,7 +45,9 @@ below, these were "Still open" #1 and #5).
 
 ---
 
-## `POST /auth/signup`, `POST /auth/login`, `POST /auth/pin`, `POST /auth/pin/verify` (NEW this sync)
+## `POST /auth/signup`, `POST /auth/login`, `POST /auth/refresh`, `POST /auth/logout`, `POST /auth/pin`, `POST /auth/pin/verify`
+
+**Frontend now wired to all six of these — see "Resolved this sync" #16.**
 
 Real auth, per `KOBO_BUILD_PLAN.md`'s "3c. Real auth" — Supabase Auth for the
 real account (email+password), a separate server-verified PIN as a
@@ -106,6 +108,20 @@ happen for anything created via `/signup`, but not assumed).
 - `401` — `{ "error": "Invalid email or password" }` — deliberately identical
   whether the email doesn't exist or the password is wrong; never reveals
   which.
+
+### `POST /auth/refresh`
+
+Exchanges a refresh token for a fresh session — how a returning visit stays signed in past the access token's ~1h expiry. Thin proxy over `supabase.auth.refreshSession`.
+
+**Request body:** `{ "refresh_token": "string" }`
+**Success — `200`:** `{ "session": { "access_token", "refresh_token", "expires_at" } }`
+**Error — `401`:** `{ "error": "Invalid or expired refresh token" }` (refresh token itself is dead — session is over, frontend falls back to full login).
+
+### `POST /auth/logout` — requires a valid session
+
+Revokes the session server-side (`supabase.auth.admin.signOut(token, "global")`) — not just a client-side "forget it," the refresh token itself stops working, verified live.
+
+**Success — `200`:** `{ "success": true }`
 
 ### `POST /auth/pin` — requires a valid session
 
@@ -1140,6 +1156,36 @@ File refs are all under `frontend/`:
     `auth.users` deletion actually cascades to the linked `users` row via the
     new FK's `on delete cascade`, live, not just by reading the migration.
 
+16. **Frontend real-auth UI — Revolut-style signup + PIN fast-unlock, closing
+    out "Still open" #12.** Two new backend endpoints (`POST /auth/refresh`,
+    `POST /auth/logout` — proxies over Supabase's own refresh grant and
+    admin sign-out, no custom token scheme) plus five new frontend pieces:
+    `lib/kobo/auth.ts` (session storage — one `localStorage` key holding the
+    real Supabase-issued tokens as-is, transparent refresh with in-flight
+    de-duping, pub-sub for session-changed), `auth-gate.tsx`
+    (loading/signup/login/pin-setup/pin-unlock/unlocked state machine, in
+    front of `KoboApp`), `signup-dialog.tsx`, `login-dialog.tsx`,
+    `pin-setup-dialog.tsx`/`pin-unlock-dialog.tsx` (same numeric-keypad visual
+    language as the existing `PasscodeDialog`, not a new one). A sender's
+    `wallet_address` (required by signup, never actually read by any send —
+    confirmed in code, only a recipient's is) is generated client-side
+    (`generatePlaceholderWalletAddress`, `lib/kobo/solana.ts`) rather than
+    asked of the user — real friction for zero function otherwise. `KoboApp`
+    now takes an optional `authUser`/`onLogout`; mock mode is untouched
+    (`AuthGate` renders `KoboApp` directly, no gate, matching the existing
+    test suite which renders it bare). `NEXT_PUBLIC_KOBO_SENDER_ID` is fully
+    deleted (code and `.env.example`) — confirmed zero remaining functional
+    reads, only historical doc mentions.
+    **Verified live** (Playwright, persistent profile so `localStorage`
+    survives real page reloads): real signup -> PIN set -> reload -> PIN
+    screen (not full login) -> wrong PIN rejected generically -> correct PIN
+    unlocks -> a real `POST /transfers` with the real session succeeded
+    (`200`, real `solana_tx_signature`, sender pre-credited via
+    `creditBalance` for the test since a fresh signup has `0` balance) ->
+    logout -> `POST /auth/logout` `200` and the old access token immediately
+    stopped working -> reload -> full login required again, not PIN. Test
+    account and its transfer/balance rows deleted afterward.
+
 ## Still open
 
 These still need a decision — nothing below has been silently resolved or guessed at.
@@ -1288,18 +1334,17 @@ These still need a decision — nothing below has been silently resolved or gues
     > sidebar balance display ("Still open" #8, resolved on the backend side)
     > still needs its actual frontend wiring decided/built [...].
 
-12. **Frontend not updated for real auth yet — backend-only this sync, same
-    sequencing as #11 above.** The frontend still uses the hardcoded
-    `NEXT_PUBLIC_KOBO_SENDER_ID` demo-sender scheme (`KOBO_BUILD_PLAN.md`'s
-    "3c. Real auth" calls this superseded, but the frontend code itself hasn't
-    changed) and sends no `Authorization` header on any request. Every
-    real-mode call to `POST /transfers`, `GET /transfers/:id`, `POST /funding`,
-    `GET /funding/:id`, or `GET /balances/:userId` will now `401` until the
-    frontend does real signup/login (`POST /auth/signup` / `POST /auth/login`),
-    stores the returned `access_token`/`refresh_token`, and sends
-    `Authorization: Bearer <access_token>` on those calls — exactly the next
-    item in `KOBO_BUILD_PLAN.md`'s stated sequencing ("frontend PIN UI" next).
-    Mock mode is entirely unaffected (it never calls the real backend).
+12. **RESOLVED — see "Resolved this sync" #16.** ~~Frontend not updated for
+    real auth yet.~~ Signup/login/PIN UI built, `NEXT_PUBLIC_KOBO_SENDER_ID`
+    deleted, every protected call now sends a real `Authorization` header.
+    Left in place for history — the previous open question is quoted below.
+    > The frontend still uses the hardcoded `NEXT_PUBLIC_KOBO_SENDER_ID`
+    > demo-sender scheme and sends no `Authorization` header on any request.
+    > Every real-mode call to `POST /transfers`, `GET /transfers/:id`,
+    > `POST /funding`, `GET /funding/:id`, or `GET /balances/:userId` will
+    > now `401` until the frontend does real signup/login, stores the
+    > returned tokens, and sends `Authorization: Bearer <access_token>`.
+    > Mock mode is entirely unaffected (it never calls the real backend).
 
 13. **PIN reset has no separate flow — deliberately, not an oversight.**
     `POST /auth/pin` always overwrites any existing PIN for the caller; there's

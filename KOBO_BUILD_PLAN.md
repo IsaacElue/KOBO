@@ -138,7 +138,8 @@ Earlier scope said auth was minimal/deferred. Decision: build it for real now, R
 - **PIN**: set once right after signup. The PIN is NOT the account credential — it's a fast-unlock layer on top of an already-real, already-authenticated Supabase session (same pattern as Revolut/banking apps: full login once, PIN/biometric to reopen quickly after). Stored server-side, hashed, verified via a real endpoint.
 - **Persistence**: a valid session persists locally (same device/browser) so returning users see the PIN screen, not full email/password, matching the "first time = full signup, after that = just PIN" flow described.
 - **Mobile-ready**: this pattern (real session + local fast-unlock) carries forward cleanly to a future native mobile app without rearchitecting.
-- Sequenced: backend auth foundation first (everything else depends on it), then frontend PIN UI, then Settings (needs real accounts to manage), then Overview (independent), then Activity (market data, last — most exploratory).
+- **DONE (backend + frontend), 2026-08-26:** signup, login, PIN set/verify, session refresh/logout all built and verified live end-to-end (real signup -> PIN -> reload -> PIN unlock -> real transfer -> logout -> reload -> full login). `NEXT_PUBLIC_KOBO_SENDER_ID` fully removed. See API_CONTRACT.md's `POST /auth/*` section.
+- Sequenced: ~~backend auth foundation first~~, ~~then frontend PIN UI~~ — both done. Next: Settings (needs real accounts to manage), then Overview (independent), then Activity (market data, last — most exploratory).
 
 ### New pages (2026-08-26)
 - **Overview**: clean, mostly-static product page — offerings, solutions, vision. No backend dependency.
