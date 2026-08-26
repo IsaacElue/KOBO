@@ -308,9 +308,26 @@ File refs are all under `frontend/`:
   toast style already used for `POST /transfers` failures.
 - Mock recipients (`lib/kobo/mock-data.ts`) use wallet strings like `0x7a3f…C41d`
   (Ethereum-style, and pre-truncated for display — not full addresses) and ids like
-  `rcp_adaeze`. Mock sender is `{ id: "usr_tomiwa", ... }`. None of these ids are
-  real-backend `uuid`s, so none of them would resolve against `users` even after
-  `POST /users` is wired up — they're display fixtures, not seed data.
+  `rcp_adaeze`. None of these ids are real-backend `uuid`s, so none of them would
+  resolve against `users` even after `POST /users` is wired up — they're display
+  fixtures, not seed data. (Recipient wiring is per-recipient and only applies to
+  ones added through the dialog above — the pre-seeded mock recipients shown by
+  default are untouched.)
+- `CURRENT_USER` (`lib/kobo/mock-data.ts`) — the app's one demo sender, there being
+  no auth/login yet (see `KOBO_BUILD_PLAN.md` ground rules) — now carries a real
+  `users.id`. A real `role: "sender"` row (`{ name: "Tomiwa M.", country: "IE" }`,
+  matching this constant's existing display values) was created once via the same
+  request shape as `createUser()`, and its real `uuid` is read from a new
+  `NEXT_PUBLIC_KOBO_SENDER_ID` env var (`.env.example`), falling back to the old
+  fake `"usr_tomiwa"` string in mock mode where nothing validates it server-side.
+  Only `CURRENT_USER.id` changed — `name`/`initials`/`iban` are unchanged display
+  fixtures (`iban` has no backend column at all) and were left alone on purpose, no
+  visual change. The only place `.id` was read, `kobo-app.tsx`'s
+  `sender_id: CURRENT_USER.id` in `POST /transfers`, now sends the real uuid.
+  Verified live: a real `POST /transfers` succeeds end to end using this real
+  sender id against a real recipient id. No new UI — there's still no "who is
+  signed in" step in the app; this is a single hardcoded demo identity, same as
+  before, just backed by a real row now instead of a fake one.
 - Sidebar shows a per-currency EUR/GBP/USD fiat balance from local mock data
   (`BALANCES` in `mock-data.ts`) — unrelated to `GET /balances/:userId` (see "Still
   open" #8).
@@ -393,6 +410,21 @@ File refs are all under `frontend/`:
    Kobo supports more than one recipient country. On success the dialog now passes the
    real created row (real `uuid`) up to `kobo-app.tsx`, which uses it as the recipient
    going forward instead of a locally fabricated id.
+
+9. **Sender identity wired to a real `users` row.** Was `KOBO_BUILD_PLAN.md`'s
+   "Still mock" #1, same pattern as #8 above. `CURRENT_USER` (`lib/kobo/mock-data.ts`)
+   is still a single hardcoded demo identity — there's no auth/login step, and none
+   was added (out of scope; see `KOBO_BUILD_PLAN.md` ground rules) — but its `.id` is
+   now a real `role: "sender"` `users.id`, created once via the same request shape
+   as `createUser()` (`{ name: "Tomiwa M.", role: "sender", country: "IE",
+   wallet_address: <real Solana pubkey> }`, matching the constant's existing display
+   name) and read from a new `NEXT_PUBLIC_KOBO_SENDER_ID` env var, falling back to
+   the old fake id in mock mode. `name`/`initials`/`iban` are unchanged (`iban` has
+   no backend column at all) — no visual change, only the `.id` used in
+   `kobo-app.tsx`'s `sender_id: CURRENT_USER.id` (the only place `.id` was read) is
+   now real. Verified live: `POST /transfers` succeeds using this real sender id
+   against a real recipient id. Balance display (sidebar) is still mock — separate,
+   not touched by this — see "Still open" #8 below.
 
 ## Still open
 
