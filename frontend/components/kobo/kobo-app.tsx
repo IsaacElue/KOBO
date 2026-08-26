@@ -34,7 +34,7 @@ import {
   randomRate,
 } from "@/lib/kobo/mock-data";
 import { ACTIVITY_INDEX, NAV_ITEMS, RECIPIENTS_INDEX, SEND_MONEY_INDEX } from "@/lib/kobo/nav";
-import { createTransfer, pollTransferStatus, STATUS_LABEL } from "@/lib/kobo/api";
+import { createTransfer, getRate, pollTransferStatus, STATUS_LABEL } from "@/lib/kobo/api";
 import { formatAmount } from "@/lib/kobo/format";
 import { clearOnrampDraft, loadOnrampDraft, saveOnrampDraft } from "@/lib/kobo/onramp-draft";
 import { preferRedirectOnramp, type TransakBridgeEvent } from "@/lib/kobo/onramp-transak";
@@ -100,9 +100,32 @@ export function KoboApp() {
 
   const anyOverlayOpen = step !== "form" || addRecipientOpen || detailTransferId !== null;
 
+  /**
+   * Fetches the live rate (real `GET /rate` -> Transak's public quote in real
+   * mode, `randomRate` in mock mode) and swaps it in. On failure, silently keeps
+   * showing the last known-good rate rather than blanking the ticker — the next
+   * 30s cycle (or a currency switch) retries. No error UI by design: the ticker
+   * has no error-state slot today and this isn't the place to add one.
+   */
+  async function refreshRate(curr: CurrencyCode) {
+    try {
+      setRate(await getRate(curr));
+    } catch {
+      // see comment above — intentionally silent
+    }
+  }
+
   useEffect(() => {
     const t = setTimeout(() => setLoading(false), 1100);
     return () => clearTimeout(t);
+  }, []);
+
+  // Get the real rate in as soon as possible after mount, rather than leaving
+  // the ticker on its initial random seed for a full RATE_LOCK_SECONDS.
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional one-time fetch-on-mount, not a render loop
+    refreshRate(currency);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // One-time consumption of an onramp draft left behind by a redirect round trip:
@@ -129,7 +152,7 @@ export function KoboApp() {
     const iv = setInterval(() => {
       setSecsUntilLock((s) => {
         if (s <= 1) {
-          setRate(randomRate(currency));
+          refreshRate(currency);
           return RATE_LOCK_SECONDS;
         }
         return s - 1;
@@ -153,7 +176,7 @@ export function KoboApp() {
 
   function handleCurrencyChange(next: CurrencyCode) {
     setCurrency(next);
-    setRate(randomRate(next));
+    refreshRate(next);
     setSecsUntilLock(RATE_LOCK_SECONDS);
   }
 

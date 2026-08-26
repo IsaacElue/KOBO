@@ -36,6 +36,12 @@
 3. No auth anywhere — any client can call any endpoint as any user
 4. ~~Wallet input placeholder copy~~ — RESOLVED, copy fixed to reflect Solana
    wallet-address-only input.
+5. ~~Header rate ticker ("1 EUR = X USDC")~~ — RESOLVED. Was fully mock
+   (`Math.random()`-jittered client-side). Confirmed Transak already exposes a
+   public rate quote (no separate rate API needed), added `GET /rate`
+   (backend, proxying Transak's Get Price) and wired the frontend to it — same
+   `rate` state also feeds the transfer summary panel and success dialog, so
+   those are real now too. See API_CONTRACT.md "Resolved this sync" #10.
 
 **Decided (2026-08-25):**
 - Overview / Activity / Settings screens are intentionally stubbed for now. Send
@@ -56,8 +62,11 @@
   balance post-transfer. Decision: display it converted to EUR-equivalent, friendly
   like MetaMask's fiat display, not hiding the underlying USDC entirely. Needs a
   new recipient-facing screen (doesn't exist yet) and reuse of the app's existing
-  live exchange rate source. Scoped as its own separate task — currently on hold
-  pending confirmation it's needed for the Demo Day script.
+  live exchange rate source — this dependency is no longer aspirational: `GET /rate`
+  (real, Transak-backed, see "Still mock" #5 above) exists now and is exactly the
+  reusable source this feature needs, not a new one. Scoped as its own separate
+  task — currently on hold pending confirmation it's needed for the Demo Day
+  script.
 
 ---
 

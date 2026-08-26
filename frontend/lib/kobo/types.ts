@@ -12,6 +12,14 @@ export interface CurrencyMeta {
   flagColor: string;
 }
 
+/** `GET /rate` response — a live EUR/GBP/USD -> USDC market rate, proxied from Transak's public Get Price quote. */
+export interface RateResponse {
+  fiat_currency: CurrencyCode;
+  crypto_currency: "USDC";
+  rate: number;
+  updated_at: string;
+}
+
 export interface Recipient {
   id: string;
   name: string;

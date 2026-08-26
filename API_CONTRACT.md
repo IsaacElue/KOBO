@@ -184,6 +184,37 @@ Returns zeros if no row exists yet (never a 404). **This is a recipient's on-cha
 USDC balance**, written only after a transfer confirms — not a sender's fiat balance.
 See "Still open" #8 below.
 
+## `GET /rate`
+
+Live fiat -> USDC market rate, proxied from Transak's public Get Price quote
+(`docs.transak.com/api/public/get-price`) — no separate third-party rate API, since
+Transak already prices this for real checkout sessions and only needs the plain
+partner API key (already public — embedded in every widgetUrl), not the secret
+partner access token `POST /transfers`/`POST /webhooks/onramp` use.
+
+**Query param:** `fiatCurrency` — one of `EUR | GBP | USD` (defaults to `EUR` if
+omitted). `cryptoCurrency` (`USDC`) and `network` (`solana`) are fixed server-side,
+not exposed as params, since Kobo only ever quotes fiat -> USDC-on-Solana.
+
+**Response — `200`:**
+```json
+{ "fiat_currency": "EUR", "crypto_currency": "USDC", "rate": 1.1673, "updated_at": "2026-08-26T12:31:57.234Z" }
+```
+`rate` is Transak's `marketConversionPrice` (the raw market rate) — not
+`conversionPrice` (which bakes in fees for a specific quoted `fiatAmount`); a rate
+ticker wants the former, not a transactional quote.
+
+**Error responses:**
+- `400` — `{ "error": "fiatCurrency must be one of: EUR, GBP, USD" }`
+- `502` — `{ "error": "<Transak error message>" }` — Transak's quote API unreachable
+  or errored.
+
+**Reusability note (relevant to the recipient-balance EUR-equivalent feature scoped
+in `KOBO_BUILD_PLAN.md`'s "Decided" section):** this is a general-purpose fiat<->USDC
+rate source, not something built one-off for the header ticker. The recipient
+balance display feature can call this same endpoint to convert a recipient's real
+USDC balance into an EUR-equivalent, rather than needing its own rate source.
+
 ---
 
 ## Data model (Supabase / Postgres, via migrations in `backend/supabase/migrations/`)
@@ -426,6 +457,33 @@ File refs are all under `frontend/`:
    against a real recipient id. Balance display (sidebar) is still mock — separate,
    not touched by this — see "Still open" #8 below.
 
+10. **Header rate ticker wired to a real live rate.** Investigated first, per
+    instruction, before touching anything: `randomRate()` (`lib/kobo/mock-data.ts`)
+    was confirmed fully mock — `BASE_USDC_RATE[currency] + Math.random() * 0.02` —
+    driving the header's "1 EUR = X USDC" ticker and, via the same shared `rate`
+    state in `kobo-app.tsx`, the transfer summary panel and success dialog too.
+    Checked whether Transak (already integrated) exposes a rate before reaching for
+    a separate rate API, per instruction — it does: Transak's public Get Price
+    quote endpoint, no separate API needed. Added `getMarketRate()`
+    (`backend/src/lib/transak.ts`) and a new `GET /rate` (`backend/src/routes/rate.ts`,
+    see that section above) proxying it, and a matching `getRate()`
+    (`frontend/lib/kobo/api.ts`, mock-gated the same way every other real call is —
+    mock mode still calls `randomRate()`, unchanged). `kobo-app.tsx` reuses its
+    existing 30s "Locks in Ns" countdown as the refresh cadence (already within the
+    requested 30-60s range) instead of adding a new timer, calling the real
+    `getRate()` at each reset instead of `Math.random()`, plus one fetch on mount so
+    the ticker doesn't sit on its initial random seed for a full 30s. On a failed
+    fetch (network error, Transak's quote API down), the last known-good rate is
+    kept silently — no error UI added, since none exists today and the constraint
+    was no visual changes; verified live by aborting the `/rate` request mid-session
+    and confirming the ticker held its last value with no blank/broken layout. Zero
+    visual/layout changes — verified live in the browser (same ticker position,
+    same styling, values matched the real `GET /rate` response exactly, including
+    after a currency switch, which now also triggers a real re-fetch for the new
+    currency). See "Still open" #9 above for the one related gap this did **not**
+    touch: `POST /transfers`' own `amount_usdc` still uses a separate hardcoded
+    placeholder rate server-side.
+
 ## Still open
 
 These still need a decision — nothing below has been silently resolved or guessed at.
@@ -527,12 +585,20 @@ These still need a decision — nothing below has been silently resolved or gues
    this build touches that), vs. rescoping the sidebar to show something the
    backend actually tracks. Not guessed at or silently patched around.
 
-9. **`amount_usdc` is computed with a placeholder rate (1.08), server-side**,
-   explicitly flagged in the code as temporary. The frontend independently shows
-   its own live-ish random-jittered rate client-side for the "you send" quote.
-   These two numbers will not match today. Whoever owns the real quoted-rate
-   source (Transak's actual quote? a rates API?) needs to be decided — right now
-   neither side has a real one.
+9. **`amount_usdc` is computed with a placeholder rate (1.08), server-side —
+   frontend half resolved this sync, backend half still open.** Was: the frontend
+   independently showed its own random-jittered rate client-side. Now: the header
+   ticker and every UI element sharing that same `rate` state (transfer summary
+   panel, success dialog) show a real live rate from the new `GET /rate`
+   (Transak's actual public quote — see that section above). **Still open:**
+   `POST /transfers`' `amount_usdc` in `backend/src/routes/transfers.ts` still uses
+   its own hardcoded placeholder (1.08), a separate code path this sync didn't
+   touch — so the two numbers still won't match, and the gap may now read as
+   *more* visible (a real ~1.1-1.3-ish market rate quoted client-side vs. a fixed
+   1.08 used server-side) rather than less. Whoever owns `POST /transfers` should
+   have it call the same `getMarketRate()` (`backend/src/lib/transak.ts`) the new
+   `/rate` endpoint uses, so both sides quote off the same real number — not
+   guessed at or changed here since it's a different endpoint's behavior.
 
 10. **RESOLVED.** ~~`frontend/` isn't on `main` yet.~~ `restructure-frontend-folder`
     and `main` have been merged both directions — the monorepo layout (`backend/` +

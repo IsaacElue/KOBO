@@ -134,6 +134,42 @@ export async function createWidgetSession(
   return { widgetUrl, sessionId };
 }
 
+/**
+ * Transak's public "Get Price" quote endpoint (docs.transak.com/api/public/get-price).
+ * Unlike session creation and webhook verification, this needs only the plain
+ * partner API key (already public — it's embedded in every widgetUrl we hand the
+ * frontend) — no partner access token, no jwt, nothing secret. Returns
+ * `marketConversionPrice`, the raw market rate, not `conversionPrice` (which bakes
+ * in fees for the specific quoted `fiatAmount`) — a rate ticker wants the former.
+ */
+export async function getMarketRate(fiatCurrency: string): Promise<number> {
+  const params = new URLSearchParams({
+    partnerApiKey: API_KEY!,
+    fiatCurrency,
+    cryptoCurrency: "USDC",
+    network: "solana",
+    isBuyOrSell: "BUY",
+    fiatAmount: "100",
+  });
+
+  const response = await fetch(`${AUTH_BASE}/api/v1/pricing/public/quotes?${params.toString()}`, {
+    headers: { "x-api-key": API_KEY! },
+  });
+
+  if (!response.ok) {
+    throw new Error(`Transak get-price failed: ${response.status} ${await response.text()}`);
+  }
+
+  const body = await response.json();
+  const rate = body?.response?.marketConversionPrice;
+
+  if (typeof rate !== "number") {
+    throw new Error(`Transak get-price response missing marketConversionPrice: ${JSON.stringify(body)}`);
+  }
+
+  return rate;
+}
+
 export interface TransakWebhookData {
   id: string;
   status: string;

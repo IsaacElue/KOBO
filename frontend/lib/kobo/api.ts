@@ -3,10 +3,13 @@ import type {
   CreateTransferResponse,
   CreateUserRequest,
   CreateUserResponse,
+  CurrencyCode,
   OnrampSession,
+  RateResponse,
   TransferRecord,
   TransferStatus,
 } from "./types";
+import { randomRate } from "./mock-data";
 
 export const STATUS_LABEL: Record<TransferStatus, string> = {
   pending: "Securing your transfer",
@@ -102,6 +105,22 @@ async function mockCreateUser(req: CreateUserRequest): Promise<CreateUserRespons
     wallet_address: req.wallet_address,
     created_at: new Date().toISOString(),
   };
+}
+
+/**
+ * `GET /rate`. A live fiat -> USDC market rate, proxied from Transak's public Get
+ * Price quote (no separate rate API needed — Transak already prices this for real
+ * checkout sessions). Shape confirmed against the real backend — see API_CONTRACT.md.
+ */
+export async function getRate(currency: CurrencyCode): Promise<number> {
+  if (!isMockMode()) {
+    const res = await fetch(`${API_URL}/rate?fiatCurrency=${currency}`);
+    if (!res.ok) throw new Error(`GET /rate failed: ${res.status}`);
+    const body: RateResponse = await res.json();
+    return body.rate;
+  }
+
+  return randomRate(currency);
 }
 
 /**
