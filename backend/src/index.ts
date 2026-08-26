@@ -7,6 +7,7 @@ import { balancesRouter } from "./routes/balances";
 import { usersRouter } from "./routes/users";
 import { rateRouter } from "./routes/rate";
 import { fundingRouter } from "./routes/funding";
+import { authRouter } from "./routes/auth";
 
 const app = express();
 const port = process.env.PORT || 4000;
@@ -19,6 +20,7 @@ app.get("/health", (_req, res) => {
   res.json({ status: "ok" });
 });
 
+app.use("/auth", authRouter);
 app.use("/transfers", transfersRouter);
 app.use("/webhooks", webhooksRouter);
 app.use("/balances", balancesRouter);

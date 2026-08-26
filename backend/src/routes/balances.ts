@@ -1,10 +1,16 @@
 import { Router } from "express";
 import { supabase } from "../lib/supabase";
+import { requireAuth, resolveKoboUser } from "../lib/auth";
 
 export const balancesRouter = Router();
 
-balancesRouter.get("/:userId", async (req, res) => {
+balancesRouter.get("/:userId", requireAuth, async (req, res) => {
   const { userId } = req.params;
+
+  const koboUser = await resolveKoboUser(req.authUser!.id);
+  if (!koboUser || koboUser.id !== userId) {
+    return res.status(403).json({ error: "This balance does not belong to the authenticated user" });
+  }
 
   const { data, error } = await supabase
     .from("balances")

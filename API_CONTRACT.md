@@ -30,37 +30,168 @@ below, these were "Still open" #1 and #5).
 
 - Backend: Express app, `app.listen(process.env.PORT || 4000)`.
 - `GET /health` → `{ "status": "ok" }`. No auth.
-- **No CORS middleware is set up in `backend/src/index.ts`** and **no auth/session
-  middleware exists on any route** — every endpoint below is currently open and will
-  hit CORS errors if called from the frontend's origin in the browser. See "Still
-  open" #6 and #7 below.
+- **Real auth now exists — see "Resolved this sync" #15.** `POST /transfers`,
+  `GET /transfers/:id`, `POST /funding`, `GET /funding/:id`, and
+  `GET /balances/:userId` all now require a valid Supabase Auth session
+  (`Authorization: Bearer <access_token>`) and enforce that the caller can only
+  act on/view their own resources — no session is a `401`, someone else's
+  resource is a `403`. `POST /users` (recipient creation) and `GET /rate`
+  remain open — recipients are payees, not logged-in accounts, and the rate
+  ticker is public data. See the new `POST /auth/*` section below for how a
+  session is obtained. **Frontend is not updated yet** — see "Still open" #12.
+- CORS middleware is configured (`app.use(cors({ origin: frontendOrigin }))`,
+  `backend/src/index.ts`) — noted stale here as still-missing in earlier syncs;
+  it exists now. See "Still open" #7, corrected below.
 
 ---
 
-## `POST /users`
+## `POST /auth/signup`, `POST /auth/login`, `POST /auth/pin`, `POST /auth/pin/verify` (NEW this sync)
 
-Creates a user (sender or recipient). See "Resolved this sync" #3 below.
+Real auth, per `KOBO_BUILD_PLAN.md`'s "3c. Real auth" — Supabase Auth for the
+real account (email+password), a separate server-verified PIN as a
+Revolut-style fast-unlock layer on top of an already-real session. No custom
+token scheme anywhere: sessions are exactly what `supabase.auth` issues, and
+protected routes verify them via `supabase.auth.getUser(token)`
+(`backend/src/lib/auth.ts`), not a locally-decoded/re-signed JWT.
+
+### `POST /auth/signup`
+
+Creates a **real sender** account — the Supabase Auth user (`auth.users`) and
+the linked `users` profile row, together. Replaces
+`NEXT_PUBLIC_KOBO_SENDER_ID`'s hardcoded-demo-sender scheme entirely (see
+"Still open" #12 — frontend hasn't cut over to this yet).
+
+**Request body:**
+```json
+{ "email": "string", "password": "string (min 8 chars)", "name": "string", "country": "string", "wallet_address": "string" }
+```
+`wallet_address` validated the same way `POST /users` always has (`new
+PublicKey(...)`, format only). `role` is not a field here — signup only ever
+creates `"sender"` rows; `POST /users` is recipient-only now (see below).
+
+**Success response — `201`:**
+```json
+{
+  "user": { "id": "uuid", "name": "string", "role": "sender", "country": "string", "wallet_address": "string", "created_at": "2026-08-26T12:00:00.000Z" },
+  "session": { "access_token": "string", "refresh_token": "string", "expires_at": 1787775543 }
+}
+```
+`email_confirm: true` is passed to `supabase.auth.admin.createUser` — skips
+email verification, since no email-sending integration exists yet (see
+`KOBO_BUILD_PLAN.md`). The returned `session` comes from a real
+`supabase.auth.signInWithPassword` call immediately after creation, not a
+placeholder — use `access_token` as the `Authorization: Bearer` value on
+every protected endpoint below.
+
+**Error responses:**
+- `400` — `{ "error": "email is required" }` / `"password is required and must be at least 8 characters"` / `"name is required"` / `"country is required"` / `"wallet_address is required and must be a valid Solana address"`
+- `400` — `{ "error": "<Supabase Auth error, e.g. \"A user with this email address has already been registered\">" }`
+- `500` — `{ "error": "<message>" }` — if the `users` insert fails after the auth account was created, the auth account is deleted again (no orphaned login with no profile); if session creation itself fails after both rows exist, the accounts are left in place (signup did succeed) and the client should retry via `POST /auth/login`.
+
+### `POST /auth/login`
+
+Returning-user login — a thin proxy over `supabase.auth.signInWithPassword`.
+
+**Request body:** `{ "email": "string", "password": "string" }`
+
+**Success response — `200`:**
+```json
+{ "user": { "id": "uuid", "name": "string", "role": "sender", "country": "string", "wallet_address": "string", "auth_user_id": "uuid" }, "session": { "access_token": "string", "refresh_token": "string", "expires_at": 1787775543 } }
+```
+`user` is `null` if no `users` row is linked to this auth account yet (shouldn't
+happen for anything created via `/signup`, but not assumed).
+
+**Error responses:**
+- `400` — `{ "error": "email and password are required" }`
+- `401` — `{ "error": "Invalid email or password" }` — deliberately identical
+  whether the email doesn't exist or the password is wrong; never reveals
+  which.
+
+### `POST /auth/pin` — requires a valid session
+
+Sets (or replaces) the caller's PIN. **Not the account credential** — see the
+build-plan rationale above. One PIN per user; calling this again overwrites
+the previous one (normal authenticated PIN management, not the
+password-reset flow this sync explicitly doesn't build — see "Still open"
+#13).
+
+**Header:** `Authorization: Bearer <access_token>`
+**Request body:** `{ "pin": "4-6 digits" }`
+
+**Success response — `200`:** `{ "success": true }`
+
+**Error responses:**
+- `401` — `{ "error": "Missing or invalid Authorization header" }` / `"Invalid or expired session" }` — no session, or an expired/garbage token.
+- `400` — `{ "error": "pin must be 4-6 digits" }`
+- `403` — `{ "error": "No account linked to this session" }` — a valid Supabase session with no matching `users` row (shouldn't happen post-signup).
+- `500` — `{ "error": "<message>" }`
+
+Stored as a `bcrypt` hash (`users.pin_hash`, cost factor 10) — never
+plaintext, never reversible.
+
+### `POST /auth/pin/verify` — requires a valid session
+
+**Header:** `Authorization: Bearer <access_token>`
+**Request body:** `{ "pin": "string" }`
+
+**Response — always `200`:** `{ "success": true }` or `{ "success": false }`.
+`success: false` for a wrong PIN and for "no PIN set yet" are
+**indistinguishable** — by design, per the task that created this: never leak
+via status code, message, or timing which case it was. (`bcrypt.compare` is
+itself constant-time relative to the hash; the "no PIN set" branch skips
+comparison entirely and returns the same shape.)
+
+**Error responses:**
+- `401` — same two session errors as `POST /auth/pin`.
+- `400` — `{ "error": "pin is required" }`
+- `500` — `{ "error": "<message>" }`
+
+**Verified live, this sync:** real signup (real `auth.users` row + linked
+`users` row + real session), PIN set, PIN verify with the correct PIN
+(`success: true`) and an incorrect PIN (`success: false`), `GET
+/balances/:userId` with no `Authorization` header (`401`), with a valid
+session for a different user's id (`403`), and with a valid session for the
+caller's own id (`200`); `POST /transfers` with no header (`401`) and with a
+valid session but a `sender_id` belonging to someone else (`403` — see the
+`POST /transfers` section below). `POST /users` confirmed to still create
+recipients (`role: "recipient"`) and now reject `role: "sender"` with a
+pointer to this endpoint. All test accounts/rows created during verification
+were deleted afterward (`auth.users` deletion cascades to the linked `users`
+row via `on delete cascade`, confirmed working as part of that cleanup).
+
+---
+
+## `POST /users` — **recipient-only as of this sync, see "Resolved this sync" #15**
+
+Creates a **recipient**. Real sender creation moved to `POST /auth/signup`
+above — this endpoint no longer accepts `role: "sender"` at all, since it has
+no way to create the Supabase Auth account a real sender now requires. See
+"Resolved this sync" #3 for this endpoint's original (sender-or-recipient)
+history.
 
 **Request body** (backend/src/routes/users.ts):
 ```json
 {
   "name": "string",
-  "role": "sender | recipient",
+  "role": "recipient",
   "country": "string",
   "wallet_address": "string"
 }
 ```
 - All four fields required.
-- `role` must be exactly `"sender"` or `"recipient"`.
+- `role` must be exactly `"recipient"` — `"sender"` is now a `400` with a
+  pointer to `POST /auth/signup` (see below), not a working path.
 - `wallet_address` is checked with `new PublicKey(...)` (base58 charset + correct
   32-byte length) — a format check only, no on-chain existence check.
 
-**Success response — `201`:** the created row, verbatim:
+**Success response — `201`:** the created row (explicit column list now, not
+`select()`-all — doesn't leak the `auth_user_id`/`pin_hash` columns added this
+sync, both always `null` for a recipient anyway):
 ```json
 {
   "id": "uuid",
   "name": "string",
-  "role": "sender" | "recipient",
+  "role": "recipient",
   "country": "string",
   "wallet_address": "string",
   "created_at": "2026-08-25T12:00:00.000Z"
@@ -69,18 +200,25 @@ Creates a user (sender or recipient). See "Resolved this sync" #3 below.
 
 **Error responses:**
 - `400` — `{ "error": "name is required" }`
-- `400` — `{ "error": "role must be one of: sender, recipient" }`
+- `400` — `{ "error": "sender accounts are created via POST /auth/signup, not this endpoint" }` — new this sync, only for `role: "sender"` specifically.
+- `400` — `{ "error": "role must be one of: recipient" }` — any other invalid `role` value.
 - `400` — `{ "error": "country is required" }`
 - `400` — `{ "error": "wallet_address is required" }`
 - `400` — `{ "error": "wallet_address does not look like a valid Solana address" }`
 - `500` — `{ "error": "<supabase error message>" }`
 
-No `GET /users` / listing / lookup endpoint exists — out of scope for now. No auth —
-same open-endpoint caveat as everything else (see "Still open" #6).
+No `GET /users` / listing / lookup endpoint exists — out of scope for now. Still
+no auth on this one, deliberately — recipients are payees, not logged-in
+accounts, and have no session to require.
 
 ---
 
-## `POST /funding` (NEW this sync)
+## `POST /funding` — **requires a valid session as of this sync**
+
+**Header:** `Authorization: Bearer <access_token>` (`POST /auth/signup` or
+`POST /auth/login`). `sender_id` in the body must equal the authenticated
+caller's own `users.id` — no session is `401`, a `sender_id` belonging to
+someone else is `403`. See "Resolved this sync" #15.
 
 Tops up the **sender's own** real balance — not a send to anyone. Creates a
 Transak widget session, same underlying mechanics as the old per-transfer session
@@ -95,9 +233,12 @@ this flow is credited to the sender's row in `balances` once
 { "sender_id": "uuid", "amount_eur": 100 }
 ```
 - Both fields required; `amount_eur` must be a JS `number` and `> 0`.
-- `sender_id` must be an existing `uuid` row in `users` (any role — the route
-  doesn't check `role === "sender"`, same laxness `POST /transfers` already had
-  around sender/recipient roles).
+- `sender_id` **must equal the authenticated caller's own `users.id`** (new
+  this sync — previously any existing `uuid` in `users`, any role, was
+  accepted; the old "Sender not found" `400` for a nonexistent id is gone,
+  replaced by the `403` identity check below, since the caller's own id is
+  now resolved from their session, not looked up from an arbitrary
+  client-supplied value).
 
 **Success response — `201`:**
 ```json
@@ -125,17 +266,23 @@ for the old display-only `POST /transfers` estimate (see "Still open" #9, still
 unresolved for the parts of the system it was already scoped to).
 
 **Error responses:**
+- `401` — `{ "error": "Missing or invalid Authorization header" }` / `"Invalid or expired session" }`
 - `400` — `{ "error": "sender_id and numeric amount_eur are required" }`
 - `400` — `{ "error": "amount_eur must be positive" }`
 - `400` — `{ "error": "sender_id must be a valid UUID" }`
-- `400` — `{ "error": "Sender not found" }`
+- `403` — `{ "error": "No sender account linked to this session" }` — a valid session with no linked `users` row.
+- `403` — `{ "error": "sender_id does not match the authenticated user" }`
 - `502` — `{ "error": "Failed to fetch conversion rate: <message>" }`
 - `502` — `{ "error": "Failed to create Transak widget session: <message>" }` — the
   `funding_requests` row is deleted server-side before this is returned (no
   orphaned rows), same pattern `POST /transfers` used to follow.
 - `500` — `{ "error": "<supabase error message>" }`
 
-## `GET /funding/:id` (NEW this sync)
+## `GET /funding/:id` — **requires a valid session as of this sync**
+
+**Header:** `Authorization: Bearer <access_token>`. The funding request's own
+`sender_id` must equal the authenticated caller's `users.id` — no session is
+`401`, someone else's funding request is `403`. See "Resolved this sync" #15.
 
 Same shape/pattern as `GET /transfers/:id` — poll this for live status after
 `POST /funding`, the way the frontend already polls `GET /transfers/:id` after
@@ -175,11 +322,13 @@ sender who already had a prior balance from earlier in this sync — the number
 returned was the correct running total, not just this one request's amount).
 
 **Error responses:**
+- `401` — `{ "error": "Missing or invalid Authorization header" }` / `"Invalid or expired session" }`
 - `400` — `{ "error": "id must be a valid UUID" }`
 - `404` — `{ "error": "Funding request not found" }`
+- `403` — `{ "error": "This funding request does not belong to the authenticated user" }`
 - `500` — `{ "error": "<message>" }`
 
-## `POST /transfers` — **behavior changed this sync, no longer creates a Transak session**
+## `POST /transfers` — **behavior changed this sync, no longer creates a Transak session; now also requires a valid session**
 
 **Breaking change from the shape documented in every prior sync of this file:**
 this endpoint no longer ever returns an `onramp` object, and no longer ever
@@ -188,6 +337,9 @@ returns `201`. It's now balance-checked and, when funded, **instant** — see
 behind this. **No parallel/legacy per-transfer Transak-session path was kept** —
 if you want to add funds, that's `POST /funding` now, a separate step before
 sending, not something `POST /transfers` falls back to.
+
+**Header (new this sync):** `Authorization: Bearer <access_token>`. `sender_id`
+in the body must equal the authenticated caller's own `users.id`.
 
 **Request body unchanged** (`backend/src/routes/transfers.ts`):
 ```json
@@ -198,8 +350,11 @@ previously enforced — added because this number now directly drives a real led
 debit, where it wasn't before).
 
 **New flow, in order:**
-1. Validate inputs, look up sender (existence only) and recipient (existence +
-   `wallet_address`) — unchanged from before.
+1. Validate inputs. Resolve the caller's own `users` row from the verified
+   session and require `sender_id === that row's id` (`403` otherwise) —
+   **replaces** the old plain "does this `sender_id` exist" lookup entirely;
+   existence is now implied by "is this the caller's own account." Look up
+   the recipient (existence + `wallet_address`) — unchanged from before.
 2. Compute `amount_usdc` from the **real live rate** (`getMarketRate("EUR")`,
    same function `POST /funding` and `GET /rate` use) — no longer the old 1.08
    placeholder; that constant was deleted, it's dead code now (nothing calls the
@@ -253,16 +408,35 @@ field, ever):
   itself errored.
 - `400` — see step 4 above (insufficient ledger balance; also the pre-existing
   `sender_id`/`recipient_id`/`amount_eur` validation errors, unchanged).
+- `401` — `{ "error": "Missing or invalid Authorization header" }` / `"Invalid or expired session" }` — new this sync.
+- `403` — `{ "error": "No sender account linked to this session" }` / `"sender_id does not match the authenticated user" }` — new this sync; see step 1.
 - `500` — `{ "error": "<message>" }` — unexpected Supabase/infra error.
+
+**On the `422` case, confirmed empirically this sync (not just from the code):**
+`NonRetryableTransferError` (`backend/src/lib/solana.ts`) — and therefore this
+`422` — fires for at least three independent, unrelated reasons, not only
+"backend wallet low on funds": an invalid/malformed recipient wallet address,
+an invalid or zero `amount_usdc`, and (the one actually seen in practice)
+insufficient real on-chain USDC in `backendWallet`. All three, and any other
+unclassified Solana send error, land on the same `422` — it's a general
+"non-retryable settlement failure" bucket, not a dedicated balance-only status.
+This is a genuinely different failure from the `400 INSUFFICIENT_BALANCE` case
+above: that one is the sender's own ledger balance, checked before anything
+touches Solana, nothing ever debited; `422` happens *after* the ledger debit
+(then refunded per step 6), when the real on-chain attempt itself is rejected.
 
 **RESOLVED — frontend now wired to this contract, see "Resolved this sync" #14.**
 `createTransfer()` (`lib/kobo/api.ts`) now returns the `TransferRecord` directly
 (no more `onramp`), and `kobo-app.tsx` no longer expects a widget session for a
 send at all — see that entry for the full detail.
 
-## `GET /transfers/:id`
+## `GET /transfers/:id` — **requires a valid session as of this sync**
 
-Unchanged. Poll this for live status.
+**Header:** `Authorization: Bearer <access_token>`. The transfer's own
+`sender_id` must equal the authenticated caller's `users.id` — no session is
+`401`, someone else's transfer is `403`. Response shape otherwise unchanged;
+`sender_id` is fetched internally to check ownership but stripped back out
+before responding, same fields as always. See "Resolved this sync" #15.
 
 **Response — `200`:**
 ```json
@@ -279,8 +453,10 @@ Unchanged. Poll this for live status.
   "created_at": "2026-08-25T12:00:00.000Z"
 }
 ```
+`401` → the two session errors (missing/invalid header, invalid/expired session).
 `400` → `{ "error": "id must be a valid UUID" }` if `:id` isn't a well-formed UUID.
 `404` → `{ "error": "Transfer not found" }` if it's a well-formed UUID with no matching row.
+`403` → `{ "error": "This transfer does not belong to the authenticated user" }`.
 For a transfer created via the new instant-send path, `onramp_session_id` and
 `onramp_reference` are always `null` — nothing about that transfer ever touched
 Transak.
@@ -340,20 +516,42 @@ sync were ever replayed, or if a future decision reintroduces some
 Transak-backed transfer flow. Not a currently-exercised path, worth knowing that
 if debugging.
 
-## `GET /balances/:userId`
+## `GET /balances/:userId` — **requires a valid session as of this sync**
+
+**Header:** `Authorization: Bearer <access_token>`. `:userId` must equal the
+authenticated caller's own `users.id` — no session is `401`, anyone else's
+`:userId` is `403`. This is a real behavior change from every prior sync (see
+below); auth work landed here in "Resolved this sync" #15.
 
 ```json
 { "usdc_balance": 0, "updated_at": null }
 ```
-Returns zeros if no row exists yet (never a 404). **Route itself is completely
-unchanged this sync** — it was already generic (`select ... where user_id = :id`,
-no role filtering ever existed in the query). What changed is what's actually in
-the table: previously only ever written for a *recipient's* post-transfer credit,
-so it always read `0`/`null` for a sender. Now `POST /funding`'s webhook-confirm
-step (see above) also writes a sender's row, and `POST /transfers`' instant-send
-path debits/credits/refunds it — so this now correctly returns real,
-moving balances for senders too, not just recipients. **"Still open" #8 (below)
-is resolved** by this — see that entry.
+Returns zeros if no row exists yet (never a 404). **The underlying query is
+unchanged** (`select ... where user_id = :id`, no role filtering in it) — what's
+new is the ownership check wrapped around it. Previously (as of the sync that
+added `POST /funding`) this was correctly noted as "completely unchanged... no
+role filtering ever existed" — true at the time, no longer true now that a
+session check gates it. **Consequence worth flagging:** since recipients never
+authenticate (no `auth_user_id`, no session — see `POST /users` above), a
+recipient's own balance is no longer reachable through this route by anyone,
+including the recipient. Fine today (nothing currently calls this for a
+recipient — the "Recipient balance display" feature in
+`KOBO_BUILD_PLAN.md` is explicitly on hold), but worth revisiting *when* that
+feature gets built: it'll need its own access model, not just "reuse this
+endpoint," since a recipient has no session to present here.
+
+Historical context — what changed in the sync `POST /funding` was added in:
+previously only ever written for a *recipient's* post-transfer credit, so it
+always read `0`/`null` for a sender. `POST /funding`'s webhook-confirm step
+also writes a sender's row now, and `POST /transfers`' instant-send path
+debits/credits/refunds it — so this correctly returns real, moving balances
+for senders too, not just recipients. **"Still open" #8 (below) is resolved**
+by that — see that entry.
+
+**Error responses:**
+- `401` — `{ "error": "Missing or invalid Authorization header" }` / `"Invalid or expired session" }`
+- `403` — `{ "error": "This balance does not belong to the authenticated user" }`
+- `500` — `{ "error": "<supabase error message>" }`
 
 **Distinct from the backend wallet's real on-chain USDC balance.** `balances`
 is Kobo's own ledger — who, among everyone with a `balances` row, owns what
@@ -412,6 +610,17 @@ users
   country         text
   wallet_address  text  -- Solana base58 pubkey, e.g. via Keypair.publicKey.toBase58()
   created_at      timestamptz
+  auth_user_id    uuid | null, unique, FK -> auth.users.id, on delete cascade  -- NEW this sync
+  pin_hash        text | null                                                 -- NEW this sync
+  -- auth_user_id is nullable, not NOT NULL/role-conditioned: only real sender
+  -- signups (POST /auth/signup) populate it. Recipients (role = 'recipient')
+  -- are payees, not logged-in accounts, and never get one — a NOT NULL check
+  -- for role = 'sender' was considered and rejected in the migration, since
+  -- it would fail outright against the existing pre-auth demo sender row.
+  -- pin_hash is a bcrypt hash (cost 10), set via POST /auth/pin — never
+  -- selected by any route with an implicit select() (checked this sync: only
+  -- POST /users' insert used one, on this exact table, now given an explicit
+  -- column list instead so it can never accidentally return this column).
 
 transfers
   id                 uuid PK
@@ -882,6 +1091,55 @@ File refs are all under `frontend/`:
     "more than your available balance" warning — a clear, pre-existing UI
     state, not a raw error or crash.
 
+15. **Real auth, backend-only this sync — Supabase Auth signup/login + a
+    server-verified PIN fast-unlock layer, per `KOBO_BUILD_PLAN.md`'s "3c. Real
+    auth."** Four new endpoints (`POST /auth/signup`, `POST /auth/login`,
+    `POST /auth/pin`, `POST /auth/pin/verify` — full detail in their own
+    section above) plus a session check (`requireAuth`,
+    `backend/src/lib/auth.ts` — verifies via `supabase.auth.getUser(token)`,
+    not a custom JWT scheme) added to every sender-facing endpoint:
+    `POST /transfers`, `GET /transfers/:id`, `POST /funding`,
+    `GET /funding/:id`, `GET /balances/:userId`. Each of those also now
+    resolves the caller's own `users` row from the session and checks it
+    against the resource being acted on/read (`sender_id`, `:userId`, or the
+    fetched row's own `sender_id`) — `403` on a mismatch — not just "is there
+    *a* valid session," which would have made the session check
+    security-theater while `sender_id` stayed fully client-trusted. This
+    identity-matching wasn't spelled out in the task by name but follows
+    directly from "check for a valid session before acting": a session check
+    that doesn't confirm *whose* session it is isn't a real access control.
+    `users` gets two new nullable columns (`auth_user_id`, `pin_hash` — see
+    Data model above) via a new migration, applied via the existing
+    `scripts/run-migration.ts` direct-Postgres path (same as every migration
+    this project has run — Supabase CLI still isn't authenticated in this
+    environment). `POST /users` is now recipient-only — `role: "sender"` is a
+    `400` pointing at `POST /auth/signup` instead, since this route has no way
+    to create the Supabase Auth account a real sender now needs; its insert
+    also switched from an implicit `select()`-all to an explicit column list,
+    so it can never accidentally return the new `pin_hash`/`auth_user_id`
+    columns even as `null`. `bcryptjs` (pure JS, no native build step) added
+    as a dependency for PIN hashing (cost factor 10) — plaintext PINs are
+    never stored or logged. **Checked, not assumed, before building anything:**
+    whether the "Email" auth provider was even enabled on this Supabase
+    project — it already was (confirmed by actually creating a throwaway user
+    and signing in with a password, both succeeding, before writing a line of
+    the signup endpoint), so no dashboard configuration change was needed.
+    **Explicitly not built this sync, flagged as known gaps, not oversights —
+    see "Still open" #13 for detail:** password reset, multi-factor auth, rate
+    limiting on `/auth/*`, session refresh hardening.
+    **Verified live, in your exact order:** real signup via Supabase Auth (a
+    real `auth.users` row plus a linked `users` row, confirmed via a real
+    access token being usable afterward, not just a `201`); set a PIN;
+    verified the correct PIN (`success: true`); verified an incorrect PIN
+    (`success: false`); confirmed an unauthenticated request to a protected
+    endpoint (`GET /balances/:userId`) now `401`s instead of succeeding, where
+    it previously would have; confirmed a valid session for the *wrong* user
+    gets `403`, not the other user's data. All endpoints re-typechecked
+    (`tsc --noEmit`) clean after the change. Test accounts and rows created
+    during verification were deleted afterward — including confirming
+    `auth.users` deletion actually cascades to the linked `users` row via the
+    new FK's `on delete cascade`, live, not just by reading the migration.
+
 ## Still open
 
 These still need a decision — nothing below has been silently resolved or guessed at.
@@ -950,15 +1208,26 @@ These still need a decision — nothing below has been silently resolved or gues
    > polling is wired up (#1), a `status: "failed"` from the backend has nowhere
    > defined to go on the frontend today.
 
-6. **No auth on any backend route.** Every endpoint is fully open right now —
-   `sender_id` is just whatever the client sends. Not necessarily wrong for this
-   stage, but worth a conscious decision on when auth gets added rather than
-   building further on top of an implicit "trust the client" model.
+6. **RESOLVED — see "Resolved this sync" #15.** ~~No auth on any backend
+   route.~~ Real Supabase Auth sessions now gate every sender-facing endpoint,
+   and `sender_id`/`:userId` are checked against the caller's own linked
+   account, not trusted from the client. Left in place (not deleted) for
+   history — the previous open question is quoted below.
+   > Every endpoint is fully open right now — `sender_id` is just whatever the
+   > client sends. Not necessarily wrong for this stage, but worth a conscious
+   > decision on when auth gets added rather than building further on top of
+   > an implicit "trust the client" model.
 
-7. **No CORS middleware on the backend.** Calling any of these endpoints from a
-   browser at the frontend's origin will currently be blocked. Needs to be added
-   (and now can target the frontend's real origin — confirmed as
-   `http://localhost:3000` for dev, see Resolved #2).
+7. **RESOLVED, stale item — corrected while touching this doc for #15, not
+   this sync's own work.** ~~No CORS middleware on the backend.~~ It exists
+   (`app.use(cors({ origin: frontendOrigin }))`, `backend/src/index.ts`) —
+   this item was never marked resolved when that landed, in an earlier sync
+   this doc didn't catch up to. Left in place (not deleted) for history — the
+   previous open question is quoted below.
+   > Calling any of these endpoints from a browser at the frontend's origin
+   > will currently be blocked. Needs to be added (and now can target the
+   > frontend's real origin — confirmed as `http://localhost:3000` for dev,
+   > see Resolved #2).
 
 8. **RESOLVED — see "Resolved this sync" #12.** ~~No fiat/EUR balance source
    exists on the backend.~~ Sender-side balance now has a real backend concept —
@@ -1018,3 +1287,30 @@ These still need a decision — nothing below has been silently resolved or gues
     > assuming `POST /transfers` always returns a widget session to open [...];
     > sidebar balance display ("Still open" #8, resolved on the backend side)
     > still needs its actual frontend wiring decided/built [...].
+
+12. **Frontend not updated for real auth yet — backend-only this sync, same
+    sequencing as #11 above.** The frontend still uses the hardcoded
+    `NEXT_PUBLIC_KOBO_SENDER_ID` demo-sender scheme (`KOBO_BUILD_PLAN.md`'s
+    "3c. Real auth" calls this superseded, but the frontend code itself hasn't
+    changed) and sends no `Authorization` header on any request. Every
+    real-mode call to `POST /transfers`, `GET /transfers/:id`, `POST /funding`,
+    `GET /funding/:id`, or `GET /balances/:userId` will now `401` until the
+    frontend does real signup/login (`POST /auth/signup` / `POST /auth/login`),
+    stores the returned `access_token`/`refresh_token`, and sends
+    `Authorization: Bearer <access_token>` on those calls — exactly the next
+    item in `KOBO_BUILD_PLAN.md`'s stated sequencing ("frontend PIN UI" next).
+    Mock mode is entirely unaffected (it never calls the real backend).
+
+13. **PIN reset has no separate flow — deliberately, not an oversight.**
+    `POST /auth/pin` always overwrites any existing PIN for the caller; there's
+    no dedicated "forgot your PIN" path. This is fine *because* it requires a
+    full valid Supabase session to call at all — by the time someone can hit
+    it, they're already past real email+password auth, so re-setting the PIN
+    is just normal authenticated account management, not a security-sensitive
+    recovery flow. What's explicitly **not built** (per this sync's scope):
+    password reset (forgot-password email flow), multi-factor auth, rate
+    limiting on any `/auth/*` endpoint, and session refresh hardening (the
+    frontend gets a `refresh_token` back from signup/login but nothing here
+    enforces rotation/reuse-detection on it). Flagged as known gaps, not
+    silently absent — revisit before this handles real user funds beyond a
+    demo/pilot.

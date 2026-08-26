@@ -3,6 +3,7 @@ import { supabase } from "../lib/supabase";
 import { createWidgetSession, getMarketRate } from "../lib/transak";
 import { backendWallet } from "../lib/solana";
 import { getBalance } from "../lib/balances";
+import { requireAuth, resolveKoboUser } from "../lib/auth";
 
 export const fundingRouter = Router();
 
@@ -14,7 +15,7 @@ const UUID_RE =
 // Kobo's own pooled backend wallet instead of a recipient's, and the
 // partnerOrderId is prefixed ("fund_...") so POST /webhooks/onramp can tell
 // a top-up apart from a send without an extra lookup.
-fundingRouter.post("/", async (req, res) => {
+fundingRouter.post("/", requireAuth, async (req, res) => {
   const { sender_id, amount_eur } = req.body ?? {};
 
   if (!sender_id || typeof amount_eur !== "number") {
@@ -29,17 +30,12 @@ fundingRouter.post("/", async (req, res) => {
     return res.status(400).json({ error: "sender_id must be a valid UUID" });
   }
 
-  const { data: sender, error: senderError } = await supabase
-    .from("users")
-    .select("id")
-    .eq("id", sender_id)
-    .maybeSingle();
-
-  if (senderError) {
-    return res.status(500).json({ error: senderError.message });
+  const koboUser = await resolveKoboUser(req.authUser!.id);
+  if (!koboUser) {
+    return res.status(403).json({ error: "No sender account linked to this session" });
   }
-  if (!sender) {
-    return res.status(400).json({ error: "Sender not found" });
+  if (koboUser.id !== sender_id) {
+    return res.status(403).json({ error: "sender_id does not match the authenticated user" });
   }
 
   let rate: number;
@@ -103,8 +99,8 @@ fundingRouter.post("/", async (req, res) => {
 // returns the sender's current real balance so the frontend doesn't need a
 // second round-trip to GET /balances/:userId just to see the credited
 // amount once `status` flips to 'confirmed'.
-fundingRouter.get("/:id", async (req, res) => {
-  const { id } = req.params;
+fundingRouter.get("/:id", requireAuth, async (req, res) => {
+  const id = req.params.id as string;
 
   if (!UUID_RE.test(id)) {
     return res.status(400).json({ error: "id must be a valid UUID" });
@@ -124,6 +120,11 @@ fundingRouter.get("/:id", async (req, res) => {
 
   if (!data) {
     return res.status(404).json({ error: "Funding request not found" });
+  }
+
+  const koboUser = await resolveKoboUser(req.authUser!.id);
+  if (!koboUser || data.sender_id !== koboUser.id) {
+    return res.status(403).json({ error: "This funding request does not belong to the authenticated user" });
   }
 
   let balance: number;

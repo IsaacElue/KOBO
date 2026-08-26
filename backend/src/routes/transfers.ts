@@ -3,6 +3,7 @@ import { supabase } from "../lib/supabase";
 import { getMarketRate } from "../lib/transak";
 import { creditBalance, debitBalanceIfSufficient } from "../lib/balances";
 import { settleTransfer } from "../lib/settlement";
+import { requireAuth, resolveKoboUser } from "../lib/auth";
 
 export const transfersRouter = Router();
 
@@ -14,7 +15,7 @@ const UUID_RE =
 // is a 400 telling the frontend to prompt Add Funds (POST /funding), not a
 // fallback into a per-transfer Transak session. See KOBO_BUILD_PLAN.md
 // "Sender-side balance — SUPERSEDED".
-transfersRouter.post("/", async (req, res) => {
+transfersRouter.post("/", requireAuth, async (req, res) => {
   const { sender_id, recipient_id, amount_eur } = req.body ?? {};
 
   if (!sender_id || !recipient_id || typeof amount_eur !== "number") {
@@ -32,17 +33,16 @@ transfersRouter.post("/", async (req, res) => {
     return res.status(400).json({ error: "recipient_id must be a valid UUID" });
   }
 
-  const { data: sender, error: senderError } = await supabase
-    .from("users")
-    .select("id")
-    .eq("id", sender_id)
-    .maybeSingle();
-
-  if (senderError) {
-    return res.status(500).json({ error: senderError.message });
+  // Identity now comes from the verified session, not the request body —
+  // sender_id must actually be the caller's own account, not just any
+  // existing user id. This is what makes the session check above meaningful
+  // rather than cosmetic.
+  const koboUser = await resolveKoboUser(req.authUser!.id);
+  if (!koboUser) {
+    return res.status(403).json({ error: "No sender account linked to this session" });
   }
-  if (!sender) {
-    return res.status(400).json({ error: "Sender not found" });
+  if (koboUser.id !== sender_id) {
+    return res.status(403).json({ error: "sender_id does not match the authenticated user" });
   }
 
   const { data: recipient, error: recipientError } = await supabase
@@ -111,8 +111,8 @@ transfersRouter.post("/", async (req, res) => {
   return res.status(result.httpStatus).json(result.body);
 });
 
-transfersRouter.get("/:id", async (req, res) => {
-  const { id } = req.params;
+transfersRouter.get("/:id", requireAuth, async (req, res) => {
+  const id = req.params.id as string;
 
   if (!UUID_RE.test(id)) {
     return res.status(400).json({ error: "id must be a valid UUID" });
@@ -121,7 +121,7 @@ transfersRouter.get("/:id", async (req, res) => {
   const { data, error } = await supabase
     .from("transfers")
     .select(
-      "id, status, solana_tx_signature, amount_eur, amount_usdc, failure_reason, retry_count, onramp_session_id, onramp_reference, created_at"
+      "id, sender_id, status, solana_tx_signature, amount_eur, amount_usdc, failure_reason, retry_count, onramp_session_id, onramp_reference, created_at"
     )
     .eq("id", id)
     .maybeSingle();
@@ -134,5 +134,11 @@ transfersRouter.get("/:id", async (req, res) => {
     return res.status(404).json({ error: "Transfer not found" });
   }
 
-  return res.json(data);
+  const koboUser = await resolveKoboUser(req.authUser!.id);
+  if (!koboUser || data.sender_id !== koboUser.id) {
+    return res.status(403).json({ error: "This transfer does not belong to the authenticated user" });
+  }
+
+  const { sender_id, ...body } = data;
+  return res.json(body);
 });
