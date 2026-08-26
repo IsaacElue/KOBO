@@ -2,6 +2,7 @@ import { Router } from "express";
 import { supabase } from "../lib/supabase";
 import { createWidgetSession, getMarketRate } from "../lib/transak";
 import { backendWallet } from "../lib/solana";
+import { getBalance } from "../lib/balances";
 
 export const fundingRouter = Router();
 
@@ -96,4 +97,41 @@ fundingRouter.post("/", async (req, res) => {
       widgetUrl: onramp.widgetUrl,
     },
   });
+});
+
+// Same pattern as GET /transfers/:id — poll this for live status. Also
+// returns the sender's current real balance so the frontend doesn't need a
+// second round-trip to GET /balances/:userId just to see the credited
+// amount once `status` flips to 'confirmed'.
+fundingRouter.get("/:id", async (req, res) => {
+  const { id } = req.params;
+
+  if (!UUID_RE.test(id)) {
+    return res.status(400).json({ error: "id must be a valid UUID" });
+  }
+
+  const { data, error } = await supabase
+    .from("funding_requests")
+    .select(
+      "id, sender_id, amount_eur, amount_usdc, status, onramp_session_id, onramp_reference, failure_reason, created_at"
+    )
+    .eq("id", id)
+    .maybeSingle();
+
+  if (error) {
+    return res.status(500).json({ error: error.message });
+  }
+
+  if (!data) {
+    return res.status(404).json({ error: "Funding request not found" });
+  }
+
+  let balance: number;
+  try {
+    balance = await getBalance(data.sender_id);
+  } catch (err) {
+    return res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+  }
+
+  return res.json({ ...data, balance });
 });

@@ -135,6 +135,50 @@ unresolved for the parts of the system it was already scoped to).
   orphaned rows), same pattern `POST /transfers` used to follow.
 - `500` — `{ "error": "<supabase error message>" }`
 
+## `GET /funding/:id` (NEW this sync)
+
+Same shape/pattern as `GET /transfers/:id` — poll this for live status after
+`POST /funding`, the way the frontend already polls `GET /transfers/:id` after
+`POST /transfers`. Didn't exist until now; added specifically so the frontend has
+something concrete to poll after Add Funds instead of guessing when the balance
+changed.
+
+**Response — `200`:**
+```json
+{
+  "id": "uuid",
+  "sender_id": "uuid",
+  "amount_eur": 100,
+  "amount_usdc": 116.428667,
+  "status": "pending",
+  "onramp_session_id": "string | null",
+  "onramp_reference": "string | null",
+  "failure_reason": "string | null",
+  "created_at": "2026-08-26T12:00:00.000Z",
+  "balance": 104.783346
+}
+```
+The whole `funding_requests` row, same fields `POST /funding`'s response has
+(minus the one-time `onramp` session object — that's not re-returned on every
+poll, same as `GET /transfers/:id` never re-returns anything onramp-session-only
+either), **plus `balance`: the sender's current real balance** (`getBalance()`,
+`backend/src/lib/balances.ts`) on every response, regardless of `status`. This
+is deliberately not just "the funding row's own `amount_usdc`" — it's the
+sender's actual live balance, so the frontend gets the *resulting* number
+directly once `status` flips to `"confirmed"`, without a second round-trip to
+`GET /balances/:userId`. Verified live: polled a real funding request through
+its full `pending -> confirmed` lifecycle (confirmed via
+`selftest-webhook-e2e.ts`, same as `POST /webhooks/onramp` above) — `balance`
+tracked the sender's exact real balance at each poll, and increased by exactly
+the funding request's own `amount_usdc` once confirmed (verified against a
+sender who already had a prior balance from earlier in this sync — the number
+returned was the correct running total, not just this one request's amount).
+
+**Error responses:**
+- `400` — `{ "error": "id must be a valid UUID" }`
+- `404` — `{ "error": "Funding request not found" }`
+- `500` — `{ "error": "<message>" }`
+
 ## `POST /transfers` — **behavior changed this sync, no longer creates a Transak session**
 
 **Breaking change from the shape documented in every prior sync of this file:**
@@ -757,6 +801,15 @@ File refs are all under `frontend/`:
     always-returns-`onramp` contract, which is no longer true. See the
     "Known integration gap" note under `POST /transfers` above.
 
+13. **`GET /funding/:id` added — closes the one piece "Still open" #11 flagged
+    as concretely missing before frontend work could start.** Same
+    shape/pattern as `GET /transfers/:id` (full detail in that section above),
+    plus the sender's current real `balance` on every response so the frontend
+    doesn't need a second call to `GET /balances/:userId` just to see the
+    credited amount once `status` flips to `"confirmed"`. Verified live: polled
+    a real funding request through its full `pending -> confirmed` lifecycle,
+    `balance` tracked the sender's exact real running total at each poll.
+
 ## Still open
 
 These still need a decision — nothing below has been silently resolved or guessed at.
@@ -888,7 +941,10 @@ These still need a decision — nothing below has been silently resolved or gues
       `onramp.widgetUrl` the same way checkout already does today (the widget
       mechanics are identical — same `createWidgetSession` shape — so this
       should be able to reuse the existing embedded/redirect widget components
-      as-is, just pointed at a different endpoint/session).
+      as-is, just pointed at a different endpoint/session), then polling the
+      new `GET /funding/:id` (added — see "Resolved this sync" #13 — the same
+      way `GET /transfers/:id` is already polled today) for status and the
+      resulting balance.
     - `lib/kobo/api.ts`'s `createTransfer()` and its `CreateTransferResponse`
       type need to drop the now-always-absent `onramp` field, and
       `components/kobo/kobo-app.tsx`'s `applySession()`/`startOnramp()` need to
