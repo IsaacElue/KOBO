@@ -29,14 +29,35 @@
 - "Add new recipient" now calls real `POST /users` — tested live via Playwright, confirmed in Supabase
 
 **Still mock, in priority order:**
-1. Sender identity — `CURRENT_USER` is still fabricated, not a real `users` row
-2. Balance display — sidebar still reads local mock data, not `GET /balances/:userId`
+1. ~~Sender identity~~ — RESOLVED. CURRENT_USER now carries a real users.id (role:
+   "sender"), wired via NEXT_PUBLIC_KOBO_SENDER_ID. See API_CONTRACT.md for detail.
+2. Balance display — sidebar still reads local mock data. Investigated and
+   deliberately NOT wired — see "Decided" below.
 3. No auth anywhere — any client can call any endpoint as any user
-4. Wallet input placeholder copy still says `"0x… or +234…"` (Ethereum-flavored, factually wrong now)
+4. ~~Wallet input placeholder copy~~ — RESOLVED, copy fixed to reflect Solana
+   wallet-address-only input.
 
 **Decided (2026-08-25):**
-- **Overview / Activity / Settings screens are intentionally stubbed for now.** Send Money is the demo's focus; these stay as clean "not built yet" placeholders through Demo Day rather than half-built. Not a gap to fix this week.
-- **Recipients are Solana wallet address only — no phone-number-only recipients in Phase 1.** The backend only ever accepted real Solana addresses (`new PublicKey(...)` validation); the "wallet address or phone number" placeholder copy was promising something the system can't do. Placeholder text needs correcting to reflect wallet-address-only. Phone-number-only recipients would require Kobo generating and holding a custodial wallet on someone's behalf — a real feature with real custody/regulatory implications, and one that directly contradicts the product doc's stated non-custodial stance (Section 5). Not being built now. Worth testing with real users in the post-Demo-Day closed pilot to see if it's even needed before considering it further.
+- Overview / Activity / Settings screens are intentionally stubbed for now. Send
+  Money is the demo's focus; these stay as clean "not built yet" placeholders
+  through Demo Day rather than half-built. Not a gap to fix this week.
+- Recipients are Solana wallet address only — no phone-number-only recipients in
+  Phase 1. Placeholder copy corrected. Phone-number-only recipients would require
+  Kobo generating and holding a custodial wallet on someone's behalf — a real
+  feature with real custody/regulatory implications, contradicting the product
+  doc's non-custodial stance. Not being built now.
+- Sender-side "balance" has no backend concept and isn't being invented under time
+  pressure. GET /balances/:userId only ever gets a row written for a transfer's
+  recipient_id — a sender holds nothing after sending in this model. Wiring the
+  sidebar to the real sender's id would show a real, permanently-frozen €0.00,
+  worse than the current mock. Sidebar stays on mock data for now.
+- Recipient balance display, EUR-equivalent shown, is a real and properly scoped
+  next feature — not the sidebar fix. A recipient does accumulate a real USDC
+  balance post-transfer. Decision: display it converted to EUR-equivalent, friendly
+  like MetaMask's fiat display, not hiding the underlying USDC entirely. Needs a
+  new recipient-facing screen (doesn't exist yet) and reuse of the app's existing
+  live exchange rate source. Scoped as its own separate task — currently on hold
+  pending confirmation it's needed for the Demo Day script.
 
 ---
 
