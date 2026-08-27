@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { screen } from "@testing-library/react";
+import { screen, within } from "@testing-library/react";
 import { renderKoboApp } from "./test-utils";
 import { NAV_ITEMS } from "@/lib/kobo/nav";
 
@@ -16,8 +16,12 @@ describe("Request tab", () => {
   });
 });
 
-describe("non-Send, non-Recipients, non-Settings nav items", () => {
-  test.each(NAV_ITEMS.filter((n) => n !== "Send money" && n !== "Recipients" && n !== "Settings"))(
+describe("still-stubbed nav items", () => {
+  test.each(
+    NAV_ITEMS.filter(
+      (n) => n !== "Send money" && n !== "Recipients" && n !== "Settings" && n !== "Overview"
+    )
+  )(
     "%s renders the 'isn't built yet' empty state with a working button back to Send",
     async (label) => {
       const { user } = await renderKoboApp();
@@ -51,5 +55,29 @@ describe("Settings nav item", () => {
     expect(await screen.findByRole("heading", { name: "Settings" })).toBeInTheDocument();
     expect(screen.queryByText(/isn't built yet/i)).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: /update password/i })).toBeInTheDocument();
+  });
+});
+
+describe("Overview nav item", () => {
+  test("renders the real Overview screen, not the placeholder", async () => {
+    const { user } = await renderKoboApp();
+
+    await user.click(screen.getByRole("button", { name: "Overview" }));
+    expect(
+      await screen.findByRole("heading", { name: /money that moves like a message/i })
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/isn't built yet/i)).not.toBeInTheDocument();
+  });
+
+  test("the hero 'Send money' button takes you to the Send screen", async () => {
+    const { user } = await renderKoboApp();
+
+    await user.click(screen.getByRole("button", { name: "Overview" }));
+    const hero = await screen.findByRole("heading", { name: /money that moves like a message/i });
+    // the sidebar nav 'Send money' + the hero CTA both match — the hero one is the
+    // last in DOM order and lives in the same <header> as the heading
+    const heroCta = within(hero.closest("header")!).getByRole("button", { name: /send money/i });
+    await user.click(heroCta);
+    expect(screen.getByRole("button", { name: /confirm & continue/i })).toBeInTheDocument();
   });
 });

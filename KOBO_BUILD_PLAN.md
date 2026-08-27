@@ -65,9 +65,10 @@
    sync" #11 for full detail, including the wallet-display-format decision.
 
 **Decided (2026-08-25):**
-- Overview / Activity / Settings screens are intentionally stubbed for now. Send
-  Money is the demo's focus; these stay as clean "not built yet" placeholders
-  through Demo Day rather than half-built. Not a gap to fix this week.
+- ~~Overview / Activity / Settings screens are intentionally stubbed for now.~~
+  **Superseded 2026-08-26/27:** Settings and Overview are now built (see "New
+  pages" below). Activity is the only screen still on the "not built yet"
+  placeholder. Send Money remains the demo's focus.
 - Recipients are Solana wallet address only — no phone-number-only recipients in
   Phase 1. Placeholder copy corrected. Phone-number-only recipients would require
   Kobo generating and holding a custodial wallet on someone's behalf — a real
@@ -140,10 +141,11 @@ Earlier scope said auth was minimal/deferred. Decision: build it for real now, R
 - **Persistence**: a valid session persists locally (same device/browser) so returning users see the PIN screen, not full email/password, matching the "first time = full signup, after that = just PIN" flow described.
 - **Mobile-ready**: this pattern (real session + local fast-unlock) carries forward cleanly to a future native mobile app without rearchitecting.
 - **DONE (backend + frontend), 2026-08-26:** signup, login, PIN set/verify, session refresh/logout all built and verified live end-to-end (real signup -> PIN -> reload -> PIN unlock -> real transfer -> logout -> reload -> full login). `NEXT_PUBLIC_KOBO_SENDER_ID` fully removed. See API_CONTRACT.md's `POST /auth/*` section.
-- Sequenced: ~~backend auth foundation first~~, ~~then frontend PIN UI~~, ~~then Settings~~ — all done. Next: Overview (independent), then Activity (market data, last — most exploratory).
+- Sequenced: ~~backend auth foundation first~~, ~~then frontend PIN UI~~, ~~then Settings~~, ~~then Overview~~ — all done. Next: Activity (market data, last — most exploratory).
 
 ### New pages (2026-08-26)
 - **Overview**: clean, mostly-static product page — offerings, solutions, vision. No backend dependency.
+  **DONE (frontend only, no backend), 2026-08-27.** `components/kobo/overview-screen.tsx` wired at `OVERVIEW_INDEX`, replacing the "isn't built yet" stub. Sections: hero, "What Kobo does" (send / hold / saved recipients), "How it works" (3 steps + the real 0.53% fee note), "Why USDC and Solana" (plain-language, no jargon), "What's coming next" (Phase 2 — cash-out to naira, more corridors, recipient app — badged "not available yet", never implied as live), vision, and a muted footnote that transfers currently settle on Solana's **test** network. Same shell / palette / card chrome / small-caps eyebrows as the rest of the app; the hero CTA jumps to the Send screen. No new deps, no API calls. Note: `max-w-3xl`/`4xl` utilities aren't generated in this Tailwind v4 setup (only `sm`–`2xl`) — used `max-w-[48rem]` for the content column.
 - **Settings**: profile, email, password change, wallet, logout, account details, support. Depends on real auth existing.
   **DONE (backend + frontend), 2026-08-27.** `GET /auth/me` + `PATCH /auth/profile` + `POST /auth/password` (new), `components/kobo/settings-screen.tsx` wired at `SETTINGS_INDEX`. Editable: name, country, password (current-password re-entry check; session revoked on change → user re-logs in). Read-only: email, member-since, linked wallet address. **Email change deferred** — needs a confirmation-email integration (free-tier send limits), same reason the receipt/email work is out of scope; shown read-only with a "contact support" line, not silently unchangeable. **Wallet** labelled as an address that "isn't used to hold or move your money" (Kobo sends from its pooled wallet), kept in case direct payouts are added later — plain accurate copy, flagged for review. Logout reuses the header's flow via a shared `logout-confirm-dialog.tsx`. See API_CONTRACT.md "Resolved this sync" #17.
 - **Activity**: a gamified crypto/stablecoin performance view — real market data (free-tier APIs only: CoinGecko public API, Jupiter's Solana price feed — no paid keys), plus the user's real transfer history (already exists as data). Kept simple, not overwhelming — charts/prices/news alongside real transfers, not a full trading dashboard.

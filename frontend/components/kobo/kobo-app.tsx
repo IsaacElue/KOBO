@@ -21,6 +21,7 @@ import { TransferDetailDialog } from "@/components/kobo/transfer-detail-dialog";
 import { ComingSoonPanel } from "@/components/kobo/coming-soon-panel";
 import { RecipientsScreen } from "@/components/kobo/recipients-screen";
 import { SettingsScreen } from "@/components/kobo/settings-screen";
+import { OverviewScreen } from "@/components/kobo/overview-screen";
 import { RedirectHandoff } from "@/components/kobo/onramp/redirect-handoff";
 import { EmbeddedWidgetModal } from "@/components/kobo/onramp/embedded-widget-modal";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
@@ -35,7 +36,14 @@ import {
   TRANSFER_HISTORY,
   randomRate,
 } from "@/lib/kobo/mock-data";
-import { ACTIVITY_INDEX, NAV_ITEMS, RECIPIENTS_INDEX, SEND_MONEY_INDEX, SETTINGS_INDEX } from "@/lib/kobo/nav";
+import {
+  ACTIVITY_INDEX,
+  NAV_ITEMS,
+  OVERVIEW_INDEX,
+  RECIPIENTS_INDEX,
+  SEND_MONEY_INDEX,
+  SETTINGS_INDEX,
+} from "@/lib/kobo/nav";
 import {
   createFunding,
   createTransfer,
@@ -488,6 +496,13 @@ export function KoboApp({
           />
         ) : navIndex === SETTINGS_INDEX ? (
           <SettingsScreen authUser={authUser} onLogout={onLogout} />
+        ) : navIndex === OVERVIEW_INDEX ? (
+          <OverviewScreen
+            onStartSend={() => {
+              setNavIndex(SEND_MONEY_INDEX);
+              setTab("send");
+            }}
+          />
         ) : navIndex !== SEND_MONEY_INDEX ? (
           <ComingSoonPanel
             label={NAV_ITEMS[navIndex]}
