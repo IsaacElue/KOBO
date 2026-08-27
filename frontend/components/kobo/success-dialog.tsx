@@ -35,9 +35,9 @@ export function SuccessDialog({
     <Dialog open={open} onOpenChange={(next) => !next && onDone()}>
       <DialogContent
         showCloseButton={false}
-        className="max-w-sm gap-0 rounded-[32px] border border-kobo-mint-dark/15 bg-gradient-to-b from-[#E7F7EE] to-[#FBFDFD] p-8 pb-7 shadow-[0_60px_110px_-44px_rgba(0,0,0,0.6)] ring-0"
+        className="max-w-sm gap-0 rounded-[32px] border border-white/95 bg-gradient-to-b from-[#E7F7EE] to-[#FBFDFD] p-8 pb-7 shadow-[0_60px_110px_-44px_rgba(0,0,0,0.6)] ring-0"
       >
-        <div className="mt-6 flex flex-col items-center text-center">
+        <div className="flex flex-col items-center text-center">
           <div className="relative flex size-24 items-center justify-center">
             <span className="absolute inset-0 rounded-full bg-[#1E9B76]/28" />
             <div className="relative flex size-[88px] items-center justify-center rounded-full bg-gradient-to-br from-kobo-teal-400 to-kobo-teal-700 shadow-lg shadow-kobo-teal-700/40">
@@ -56,7 +56,7 @@ export function SuccessDialog({
           </div>
         </div>
 
-        <div className="mt-6.5 rounded-3xl border border-kobo-ink/[0.06] bg-white/80 p-5.5 pb-4.5">
+        <div className="mt-6.5 min-w-0 rounded-3xl border border-kobo-ink/[0.06] bg-white/80 p-5.5 pb-4.5">
           <div className="flex items-center gap-3.5 border-b border-kobo-ink/[0.07] pb-4">
             <Avatar size="lg">
               <AvatarFallback className="bg-gradient-to-br from-kobo-mint to-[#BFE7D1] font-semibold text-kobo-mint-dark">
