@@ -16,24 +16,16 @@ describe("Request tab", () => {
   });
 });
 
-describe("still-stubbed nav items", () => {
-  test.each(
-    NAV_ITEMS.filter(
-      (n) => n !== "Send money" && n !== "Recipients" && n !== "Settings" && n !== "Overview"
-    )
-  )(
-    "%s renders the 'isn't built yet' empty state with a working button back to Send",
-    async (label) => {
-      const { user } = await renderKoboApp();
+describe("nav items", () => {
+  test("every nav item now opens a real screen — none show the 'isn't built yet' stub", async () => {
+    const { user } = await renderKoboApp();
+    const sidebar = screen.getByRole("navigation");
 
-      await user.click(screen.getByRole("button", { name: label }));
-      expect(screen.getByText(new RegExp(`${label} isn't built yet`, "i"))).toBeInTheDocument();
-      expect(screen.queryByRole("button", { name: /confirm & continue/i })).not.toBeInTheDocument();
-
-      await user.click(screen.getByRole("button", { name: /back to send money/i }));
-      expect(screen.getByRole("button", { name: /confirm & continue/i })).toBeInTheDocument();
+    for (const label of NAV_ITEMS) {
+      await user.click(within(sidebar).getByRole("button", { name: label }));
+      expect(screen.queryByText(/isn't built yet/i)).not.toBeInTheDocument();
     }
-  );
+  });
 });
 
 describe("Recipients nav item", () => {
@@ -79,5 +71,19 @@ describe("Overview nav item", () => {
     const heroCta = within(hero.closest("header")!).getByRole("button", { name: /send money/i });
     await user.click(heroCta);
     expect(screen.getByRole("button", { name: /confirm & continue/i })).toBeInTheDocument();
+  });
+});
+
+describe("Activity nav item", () => {
+  test("renders the real Activity screen with market + history sections", async () => {
+    const { user } = await renderKoboApp();
+
+    await user.click(screen.getByRole("button", { name: "Activity" }));
+    expect(await screen.findByRole("heading", { name: "Activity" })).toBeInTheDocument();
+    expect(screen.queryByText(/isn't built yet/i)).not.toBeInTheDocument();
+    expect(screen.getByText("Market")).toBeInTheDocument();
+    expect(screen.getByText("Transfer history")).toBeInTheDocument();
+    // mock-mode transfer history is derived from the existing fixture
+    expect(await screen.findByText("Adaeze Okonkwo")).toBeInTheDocument();
   });
 });

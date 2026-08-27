@@ -22,6 +22,7 @@ import { ComingSoonPanel } from "@/components/kobo/coming-soon-panel";
 import { RecipientsScreen } from "@/components/kobo/recipients-screen";
 import { SettingsScreen } from "@/components/kobo/settings-screen";
 import { OverviewScreen } from "@/components/kobo/overview-screen";
+import { ActivityScreen } from "@/components/kobo/activity-screen";
 import { RedirectHandoff } from "@/components/kobo/onramp/redirect-handoff";
 import { EmbeddedWidgetModal } from "@/components/kobo/onramp/embedded-widget-modal";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
@@ -503,6 +504,8 @@ export function KoboApp({
               setTab("send");
             }}
           />
+        ) : navIndex === ACTIVITY_INDEX ? (
+          <ActivityScreen />
         ) : navIndex !== SEND_MONEY_INDEX ? (
           <ComingSoonPanel
             label={NAV_ITEMS[navIndex]}

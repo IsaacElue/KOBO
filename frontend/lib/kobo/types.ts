@@ -63,6 +63,47 @@ export interface CreateTransferRequest {
   amount_eur: number;
 }
 
+/**
+ * `GET /transfers` list row — the signed-in sender's own history for the
+ * Activity page. Existing `transfers` columns plus `recipient_name` (joined
+ * from `users`, not a new column). Distinct from `TransferHistoryItem` (the
+ * mock fixture the send screen still uses).
+ */
+export interface ActivityTransfer {
+  id: string;
+  recipient_id: string;
+  recipient_name: string | null;
+  amount_eur: number;
+  amount_usdc: number | null;
+  status: TransferStatus;
+  solana_tx_signature: string | null;
+  failure_reason: string | null;
+  created_at: string;
+}
+
+/** One coin in `GET /market/overview` — EUR price + change + a 7-day sparkline (trend shape). */
+export interface CoinSummary {
+  price_eur: number;
+  change_24h: number | null;
+  change_7d: number | null;
+  sparkline_7d: number[];
+}
+
+/** `GET /market/overview` response — CoinGecko-backed, cached server-side. */
+export interface MarketOverview {
+  sol: CoinSummary;
+  usdc: CoinSummary;
+  updated_at: string;
+  /** true when the upstream refresh failed and this is the last-known-good payload. */
+  stale: boolean;
+}
+
+/** Jupiter price/v3 spot price for one mint (client-side, keyless). */
+export interface JupiterSpot {
+  usd_price: number;
+  change_24h: number | null;
+}
+
 /** `GET /transfers/:id` response — matches the real backend's `transfers` row exactly. */
 export interface TransferRecord {
   id: string;

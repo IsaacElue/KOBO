@@ -20,7 +20,8 @@
 
 **Backend, real and tested:**
 - `POST /users`, `POST /transfers`, `GET /transfers/:id`, `GET /balances/:userId`, `POST /webhooks/onramp` (Transak JWT-verified), `GET /rate` (real Transak quote), `POST /funding`
-- Auth: `POST /auth/signup|login|refresh|logout|pin|pin/verify`, plus `GET /auth/me`, `PATCH /auth/profile`, `POST /auth/password` (NEW this sync — Settings; see API_CONTRACT.md "Resolved this sync" #17)
+- Auth: `POST /auth/signup|login|refresh|logout|pin|pin/verify`, plus `GET /auth/me`, `PATCH /auth/profile`, `POST /auth/password` (Settings; API_CONTRACT.md "Resolved this sync" #17)
+- Activity: `GET /market/overview` (CoinGecko proxy, cached, keyless — no API key), `GET /transfers` (list own history, session-gated) — NEW; see API_CONTRACT.md "Resolved this sync" #18
 - Real Solana devnet settlement, real Transak staging sessions, retry/idempotency/failure handling — now shared via `settleTransfer()` between the webhook path and `POST /transfers`' new instant-send path, not forked
 - Real sender balance funding + instant send: `POST /funding` tops up a sender's real balance via Transak (lands in Kobo's pooled wallet), `POST /transfers` is now balance-checked and sends instantly when funded (no more per-transfer Transak session) — see API_CONTRACT.md "Resolved this sync" #12 for full detail, verified live end to end (fund → real balance increase → instant send → real Solana tx → real balance debit/credit → insufficient-balance 400)
 - CORS, UUID validation on transfer endpoints
@@ -66,9 +67,9 @@
 
 **Decided (2026-08-25):**
 - ~~Overview / Activity / Settings screens are intentionally stubbed for now.~~
-  **Superseded 2026-08-26/27:** Settings and Overview are now built (see "New
-  pages" below). Activity is the only screen still on the "not built yet"
-  placeholder. Send Money remains the demo's focus.
+  **Superseded 2026-08-27:** Settings, Overview and Activity are all built now
+  (see "New pages" below) — **the app has no "not built yet" stub screens
+  left.** Send Money remains the demo's focus.
 - Recipients are Solana wallet address only — no phone-number-only recipients in
   Phase 1. Placeholder copy corrected. Phone-number-only recipients would require
   Kobo generating and holding a custodial wallet on someone's behalf — a real
@@ -141,7 +142,7 @@ Earlier scope said auth was minimal/deferred. Decision: build it for real now, R
 - **Persistence**: a valid session persists locally (same device/browser) so returning users see the PIN screen, not full email/password, matching the "first time = full signup, after that = just PIN" flow described.
 - **Mobile-ready**: this pattern (real session + local fast-unlock) carries forward cleanly to a future native mobile app without rearchitecting.
 - **DONE (backend + frontend), 2026-08-26:** signup, login, PIN set/verify, session refresh/logout all built and verified live end-to-end (real signup -> PIN -> reload -> PIN unlock -> real transfer -> logout -> reload -> full login). `NEXT_PUBLIC_KOBO_SENDER_ID` fully removed. See API_CONTRACT.md's `POST /auth/*` section.
-- Sequenced: ~~backend auth foundation first~~, ~~then frontend PIN UI~~, ~~then Settings~~, ~~then Overview~~ — all done. Next: Activity (market data, last — most exploratory).
+- Sequenced: ~~backend auth foundation first~~, ~~then frontend PIN UI~~, ~~then Settings~~, ~~then Overview~~, ~~then Activity~~ — **all four pages done.**
 
 ### New pages (2026-08-26)
 - **Overview**: clean, mostly-static product page — offerings, solutions, vision. No backend dependency.
@@ -149,7 +150,10 @@ Earlier scope said auth was minimal/deferred. Decision: build it for real now, R
 - **Settings**: profile, email, password change, wallet, logout, account details, support. Depends on real auth existing.
   **DONE (backend + frontend), 2026-08-27.** `GET /auth/me` + `PATCH /auth/profile` + `POST /auth/password` (new), `components/kobo/settings-screen.tsx` wired at `SETTINGS_INDEX`. Editable: name, country, password (current-password re-entry check; session revoked on change → user re-logs in). Read-only: email, member-since, linked wallet address. **Email change deferred** — needs a confirmation-email integration (free-tier send limits), same reason the receipt/email work is out of scope; shown read-only with a "contact support" line, not silently unchangeable. **Wallet** labelled as an address that "isn't used to hold or move your money" (Kobo sends from its pooled wallet), kept in case direct payouts are added later — plain accurate copy, flagged for review. Logout reuses the header's flow via a shared `logout-confirm-dialog.tsx`. See API_CONTRACT.md "Resolved this sync" #17.
 - **Activity**: a gamified crypto/stablecoin performance view — real market data (free-tier APIs only: CoinGecko public API, Jupiter's Solana price feed — no paid keys), plus the user's real transfer history (already exists as data). Kept simple, not overwhelming — charts/prices/news alongside real transfers, not a full trading dashboard.
+  **DONE (backend + frontend), 2026-08-27.** Backend: `GET /market/overview` (CoinGecko `/coins/markets` proxied via a 90s in-memory cache — `backend/src/lib/market.ts`; **keyless, no Demo API key** — the backend cache pins usage to <1 CoinGecko call/min, well under the keyless limit; checked, not assumed) and `GET /transfers` (list own history, session-gated, `recipient_name` joined from `users` — no new columns). Frontend: `components/kobo/activity-screen.tsx` at `ACTIVITY_INDEX` — a live SOL ticker (Jupiter `price/v3` **direct client call, keyless, no proxy**), a market card (SOL/USDC EUR price + 24h/7d change + inline-SVG 7-day sparkline, no charting lib), an understated 3-tile "Your sending" stat strip (**no points/badges/leaderboards** — anti-gambling constraint), and the real transfer history list. Every data source degrades to a clean fallback (unavailable card / "prices may be delayed" / "SOL price unavailable" / retry). **No news section** — no genuinely free keyless source found. Verified live with real signup + two real €0.05 on-chain sends. See API_CONTRACT.md "Resolved this sync" #18.
 - **Recipients**: already good, no changes needed right now.
+
+**All four pages (Overview, Recipients, Activity, Settings) are complete as of 2026-08-27.** The `ComingSoonPanel` stub is now unreachable from the nav.
 
 ### 3d. Database
 - Revisit the earlier-flagged `wallet_address` uniqueness gap (multiple `users` rows sharing one wallet, discovered during the balances health check) — decide now whether to add a uniqueness constraint, since auth work will touch this table anyway.

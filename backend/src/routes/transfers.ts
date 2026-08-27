@@ -111,6 +111,42 @@ transfersRouter.post("/", requireAuth, async (req, res) => {
   return res.status(result.httpStatus).json(result.body);
 });
 
+/**
+ * `GET /transfers` — the signed-in sender's own transfer history, newest
+ * first, for the Activity page. Own resource only: rows are filtered by the
+ * caller's `users.id` resolved from the verified session, never a
+ * client-supplied id — same ownership model as `GET /transfers/:id`. Returns
+ * existing `transfers` columns plus the recipient's `name` (joined from
+ * `users`, not a new column) so the frontend can render a row without a
+ * second lookup. No new fields on the table.
+ */
+transfersRouter.get("/", requireAuth, async (req, res) => {
+  const koboUser = await resolveKoboUser(req.authUser!.id);
+  if (!koboUser) {
+    return res.status(403).json({ error: "No sender account linked to this session" });
+  }
+
+  const { data, error } = await supabase
+    .from("transfers")
+    .select(
+      "id, recipient_id, amount_eur, amount_usdc, status, solana_tx_signature, failure_reason, created_at, recipient:users!transfers_recipient_id_fkey(name)"
+    )
+    .eq("sender_id", koboUser.id)
+    .order("created_at", { ascending: false })
+    .limit(50);
+
+  if (error) {
+    return res.status(500).json({ error: error.message });
+  }
+
+  const transfers = (data ?? []).map((row) => {
+    const { recipient, ...rest } = row as typeof row & { recipient: { name: string } | null };
+    return { ...rest, recipient_name: recipient?.name ?? null };
+  });
+
+  return res.json({ transfers });
+});
+
 transfersRouter.get("/:id", requireAuth, async (req, res) => {
   const id = req.params.id as string;
 

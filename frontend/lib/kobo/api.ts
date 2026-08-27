@@ -1,4 +1,5 @@
 import type {
+  ActivityTransfer,
   BalanceResponse,
   CreateFundingRequest,
   CreateTransferRequest,
@@ -7,13 +8,14 @@ import type {
   CurrencyCode,
   FundingRecord,
   FundingStatus,
+  MarketOverview,
   OnrampSession,
   RateResponse,
   TransferRecord,
   TransferStatus,
   UserProfile,
 } from "./types";
-import { CURRENT_USER, randomRate } from "./mock-data";
+import { CURRENT_USER, RECIPIENTS, TRANSFER_HISTORY, randomRate } from "./mock-data";
 import { API_URL, isMockMode } from "./config";
 import { getValidAccessToken, handleUnauthorized, updateStoredUser } from "./auth";
 
@@ -248,6 +250,70 @@ export async function changePassword(currentPassword: string, newPassword: strin
   if (newPassword.length < 8) throw new Error("new_password is required and must be at least 8 characters");
   if (newPassword === currentPassword) throw new Error("new_password must be different from your current password");
   mockPassword = newPassword;
+}
+
+/**
+ * `GET /market/overview`. CoinGecko-backed SOL/USDC price + 24h/7d change +
+ * 7-day sparkline, cached server-side (see backend `lib/market.ts`). Returns
+ * `null` on any failure so the Activity page can show a "market data
+ * unavailable" state instead of throwing. Shape confirmed against the real
+ * backend — see API_CONTRACT.md.
+ */
+export async function getMarketOverview(): Promise<MarketOverview | null> {
+  if (!isMockMode()) {
+    try {
+      const res = await fetch(`${API_URL}/market/overview`);
+      if (!res.ok) return null;
+      return (await res.json()) as MarketOverview;
+    } catch {
+      return null;
+    }
+  }
+
+  await new Promise((r) => setTimeout(r, 200));
+  // Deterministic-ish mock: a gently rising 7-day curve so the sparkline has shape.
+  const spark = Array.from({ length: 48 }, (_, i) => 78 + i * 0.35 + Math.sin(i / 5) * 1.4);
+  return {
+    sol: { price_eur: spark[spark.length - 1], change_24h: 2.4, change_7d: 11.8, sparkline_7d: spark },
+    usdc: { price_eur: 0.92, change_24h: -0.03, change_7d: 0.01, sparkline_7d: Array(48).fill(0.92) },
+    updated_at: new Date().toISOString(),
+    stale: false,
+  };
+}
+
+/**
+ * `GET /transfers`. The signed-in sender's own transfer history, newest
+ * first, for the Activity page. Real `transfers` rows plus the joined
+ * `recipient_name` — no invented fields. Mock mode derives the same shape
+ * from the existing `TRANSFER_HISTORY` fixture. Shape confirmed against the
+ * real backend — see API_CONTRACT.md.
+ */
+export async function getMyTransfers(): Promise<ActivityTransfer[]> {
+  if (!isMockMode()) {
+    const res = await fetch(`${API_URL}/transfers`, { headers: await authHeaders() });
+    if (res.status === 401) {
+      handleUnauthorized();
+      throw new Error("Your session has expired — please sign in again");
+    }
+    if (!res.ok) throw new Error(`GET /transfers failed: ${res.status}`);
+    const body: { transfers: ActivityTransfer[] } = await res.json();
+    return body.transfers;
+  }
+
+  await new Promise((r) => setTimeout(r, 200));
+  const nameById = new Map(RECIPIENTS.map((r) => [r.id, r.name]));
+  const base = Date.UTC(2026, 7, 20); // fixed reference so mock dates are stable
+  return TRANSFER_HISTORY.map((t, i) => ({
+    id: t.id,
+    recipient_id: t.recipientId,
+    recipient_name: nameById.get(t.recipientId) ?? null,
+    amount_eur: t.amountEur,
+    amount_usdc: null,
+    status: (t.status === "Delivered" ? "confirmed" : "failed") as TransferStatus,
+    solana_tx_signature: t.status === "Delivered" ? `mock_sig_${t.id}` : null,
+    failure_reason: t.status === "Refunded" ? "The transfer was refunded." : null,
+    created_at: new Date(base - i * 6 * 86_400_000).toISOString(),
+  }));
 }
 
 /**

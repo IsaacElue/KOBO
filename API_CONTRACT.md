@@ -13,10 +13,17 @@ resolves mismatch #5").
 `restructure-frontend-folder` are now fully merged (both directions), so this is a
 single monorepo branch, not a pending PR.
 
-**Latest addition (Settings, this sync):** three new session-gated endpoints —
-`GET /auth/me`, `PATCH /auth/profile`, `POST /auth/password` — plus the real
-Settings page consuming them. Full detail in the new `/auth/*` subsection and
-"Resolved this sync" #17. Everything below this line predates it and is unchanged.
+**Latest addition (Activity page):** `GET /market/overview` (CoinGecko proxy,
+cached, keyless — no API key) and `GET /transfers` (list own history, session-
+gated). Full detail in their own subsections and "Resolved this sync" #18.
+The Activity page also calls Jupiter's `price/v3` directly from the client
+(keyless, not proxied). **All four new pages (Overview, Settings, Activity,
+plus the existing Recipients) are now built** — the app has no "not built yet"
+stub screens left.
+
+**Prior addition (Settings):** three session-gated endpoints — `GET /auth/me`,
+`PATCH /auth/profile`, `POST /auth/password` — plus the real Settings page.
+Full detail in the `/auth/*` subsection and "Resolved this sync" #17.
 
 **Since the last sync:** frontend now matches the real `{ sessionId, widgetUrl }`
 onramp shape and picks redirect-vs-embedded itself, including the outer `id` field
@@ -581,6 +588,49 @@ For a transfer created via the new instant-send path, `onramp_session_id` and
 `onramp_reference` are always `null` — nothing about that transfer ever touched
 Transak.
 
+## `GET /transfers` — **NEW this sync (Activity page)**
+
+The signed-in sender's own transfer history, newest first — for the Activity
+page's "Transfer history" list and its sending stats. Own resource only: rows
+are filtered by `sender_id = <caller's users.id from the verified session>`,
+never a client-supplied id — same ownership model as `GET /transfers/:id`.
+
+**Header:** `Authorization: Bearer <access_token>`
+
+**Response — `200`:**
+```json
+{
+  "transfers": [
+    {
+      "id": "uuid",
+      "recipient_id": "uuid",
+      "recipient_name": "string | null",
+      "amount_eur": 0.05,
+      "amount_usdc": 0.058,
+      "status": "confirmed",
+      "solana_tx_signature": "string | null",
+      "failure_reason": "string | null",
+      "created_at": "2026-08-27T14:58:17.118Z"
+    }
+  ]
+}
+```
+Existing `transfers` columns plus `recipient_name` — **joined from `users.name`
+(`users!transfers_recipient_id_fkey`), not a new column on `transfers`.** No
+schema change. Ordered `created_at` desc, capped at 50 rows. `status` is the
+raw enum (`pending | onramp_complete | sent | confirmed | failed`); the
+frontend maps it (`confirmed → "Delivered"`, `failed → "Failed"`, everything
+else → "In progress").
+
+**Error responses:**
+- `401` — `{ "error": "Missing or invalid Authorization header" }` / `"Invalid or expired session" }`
+- `403` — `{ "error": "No sender account linked to this session" }`
+- `500` — `{ "error": "<supabase error message>" }`
+
+**Verified live, this sync:** a real account with two real €0.05 sends returns
+both rows with `recipient_name: "Adaeze Okonkwo"` and `status: "confirmed"`; a
+fresh account returns `{ "transfers": [] }`; no header → `401`.
+
 ## `POST /webhooks/onramp` — extended this sync to also handle funding
 
 Transak → backend only. Not called by the frontend. Verifies a JWT-signed payload
@@ -717,6 +767,59 @@ in `KOBO_BUILD_PLAN.md`'s "Decided" section):** this is a general-purpose fiat<-
 rate source, not something built one-off for the header ticker. The recipient
 balance display feature can call this same endpoint to convert a recipient's real
 USDC balance into an EUR-equivalent, rather than needing its own rate source.
+
+## `GET /market/overview` — **NEW this sync (Activity page)**
+
+Crypto market data for the Activity page's market card — SOL & USDC price
+(EUR), 24h & 7d change, and a 7-day price sparkline. Public (no auth), like
+`GET /rate` — market data isn't user-specific.
+
+Proxies CoinGecko's free **keyless** public API
+(`/coins/markets?ids=solana,usd-coin&vs_currency=eur&price_change_percentage=24h,7d&sparkline=true`)
+through an **in-memory TTL cache** (`backend/src/lib/market.ts`, 90s TTL,
+concurrent misses de-duped into one upstream call). This is the same
+"one cached upstream fetch serves every client" idea as the Transak
+access-token cache. **Checked, per instruction — no CoinGecko Demo API key
+needed and none configured:** the keyless tier is tight (~5-8 req/min before a
+punitive 429), but the 90s backend cache pins usage to <1 upstream call/min
+regardless of how many clients hit this endpoint. Verified: 5 rapid calls all
+return the identical `updated_at` (one upstream fetch).
+
+**Response — `200`:**
+```json
+{
+  "sol":  { "price_eur": 92.07, "change_24h": 12.40, "change_7d": 23.40, "sparkline_7d": [86.49, 86.51, "... 168 hourly points ..."] },
+  "usdc": { "price_eur": 0.8587, "change_24h": 0.01, "change_7d": 0.0, "sparkline_7d": ["... 168 points, ~1.0 ..."] },
+  "updated_at": "2026-08-27T16:03:00.000Z",
+  "stale": false
+}
+```
+`sparkline_7d` is CoinGecko's free 7-day sparkline — **USD-denominated
+regardless of `vs_currency` (CoinGecko quirk); treat it as trend shape, not
+axis values.** The frontend renders it as a tiny inline `<svg>` polyline, no
+charting library.
+
+**Graceful degradation (per instruction — never a broken layout):**
+- Upstream fails (429 / down) **but** a cached payload < 30 min old exists →
+  `200` with that payload and `"stale": true`. The frontend shows a "Prices
+  may be delayed" hint and keeps rendering.
+- Upstream fails and no usable cache → `503 { "error": "market data unavailable" }`.
+  The frontend shows a clean "Market data is unavailable right now" state.
+- Frontend's `getMarketOverview()` also returns `null` on any network error,
+  so a dead backend still degrades cleanly.
+
+**Not proxied — Jupiter.** The Activity page's small live SOL ticker calls
+Jupiter's `price/v3` (`https://lite-api.jup.ag/price/v3?ids=<SOL mint>`)
+**directly from the client** — keyless, no signup, and its lite tier is
+generous (~60 req/min, forgiving 429). No backend proxy: the proxy exists for
+CoinGecko because *its* keyless limit is far tighter. Jupiter returns
+`usdPrice` + `priceChange24h`; the frontend polls it every 45s per viewer and
+falls back to "SOL price unavailable" on any failure.
+
+**Verified live, this sync:** real `GET /market/overview` → `200` with SOL
+~€92, real 24h/7d change, 168-point sparkline; cache confirmed (rapid calls,
+one upstream hit); Jupiter direct call → `200` (SOL ~$107). Both rendered on
+the Activity page.
 
 ---
 
@@ -1333,6 +1436,39 @@ File refs are all under `frontend/`:
     new-password login `200`s; viewed wallet + account details (real email,
     country, June-2026-style member-since); logout-from-Settings ends the
     session (`401` after).
+
+18. **Activity page — real market data + real transfer history.** Per
+    `KOBO_BUILD_PLAN.md`'s "New pages" → Activity. Backend: `GET
+    /market/overview` (CoinGecko `/coins/markets` proxied through a 90s
+    in-memory cache — `backend/src/lib/market.ts`; **keyless, no Demo API key,
+    checked per instruction:** the backend cache alone pins usage to <1
+    upstream call/min, well under the ~5-8/min keyless ceiling) and `GET
+    /transfers` (list own history, session-gated, `recipient_name` joined from
+    `users` — no new columns). Frontend: `components/kobo/activity-screen.tsx`
+    wired at `ACTIVITY_INDEX`, replacing the last "isn't built yet" stub.
+    Sections: a live SOL ticker (`lib/kobo/jupiter.ts` — Jupiter `price/v3`
+    **direct client call, keyless, no proxy**), a market card
+    (`GET /market/overview` — SOL/USDC EUR price, 24h & 7d change, inline-SVG
+    7-day sparkline, no charting library), an understated "Your sending" stat
+    strip (transfers completed / total sent / people reached — derived from
+    real history; **no points/badges/leaderboards**, per the anti-gambling
+    constraint), and the real transfer history list (reuses the
+    `RecentTransfers` visual style). **Every data source degrades cleanly:**
+    market `null`/`503` → "Market data is unavailable" card; `stale: true` →
+    "Prices may be delayed" hint over last-good data; Jupiter fail → "SOL price
+    unavailable"; history fail → inline "Couldn't load your transfers · Try
+    again". No news section — no genuinely free keyless source found, so none
+    added.
+    **Verified live** (real signup + real PIN + a disclosed `creditBalance`
+    testing shortcut standing in for a Transak top-up + **two real €0.05
+    on-chain sends**, then Playwright with that real session): `GET
+    /market/overview` `200` with SOL ~€92 / real 24h+7d change / 168-point
+    sparkline, cache confirmed (rapid calls → one upstream hit); Jupiter direct
+    call `200` (SOL ~$107); `GET /transfers` `200` returning both real sends
+    with `recipient_name: "Adaeze Okonkwo"`, `status: "confirmed"` — rendered
+    correctly as "Delivered" rows, stats showing "2 / €0.10 / 1 person". `tsc`
+    + `eslint` clean; `nav-and-tabs.test.tsx` updated ("every nav item opens a
+    real screen") + a new Activity test. Test account deleted afterward.
 
 ## Still open
 
