@@ -1,11 +1,24 @@
 # Kobo API Contract
 
 Shared source of truth between `backend/` (Person B / Isaac — Express + Supabase +
-Solana devnet + Transak) and `frontend/` (Person A / Shina — Next.js). Describes what
+Solana devnet + on-ramp) and `frontend/` (Person A / Shina — Next.js). Describes what
 is **actually implemented** on each side as of this sync, not what was planned.
 
 Update this file in place when either side's contract changes — don't append a new
 dated section, overwrite the stale one.
+
+**Latest addition (on-ramp provider → MoonPay):** `POST /funding` now builds a
+**MoonPay** widget URL instead of Transak — the response shape is unchanged
+(`onramp: { sessionId, widgetUrl }`) but `widgetUrl` is now a
+`https://buy.moonpay.com?…` URL and `sessionId` / `onramp_session_id` is always
+`null` (MoonPay has no server-side session id; correlation is the funding
+request's own id, passed as `externalTransactionId`). New webhook route
+**`POST /webhooks/moonpay`**. Transak's code path is intact and re-selectable
+via `ONRAMP_PROVIDER=transak`. **Frontend impact:** the widget origin is now
+`buy.moonpay.com`, and MoonPay's redirect params (`transactionId`,
+`transactionStatus`) and postMessage events differ from Transak's — the
+redirect/embedded handoff in `onramp-transak.ts` needs a MoonPay equivalent.
+Full detail in the `POST /funding` and `POST /webhooks/moonpay` sections.
 
 **Backend read at:** `main` @ `07aa827` ("docs: add POST /users to API_CONTRACT,
 resolves mismatch #5").
@@ -347,13 +360,19 @@ accounts, and have no session to require.
 caller's own `users.id` — no session is `401`, a `sender_id` belonging to
 someone else is `403`. See "Resolved this sync" #15.
 
-Tops up the **sender's own** real balance — not a send to anyone. Creates a
-Transak widget session, same underlying mechanics as the old per-transfer session
-creation (`createWidgetSession`, reused unchanged), except the destination wallet
-is **Kobo's own pooled backend wallet** (`backendWallet.publicKey`,
+Tops up the **sender's own** real balance — not a send to anyone. Builds an
+on-ramp widget URL (**MoonPay** by default — see `backend/src/lib/onramp.ts`),
+destination wallet **Kobo's own pooled backend wallet** (`backendWallet.publicKey`,
 `backend/src/lib/solana.ts`), not a recipient's. Real USDC that lands there via
-this flow is credited to the sender's row in `balances` once
-`POST /webhooks/onramp` confirms it — see that section below.
+this flow is credited to the sender's row in `balances` once the provider's
+completion webhook confirms it — `POST /webhooks/moonpay` for MoonPay,
+`POST /webhooks/onramp` for Transak. See those sections below.
+
+**Provider swap:** `ONRAMP_PROVIDER` env (`moonpay` default | `transak`). Only
+the session-build and webhook-verify differ between providers; the
+request/response contract here is identical either way. Transak's path is kept
+fully intact for a fast swap-back (e.g. if Ramp Network comes back with
+Ireland/SEPA confirmed).
 
 **Request body** (`backend/src/routes/funding.ts`):
 ```json
@@ -379,11 +398,24 @@ this flow is credited to the sender's row in `balances` once
   "onramp_reference": null,
   "failure_reason": null,
   "created_at": "2026-08-26T12:00:00.000Z",
-  "onramp": { "sessionId": "string | null", "widgetUrl": "https://global-stg.transak.com/...(single-use, valid 5 min)" }
+  "onramp": { "sessionId": "string | null", "widgetUrl": "https://buy.moonpay.com?apiKey=…&signature=… (MoonPay, HMAC-signed, directly loadable)" }
 }
 ```
 The whole `funding_requests` row (new table — see Data model below), plus the same
 `onramp: { sessionId, widgetUrl }` shape `POST /transfers` used to return.
+
+**MoonPay specifics:** `widgetUrl` is a signed `https://buy.moonpay.com?…` URL —
+no expiry (it's a signed param bundle, not a one-time session), origin
+`buy.moonpay.com`. `sessionId` and the stored `onramp_session_id` are **always
+`null`** (MoonPay has no session id — correlation is `externalTransactionId`,
+set to the `funding_requests.id`). The URL carries `allowedIpAddress` = the
+caller's IP (`req.ip` via `trust proxy`; `MOONPAY_ALLOWED_IP_OVERRIDE` for local
+dev) — this MoonPay account enforces IP-bound signed URLs, so a widget opened
+from a different IP than the one that called `POST /funding` is rejected by
+MoonPay. `amount_usdc` here is the pre-purchase estimate; the amount actually
+**credited** on confirmation is MoonPay's real `quoteCurrencyAmount` from the
+webhook, which can differ slightly.
+
 `amount_usdc` is computed with the **real live market rate**
 (`getMarketRate("EUR")`, `backend/src/lib/transak.ts` — the same function
 `GET /rate` uses), not a placeholder — this is a fresh code path with no old
@@ -400,9 +432,13 @@ unresolved for the parts of the system it was already scoped to).
 - `403` — `{ "error": "No sender account linked to this session" }` — a valid session with no linked `users` row.
 - `403` — `{ "error": "sender_id does not match the authenticated user" }`
 - `502` — `{ "error": "Failed to fetch conversion rate: <message>" }`
-- `502` — `{ "error": "Failed to create Transak widget session: <message>" }` — the
+- `502` — `{ "error": "Failed to create on-ramp widget session: <message>" }` — the
   `funding_requests` row is deleted server-side before this is returned (no
-  orphaned rows), same pattern `POST /transfers` used to follow.
+  orphaned rows), same pattern `POST /transfers` used to follow. One MoonPay-
+  specific `<message>` to know: if the caller's IP resolves to loopback/private
+  (local dev without `MOONPAY_ALLOWED_IP_OVERRIDE`, or a misconfigured
+  `trust proxy`), the message names the missing IP override rather than calling
+  MoonPay with an IP it will reject.
 - `500` — `{ "error": "<supabase error message>" }`
 
 ## `GET /funding/:id` — **requires a valid session as of this sync**
@@ -631,7 +667,51 @@ else → "In progress").
 both rows with `recipient_name: "Adaeze Okonkwo"` and `status: "confirmed"`; a
 fresh account returns `{ "transfers": [] }`; no header → `401`.
 
+## `POST /webhooks/moonpay` — MoonPay on-ramp completion (current provider)
+
+MoonPay → backend only. Not called by the frontend. **Only used for funding** —
+transfers are instant (no on-ramp), so every valid webhook here routes to the
+funding pipeline; no `partnerOrderId`-prefix disambiguation like the Transak
+route needs.
+
+**Verification:** the `Moonpay-Signature-V2` header (`t=<unix-seconds>,s=<hex>`)
+is an HMAC-SHA256 of `"<t>.<raw-body>"` keyed with `MOONPAY_WEBHOOK_KEY`
+(`wk_…`). The raw pre-JSON-parse body is required — `index.ts` captures it as
+`req.rawBody` via `express.json({ verify })`. A missing/malformed/stale
+(>5 min skew) / non-matching signature is `401 { "error": "Invalid webhook
+signature" }` and the body is not processed.
+
+**Payload:** `{ type, data, externalCustomerId }` where `data` is the MoonPay
+buy-transaction object. Relevant fields: `data.id` (MoonPay's txn id, stored as
+`onramp_reference`), `data.status` (`waitingPayment | pending |
+waitingAuthorization | completed | failed`), `data.externalTransactionId` (the
+`funding_requests.id` we set), `data.quoteCurrencyAmount` (USDC actually
+delivered), `data.cryptoTransactionId` (Solana tx signature), `data.failureReason`.
+
+**Behaviour by event:**
+- `type === "transaction_updated"` **and** `data.status === "completed"` → the
+  ORDER_COMPLETED equivalent: run the **funding pipeline** (same
+  `handleFundingWebhook` the Transak route uses) — match
+  `data.externalTransactionId` to a `funding_requests` row, claim it
+  (`pending → confirmed`, conditional update for idempotency), credit the
+  sender's balance with `data.quoteCurrencyAmount` (falling back to the row's
+  `amount_usdc` estimate if absent). `200` with the updated row; `409` on a
+  replayed/duplicate webhook (row already `confirmed`); `404` no match; `400`
+  no usable `externalTransactionId`.
+- `type === "transaction_failed"` or `data.status === "failed"` → mark the
+  matching `pending` funding request `failed` with `data.failureReason`. `200`.
+- Any other type/status (`transaction_created`, still `pending`, etc.) → `200`
+  ack, nothing credited.
+
+**Data model note:** MoonPay never sets `onramp_session_id` (stays `null`); it
+sets `onramp_reference` to `data.id` on confirmation, same column the Transak
+path uses.
+
 ## `POST /webhooks/onramp` — extended this sync to also handle funding
+
+**Inactive while `ONRAMP_PROVIDER=moonpay` (the default)** — MoonPay fires
+`POST /webhooks/moonpay` instead. This route stays mounted and correct for a
+swap back to `ONRAMP_PROVIDER=transak`.
 
 Transak → backend only. Not called by the frontend. Verifies a JWT-signed payload
 (signed with the partner access token) **exactly as before, unchanged** — this

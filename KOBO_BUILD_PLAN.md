@@ -18,8 +18,32 @@
 
 ## 1. Where things actually stand (as of this doc)
 
+**On-ramp provider — MoonPay (Ramp Network pending confirmation).** As of this
+sync `POST /funding` builds a **MoonPay** widget URL, not Transak. Backend keys
+in place, sandbox verified end to end: signed `https://buy.moonpay.com?…` URL
+renders from an Ireland IP, `POST /webhooks/moonpay` verifies MoonPay's
+`Moonpay-Signature-V2` and credits the real delivered USDC amount, idempotent /
+replay-safe. Transak's code path is **kept intact and re-selectable** via
+`ONRAMP_PROVIDER=transak` — the swap is one env var, no code change, in case
+Ramp Network comes back with Ireland/SEPA + access confirmed before Demo Day.
+`POST /funding` request/response contract is unchanged (`onramp: { sessionId,
+widgetUrl }`) — see API_CONTRACT.md "Latest addition (on-ramp provider →
+MoonPay)". **Frontend (Shina):** widget origin is now `buy.moonpay.com` and
+MoonPay's redirect/postMessage signals differ from Transak's — the
+`onramp-transak.ts` handoff needs a MoonPay equivalent.
+
+_Confirmed against MoonPay's live sandbox API/docs:_ `usdc_sol` is the exact
+Solana-USDC code (mint `EPjF…Dt1v`) but has **no sandbox support** — local
+testing uses `pyusd_sol` as a stand-in, one env flip (`MOONPAY_CRYPTO_CURRENCY_CODE`)
+to go live. EUR + SEPA is a valid quote combination and Ireland is
+`isBuyAllowed`. _Still to eyeball manually_ (blocked on MoonPay account sign-in,
+which needs a real email OTP): SEPA vs card actually shown in the widget's
+payment-method screen, and whether a sandbox card purchase auto-completes vs
+needs a dashboard release — the webhook handler keys on `status === "completed"`
+either way.
+
 **Backend, real and tested:**
-- `POST /users`, `POST /transfers`, `GET /transfers/:id`, `GET /balances/:userId`, `POST /webhooks/onramp` (Transak JWT-verified), `GET /rate` (real Transak quote), `POST /funding`
+- `POST /users`, `POST /transfers`, `GET /transfers/:id`, `GET /balances/:userId`, `POST /webhooks/moonpay` (MoonPay, HMAC-verified) / `POST /webhooks/onramp` (Transak JWT, inactive), `GET /rate` (real Transak quote — provider-independent price feed), `POST /funding`
 - Auth: `POST /auth/signup|login|refresh|logout|pin|pin/verify`, plus `GET /auth/me`, `PATCH /auth/profile`, `POST /auth/password` (Settings; API_CONTRACT.md "Resolved this sync" #17)
 - Activity: `GET /market/overview` (CoinGecko proxy, cached, keyless — no API key), `GET /transfers` (list own history, session-gated) — NEW; see API_CONTRACT.md "Resolved this sync" #18
 - Real Solana devnet settlement, real Transak staging sessions, retry/idempotency/failure handling — now shared via `settleTransfer()` between the webhook path and `POST /transfers`' new instant-send path, not forked

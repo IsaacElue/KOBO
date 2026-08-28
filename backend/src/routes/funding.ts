@@ -1,6 +1,8 @@
+import type { Request } from "express";
 import { Router } from "express";
 import { supabase } from "../lib/supabase";
-import { createWidgetSession, getMarketRate } from "../lib/transak";
+import { getMarketRate } from "../lib/transak";
+import { createOnrampSession } from "../lib/onramp";
 import { backendWallet } from "../lib/solana";
 import { getBalance } from "../lib/balances";
 import { requireAuth, resolveKoboUser } from "../lib/auth";
@@ -10,11 +12,28 @@ export const fundingRouter = Router();
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-// Same pattern as POST /transfers' session creation, reused as-is
-// (createWidgetSession) — the only difference is the destination wallet:
-// Kobo's own pooled backend wallet instead of a recipient's, and the
-// partnerOrderId is prefixed ("fund_...") so POST /webhooks/onramp can tell
-// a top-up apart from a send without an extra lookup.
+/**
+ * The end user's public IP, for MoonPay's `allowedIpAddress` requirement.
+ * `req.ip` already resolves through Express's `trust proxy` setting
+ * (`app.set("trust proxy", …)` in index.ts) — the leftmost client entry of
+ * `X-Forwarded-For` on a PaaS/CDN, the socket address locally. We only strip
+ * the IPv4-mapped-IPv6 prefix and fall back to the raw first XFF hop if `req.ip`
+ * somehow comes back empty; anything loopback/private is handled downstream in
+ * `lib/moonpay.ts` (which requires the override env for local dev).
+ */
+function resolveClientIp(req: Request): string {
+  const stripV6 = (ip: string) => ip.replace(/^::ffff:/, "").trim();
+  const direct = stripV6(req.ip ?? "");
+  if (direct) return direct;
+  const xff = String(req.headers["x-forwarded-for"] ?? "").split(",")[0];
+  return stripV6(xff);
+}
+
+// Builds an on-ramp widget session (MoonPay by default — see lib/onramp.ts)
+// whose destination is Kobo's own pooled backend wallet, not a recipient's.
+// The funding request's own id is passed as the provider correlation
+// reference so the completion webhook (POST /webhooks/moonpay) can match the
+// row back without an extra lookup.
 fundingRouter.post("/", requireAuth, async (req, res) => {
   const { sender_id, amount_eur } = req.body ?? {};
 
@@ -60,18 +79,18 @@ fundingRouter.post("/", requireAuth, async (req, res) => {
 
   let onramp: { sessionId: string | null; widgetUrl: string };
   try {
-    onramp = await createWidgetSession({
+    onramp = await createOnrampSession({
       amountEur: amount_eur,
-      recipientWalletAddress: backendWallet.publicKey.toBase58(),
-      partnerOrderId: `fund_${fundingRequest.id}`,
-      userIp: req.ip || "127.0.0.1",
+      walletAddress: backendWallet.publicKey.toBase58(),
+      reference: fundingRequest.id,
+      userIp: resolveClientIp(req),
     });
   } catch (err) {
     // Session creation failed — don't leave a funding request row with no
     // way to ever fund it. Roll back rather than leaving orphaned 'pending' state.
     await supabase.from("funding_requests").delete().eq("id", fundingRequest.id);
     return res.status(502).json({
-      error: `Failed to create Transak widget session: ${(err as Error).message}`,
+      error: `Failed to create on-ramp widget session: ${(err as Error).message}`,
     });
   }
 

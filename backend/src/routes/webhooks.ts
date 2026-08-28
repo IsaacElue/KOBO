@@ -1,10 +1,15 @@
+import type { Request } from "express";
 import { Router } from "express";
 import { supabase } from "../lib/supabase";
-import { verifyWebhook, type TransakWebhookData } from "../lib/transak";
+import { verifyWebhook } from "../lib/transak";
+import { verifyWebhook as verifyMoonPayWebhook } from "../lib/moonpay";
 import { creditBalance } from "../lib/balances";
 import { settleTransfer } from "../lib/settlement";
 
 export const webhooksRouter = Router();
+
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 // Correlation ids for funding sessions (POST /funding) are prefixed so this
 // handler can tell "top up my own balance" apart from "send to a recipient"
@@ -21,7 +26,17 @@ const FUNDING_PREFIX = "fund_";
  */
 async function handleFundingWebhook(
   fundingRequestId: string,
-  webhookData: TransakWebhookData
+  opts: {
+    /** The provider's own transaction id, stored as `onramp_reference`. */
+    reference: string | null;
+    /**
+     * The USDC actually delivered, when the provider's webhook reports it
+     * (MoonPay's `quoteCurrencyAmount`). Preferred over the row's pre-purchase
+     * estimate for the credit. Falls back to `amount_usdc` when absent
+     * (Transak's payload didn't reliably carry this).
+     */
+    creditedUsdc?: number | null;
+  }
 ): Promise<{ status: number; body: unknown }> {
   const { data: fundingRequest, error: fetchError } = await supabase
     .from("funding_requests")
@@ -47,7 +62,7 @@ async function handleFundingWebhook(
 
   const { data: claimed, error: claimError } = await supabase
     .from("funding_requests")
-    .update({ status: "confirmed", onramp_reference: webhookData.id ?? null })
+    .update({ status: "confirmed", onramp_reference: opts.reference })
     .eq("id", fundingRequestId)
     .eq("status", "pending")
     .select()
@@ -60,8 +75,13 @@ async function handleFundingWebhook(
     return { status: 409, body: { error: "Funding request already processed (concurrent webhook)" } };
   }
 
+  const amountToCredit =
+    typeof opts.creditedUsdc === "number" && opts.creditedUsdc > 0
+      ? opts.creditedUsdc
+      : fundingRequest.amount_usdc;
+
   try {
-    await creditBalance(fundingRequest.sender_id, fundingRequest.amount_usdc);
+    await creditBalance(fundingRequest.sender_id, amountToCredit);
   } catch (err) {
     // Claimed but the credit itself failed — don't leave it silently stuck
     // 'confirmed' with nothing actually credited. Visible and reported, not
@@ -115,7 +135,9 @@ webhooksRouter.post("/onramp", async (req, res) => {
 
   if (partnerOrderId?.startsWith(FUNDING_PREFIX)) {
     const fundingRequestId = partnerOrderId.slice(FUNDING_PREFIX.length);
-    const result = await handleFundingWebhook(fundingRequestId, webhookData);
+    const result = await handleFundingWebhook(fundingRequestId, {
+      reference: webhookData.id ?? null,
+    });
     return res.status(result.status).json(result.body);
   }
 
@@ -134,7 +156,9 @@ webhooksRouter.post("/onramp", async (req, res) => {
       return res.status(500).json({ error: fundingLookupError.message });
     }
     if (fundingBySession) {
-      const result = await handleFundingWebhook(fundingBySession.id, webhookData);
+      const result = await handleFundingWebhook(fundingBySession.id, {
+        reference: webhookData.id ?? null,
+      });
       return res.status(result.status).json(result.body);
     }
   }
@@ -175,4 +199,61 @@ webhooksRouter.post("/onramp", async (req, res) => {
 
   const result = await settleTransfer(transfer);
   return res.status(result.httpStatus).json(result.body);
+});
+
+// Real MoonPay on-ramp completion callback (current provider — see
+// lib/onramp.ts). MoonPay → backend only, not called by the frontend.
+// Signature is an HMAC over the raw request bytes (Moonpay-Signature-V2) — the
+// raw body is captured as req.rawBody in index.ts; verify before trusting
+// anything in the payload. MoonPay is only ever used for funding (transfers
+// are instant, no on-ramp), so every valid webhook here routes to the funding
+// pipeline — no partnerOrderId-style prefix disambiguation needed.
+webhooksRouter.post("/moonpay", async (req, res) => {
+  const rawBody = (req as Request & { rawBody?: string }).rawBody ?? "";
+
+  let payload;
+  try {
+    payload = verifyMoonPayWebhook(rawBody, req.header("Moonpay-Signature-V2"));
+  } catch (err) {
+    console.error(`Rejected unsigned/invalid MoonPay webhook: ${(err as Error).message}`);
+    return res.status(401).json({ error: "Invalid webhook signature" });
+  }
+
+  const { type, data } = payload;
+
+  // A buy transaction reaching status "completed" is the ORDER_COMPLETED
+  // equivalent — payment settled and USDC delivered on-chain. Every other
+  // event/status (transaction_created, still pending, waitingAuthorization,
+  // etc.) is ack'd 200 so MoonPay stops retrying, but nothing is credited.
+  // transaction_failed lands the row in 'failed' with the reason.
+  if (type === "transaction_failed" || data.status === "failed") {
+    if (data.externalTransactionId && UUID_RE.test(data.externalTransactionId)) {
+      await supabase
+        .from("funding_requests")
+        .update({
+          status: "failed",
+          failure_reason: data.failureReason ?? "MoonPay reported the purchase failed",
+        })
+        .eq("id", data.externalTransactionId)
+        .eq("status", "pending");
+    }
+    return res.status(200).json({ received: true, type, status: data.status });
+  }
+
+  if (data.status !== "completed") {
+    return res.status(200).json({ received: true, type, status: data.status });
+  }
+
+  const fundingRequestId = data.externalTransactionId;
+  if (!fundingRequestId || !UUID_RE.test(fundingRequestId)) {
+    return res.status(400).json({
+      error: "Webhook payload has no externalTransactionId matching a funding request",
+    });
+  }
+
+  const result = await handleFundingWebhook(fundingRequestId, {
+    reference: data.id,
+    creditedUsdc: data.quoteCurrencyAmount,
+  });
+  return res.status(result.status).json(result.body);
 });
