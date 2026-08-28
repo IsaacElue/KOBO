@@ -2,7 +2,13 @@ import { Router } from "express";
 import type { User } from "@supabase/supabase-js";
 import bcrypt from "bcryptjs";
 import { supabase } from "../lib/supabase";
-import { requireAuth, resolveKoboUser } from "../lib/auth";
+import {
+  requireAuth,
+  resolveKoboUser,
+  withAuthTimeout,
+  AuthServiceTimeoutError,
+  AUTH_SERVICE_UNAVAILABLE,
+} from "../lib/auth";
 import { isPlausibleSolanaAddress } from "../lib/validation";
 
 export const authRouter = Router();
@@ -64,7 +70,17 @@ authRouter.post("/signup", async (req, res) => {
     return res.status(400).json({ error: "wallet_address is required and must be a valid Solana address" });
   }
 
-  const created = await supabase.auth.admin.createUser({ email, password, email_confirm: true });
+  let created;
+  try {
+    created = await withAuthTimeout(
+      supabase.auth.admin.createUser({ email, password, email_confirm: true })
+    );
+  } catch (err) {
+    if (err instanceof AuthServiceTimeoutError) {
+      return res.status(503).json({ error: AUTH_SERVICE_UNAVAILABLE });
+    }
+    throw err;
+  }
   if (created.error || !created.data.user) {
     return res.status(400).json({ error: created.error?.message ?? "Signup failed" });
   }
@@ -83,7 +99,15 @@ authRouter.post("/signup", async (req, res) => {
     return res.status(500).json({ error: insertError.message });
   }
 
-  const signedIn = await supabase.auth.signInWithPassword({ email, password });
+  let signedIn;
+  try {
+    signedIn = await withAuthTimeout(supabase.auth.signInWithPassword({ email, password }));
+  } catch (err) {
+    if (err instanceof AuthServiceTimeoutError) {
+      return res.status(503).json({ error: AUTH_SERVICE_UNAVAILABLE });
+    }
+    throw err;
+  }
   if (signedIn.error || !signedIn.data.session) {
     return res.status(500).json({ error: signedIn.error?.message ?? "Signed up but failed to start a session" });
   }
@@ -98,7 +122,15 @@ authRouter.post("/login", async (req, res) => {
     return res.status(400).json({ error: "email and password are required" });
   }
 
-  const signedIn = await supabase.auth.signInWithPassword({ email, password });
+  let signedIn;
+  try {
+    signedIn = await withAuthTimeout(supabase.auth.signInWithPassword({ email, password }));
+  } catch (err) {
+    if (err instanceof AuthServiceTimeoutError) {
+      return res.status(503).json({ error: AUTH_SERVICE_UNAVAILABLE });
+    }
+    throw err;
+  }
   if (signedIn.error || !signedIn.data.session) {
     // Deliberately generic — same response whether the email doesn't exist or the password is wrong.
     return res.status(401).json({ error: "Invalid email or password" });
@@ -121,7 +153,15 @@ authRouter.post("/refresh", async (req, res) => {
     return res.status(400).json({ error: "refresh_token is required" });
   }
 
-  const refreshed = await supabase.auth.refreshSession({ refresh_token });
+  let refreshed;
+  try {
+    refreshed = await withAuthTimeout(supabase.auth.refreshSession({ refresh_token }));
+  } catch (err) {
+    if (err instanceof AuthServiceTimeoutError) {
+      return res.status(503).json({ error: AUTH_SERVICE_UNAVAILABLE });
+    }
+    throw err;
+  }
   if (refreshed.error || !refreshed.data.session) {
     return res.status(401).json({ error: "Invalid or expired refresh token" });
   }
@@ -300,7 +340,17 @@ authRouter.post("/password", requireAuth, async (req, res) => {
     return res.status(400).json({ error: "This account has no email address to re-verify against" });
   }
 
-  const recheck = await supabase.auth.signInWithPassword({ email, password: current_password });
+  let recheck;
+  try {
+    recheck = await withAuthTimeout(
+      supabase.auth.signInWithPassword({ email, password: current_password })
+    );
+  } catch (err) {
+    if (err instanceof AuthServiceTimeoutError) {
+      return res.status(503).json({ error: AUTH_SERVICE_UNAVAILABLE });
+    }
+    throw err;
+  }
   if (recheck.error || !recheck.data.session) {
     return res.status(400).json({ error: "Current password is incorrect" });
   }

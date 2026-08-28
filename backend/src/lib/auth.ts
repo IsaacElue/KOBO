@@ -2,6 +2,41 @@ import type { RequestHandler } from "express";
 import type { User } from "@supabase/supabase-js";
 import { supabase } from "./supabase";
 
+/**
+ * How long a Supabase Auth (GoTrue) call may run before we stop waiting.
+ * auth-js 2.112.x exposes no per-call AbortSignal, so on timeout the
+ * underlying HTTP request is left to settle on its own — the point is that
+ * OUR endpoint answers instead of hanging the client forever when GoTrue is
+ * degraded (as during Supabase's 2026-08-28 platform incident, where
+ * signInWithPassword / refreshSession / getUser hung with no response).
+ */
+const AUTH_CALL_TIMEOUT_MS = 12_000;
+
+/** Client-facing message for a `503` when a Supabase Auth call times out. */
+export const AUTH_SERVICE_UNAVAILABLE = "Sign-in is temporarily unavailable — please try again shortly";
+
+/** Thrown by `withAuthTimeout` when a Supabase Auth call exceeds AUTH_CALL_TIMEOUT_MS. */
+export class AuthServiceTimeoutError extends Error {
+  constructor() {
+    super("Supabase Auth call exceeded timeout");
+    this.name = "AuthServiceTimeoutError";
+  }
+}
+
+/**
+ * Races a Supabase Auth call against a 12s ceiling. Resolves with the call's
+ * normal result if it finishes in time — the happy path is completely
+ * unchanged. Rejects with `AuthServiceTimeoutError` otherwise, so the caller
+ * can return a specific `503` instead of leaving the request open.
+ */
+export function withAuthTimeout<T>(call: PromiseLike<T>): Promise<T> {
+  let timer: ReturnType<typeof setTimeout>;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new AuthServiceTimeoutError()), AUTH_CALL_TIMEOUT_MS);
+  });
+  return Promise.race([Promise.resolve(call), timeout]).finally(() => clearTimeout(timer));
+}
+
 declare global {
   namespace Express {
     interface Request {
@@ -28,7 +63,17 @@ export const requireAuth: RequestHandler = async (req, res, next) => {
     return res.status(401).json({ error: "Missing or invalid Authorization header" });
   }
 
-  const { data, error } = await supabase.auth.getUser(token);
+  let result;
+  try {
+    result = await withAuthTimeout(supabase.auth.getUser(token));
+  } catch (err) {
+    if (err instanceof AuthServiceTimeoutError) {
+      return res.status(503).json({ error: AUTH_SERVICE_UNAVAILABLE });
+    }
+    throw err;
+  }
+
+  const { data, error } = result;
   if (error || !data.user) {
     return res.status(401).json({ error: "Invalid or expired session" });
   }
