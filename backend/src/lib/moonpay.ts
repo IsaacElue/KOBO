@@ -44,9 +44,16 @@ const BASE_CURRENCY_CODE = process.env.MOONPAY_BASE_CURRENCY_CODE || "eur";
 // current public IP.
 const ALLOWED_IP_OVERRIDE = process.env.MOONPAY_ALLOWED_IP_OVERRIDE || "";
 
-// Optional. MoonPay appends `transactionId` and `transactionStatus` as query
-// params when the customer is redirected back here.
-const REDIRECT_URL = process.env.MOONPAY_REDIRECT_URL || "";
+// Where MoonPay returns the customer after the purchase — it appends
+// `transactionId` and `transactionStatus` as query params. An explicit
+// MOONPAY_REDIRECT_URL wins; otherwise fall back to the first FRONTEND_ORIGIN
+// entry so a normal deploy wires itself with no extra config. The Kobo
+// frontend detects the return by the `transactionStatus` param and resumes the
+// Add Funds overlay (see frontend components/kobo/kobo-app.tsx). Empty ⇒ no
+// redirectURL param (MoonPay keeps the user on its own completion screen).
+const REDIRECT_URL =
+  process.env.MOONPAY_REDIRECT_URL ||
+  (process.env.FRONTEND_ORIGIN || "").split(",")[0].trim();
 
 if (!PUBLISHABLE_KEY || !SECRET_KEY || !WEBHOOK_KEY) {
   throw new Error(

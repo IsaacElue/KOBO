@@ -59,6 +59,13 @@ import {
 import { formatAmount, nameToInitials } from "@/lib/kobo/format";
 import { clearOnrampDraft, loadOnrampDraft } from "@/lib/kobo/onramp-draft";
 import { preferRedirectOnramp, type TransakBridgeEvent } from "@/lib/kobo/onramp-transak";
+import {
+  clearFundingRedirect,
+  isMoonPayWidget,
+  loadFundingRedirect,
+  onrampPartnerName,
+  saveFundingRedirect,
+} from "@/lib/kobo/onramp";
 import type {
   CreateUserResponse,
   CurrencyCode,
@@ -140,6 +147,8 @@ export function KoboApp({
   const [fundingStatus, setFundingStatus] = useState<FundingStatus>("pending");
   const [fundingOnrampSession, setFundingOnrampSession] = useState<OnrampSession | null>(null);
   const [fundingOnrampMode, setFundingOnrampMode] = useState<"redirect" | "embedded" | null>(null);
+  // Set once when a MoonPay redirect lands back here; drives the resume poll.
+  const [fundingResumeId, setFundingResumeId] = useState<string | null>(null);
 
   const anyOverlayOpen =
     step !== "form" || addRecipientOpen || detailTransferId !== null || fundingStep !== "closed";
@@ -200,6 +209,47 @@ export function KoboApp({
     if (draft && !draft.completed) clearOnrampDraft();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // MoonPay opens as a full-tab redirect (its widget is broken/slow in an
+  // iframe — see lib/onramp.ts) and returns the user to MOONPAY_REDIRECT_URL
+  // with ?transactionId=…&transactionStatus=… appended. Detected once here:
+  // pull the id stashed before the redirect, clean the URL, put the overlay
+  // back up. transactionStatus is only the "you're back" trigger — the poll
+  // below on GET /funding/:id (webhook-driven) is the real completion signal.
+  useEffect(() => {
+    if (!searchParams.get("transactionStatus")) return;
+    const fr = loadFundingRedirect();
+    clearFundingRedirect();
+    router.replace("/"); // strip the MoonPay params
+    if (!fr) return;
+    /* eslint-disable react-hooks/set-state-in-effect -- one-time redirect-return resume, same category as the rate/balance fetch above */
+    setFundingId(fr.fundingId);
+    setFundingAmount(String(fr.amountEur));
+    setFundingStep("processing");
+    setFundingResumeId(fr.fundingId);
+    /* eslint-enable react-hooks/set-state-in-effect */
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Poll to completion. Split from the detection above so it restarts cleanly
+  // (React re-runs mount effects; the sessionStorage stash is already consumed
+  // by then, so the poll can't hang off a re-read of it).
+  useEffect(() => {
+    if (!fundingResumeId) return;
+    return pollFundingStatus(fundingResumeId, (funding) => {
+      setFundingStatus(funding.status);
+      if (funding.status === "confirmed") {
+        setBalance(funding.balance);
+        toast.success(
+          `Added ${formatAmount(funding.amount_eur)} — your balance is now ${funding.balance.toFixed(2)} USDC`
+        );
+        setFundingStep("closed");
+      } else if (funding.status === "failed") {
+        toast.error(funding.failure_reason || "Couldn't add funds — please try again.");
+        setFundingStep("closed");
+      }
+    });
+  }, [fundingResumeId]);
 
   useEffect(() => {
     if (anyOverlayOpen) return;
@@ -347,6 +397,7 @@ export function KoboApp({
   async function handleAddFundsSubmit(amountEur: number) {
     setFundingStep("onramp");
     setFundingOnrampSession(null);
+    setFundingAmount(String(amountEur));
 
     try {
       const res = await createFunding({ sender_id: authUser.id, amount_eur: amountEur });
@@ -356,8 +407,15 @@ export function KoboApp({
         return;
       }
       setFundingId(res.id);
-      const mode = preferRedirectOnramp() ? "redirect" : "embedded";
+      // MoonPay is always a top-level redirect (its widget is broken/slow in an
+      // iframe — see lib/onramp.ts). Transak keeps its width-based choice.
+      const mode: "redirect" | "embedded" =
+        isMoonPayWidget(res.onramp.widgetUrl) || preferRedirectOnramp() ? "redirect" : "embedded";
       setFundingOnrampMode(mode);
+      if (mode === "redirect") {
+        // The tab navigates away; stash what the return handler needs to resume.
+        saveFundingRedirect({ fundingId: res.id, amountEur });
+      }
       setFundingOnrampSession(res.onramp);
     } catch {
       toast.error("Couldn't start checkout — please try again.");
@@ -367,6 +425,8 @@ export function KoboApp({
 
   // Same principle as the transfer flow: the widget only ever signals "checkout
   // ended," never the real outcome — always poll GET /funding/:id for the truth.
+  // (The MoonPay redirect-return path has its own copy of this in the mount
+  // effect above, since it resumes before `fundingId` state exists.)
   function finishFundingCheckout(mockOutcome: "confirmed" | "failed") {
     setFundingStep("processing");
     setFundingStatus("pending");
@@ -662,7 +722,10 @@ export function KoboApp({
       />
 
       {fundingStep === "onramp" && fundingOnrampSession && fundingOnrampMode === "redirect" && (
-        <RedirectHandoff widgetUrl={fundingOnrampSession.widgetUrl} />
+        <RedirectHandoff
+          widgetUrl={fundingOnrampSession.widgetUrl}
+          partnerName={onrampPartnerName(fundingOnrampSession.widgetUrl)}
+        />
       )}
 
       {fundingStep === "onramp" && fundingOnrampSession && fundingOnrampMode === "embedded" && (

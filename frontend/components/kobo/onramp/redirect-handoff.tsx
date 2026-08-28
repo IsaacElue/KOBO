@@ -3,8 +3,15 @@
 import { useEffect, useState } from "react";
 import { CircleDot } from "lucide-react";
 
-/** Caller must persist the onramp draft before rendering this — it navigates away. */
-export function RedirectHandoff({ widgetUrl }: { widgetUrl: string }) {
+/** Caller must persist any state it needs to resume before rendering this — it navigates away. */
+export function RedirectHandoff({
+  widgetUrl,
+  partnerName = "Transak",
+}: {
+  widgetUrl: string;
+  /** On-ramp partner name for the copy. Defaults to Transak (its long-standing caller). */
+  partnerName?: string;
+}) {
   const [showManualLink, setShowManualLink] = useState(false);
 
   useEffect(() => {
@@ -35,10 +42,10 @@ export function RedirectHandoff({ widgetUrl }: { widgetUrl: string }) {
       </div>
       <div>
         <div className="text-xl font-semibold tracking-tight text-kobo-ink">
-          Continuing to Transak
+          Continuing to {partnerName}
         </div>
         <p className="mt-2 max-w-sm text-[14.5px] text-[#5E7A81]">
-          Your card details are handled directly by Transak, our licensed on-ramp partner —
+          Your payment details are handled directly by {partnerName}, our licensed on-ramp partner —
           Kobo never sees them.
         </p>
       </div>
@@ -47,7 +54,7 @@ export function RedirectHandoff({ widgetUrl }: { widgetUrl: string }) {
           href={widgetUrl}
           className="text-sm font-medium text-kobo-teal-600 underline underline-offset-4 hover:text-kobo-teal-800"
         >
-          Taking a while — continue to Transak
+          Taking a while — continue to {partnerName}
         </a>
       )}
     </div>
