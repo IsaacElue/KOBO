@@ -12,6 +12,24 @@ import { getStoredAuth, logout, onAuthChange, type StoredAuth } from "@/lib/kobo
 
 type Phase = "loading" | "signup" | "login" | "pin-setup" | "pin-unlock" | "unlocked";
 
+/* ═══════════════════════════════════════════════════════════════════════════
+ *  ⚠️  DEV-ONLY AUTH BYPASS — NEVER ENABLE IN PRODUCTION OR DURING THE DEMO  ⚠️
+ *
+ *  Companion to the backend's `DEV_SKIP_AUTH` (see backend/src/lib/auth.ts).
+ *  When `NEXT_PUBLIC_DEV_SKIP_AUTH=true` (set ONLY in a local, gitignored
+ *  `frontend/.env.local` — not `.env.example`, not committed), this skips the
+ *  whole login/PIN flow and drops straight into the app as a seeded user,
+ *  with a permanent "Dev bypass active" banner so it can never be mistaken
+ *  for real auth. Off by default → the real gate below is 100% unchanged.
+ *  Fully reversible: remove the env var.
+ * ═══════════════════════════════════════════════════════════════════════════ */
+const DEV_SKIP_AUTH = process.env.NEXT_PUBLIC_DEV_SKIP_AUTH === "true";
+
+/** Seeded identity for the dev bypass. `id` is the real `users` row id of the
+ *  "Isaac Elue" test account (the same seed used for earlier smoke tests), so
+ *  balances / transfers / profile all resolve to real data. */
+const DEV_BYPASS_USER = { id: "ee2e6c34-a6e5-48a7-bc41-48231bfa2f77", name: "Isaac Elue" };
+
 /**
  * Real-auth gate in front of the app, Revolut-style: first-run is full
  * signup -> set-a-PIN-once; a returning visit with a still-valid persisted
@@ -29,7 +47,7 @@ export function AuthGate() {
   const [auth, setAuth] = useState<StoredAuth | null>(null);
 
   useEffect(() => {
-    if (mock) return;
+    if (mock || DEV_SKIP_AUTH) return;
     const stored = getStoredAuth();
     if (stored) {
       setAuth(stored);
@@ -46,7 +64,7 @@ export function AuthGate() {
   // profile edit syncs the cached user via updateStoredUser) so the header
   // name refreshes without a reload.
   useEffect(() => {
-    if (mock) return;
+    if (mock || DEV_SKIP_AUTH) return;
     return onAuthChange(() => {
       const stored = getStoredAuth();
       if (!stored) {
@@ -59,6 +77,16 @@ export function AuthGate() {
   }, [mock]);
 
   if (mock) return <KoboApp />;
+
+  // ⚠️ DEV BYPASS — see the loud comment block at the top of this file. Off by default.
+  if (DEV_SKIP_AUTH) {
+    return (
+      <>
+        <DevBypassBanner />
+        <KoboApp authUser={DEV_BYPASS_USER} />
+      </>
+    );
+  }
 
   async function handleLogout() {
     await logout();
@@ -116,6 +144,16 @@ export function AuthGate() {
     case "unlocked":
       return <KoboApp authUser={auth?.user} onLogout={handleLogout} />;
   }
+}
+
+/** ⚠️ DEV BYPASS banner — unmissable, so a bypassed session is never mistaken for real auth. */
+function DevBypassBanner() {
+  return (
+    <div className="sticky top-0 z-[200] flex items-center justify-center gap-2 border-b-2 border-amber-600 bg-amber-400 px-4 py-2 text-center text-[12.5px] font-bold tracking-tight text-amber-950">
+      <span aria-hidden>⚠️</span>
+      DEV AUTH BYPASS ACTIVE — not real authentication. Never enable in production or the demo.
+    </div>
+  );
 }
 
 /** Same app-shell gradient KoboApp itself uses, so the auth screens read as part of the app, not a separate marketing page. */

@@ -48,6 +48,43 @@ declare global {
   }
 }
 
+/* ═══════════════════════════════════════════════════════════════════════════
+ *  ⚠️  DEV-ONLY AUTH BYPASS — NEVER ENABLE IN PRODUCTION OR DURING THE DEMO  ⚠️
+ *
+ *  Purpose: a temporary escape hatch so the UI can be worked on while
+ *  Supabase's GoTrue (Auth) service is degraded and every real token check
+ *  times out. Gated 100% on `DEV_SKIP_AUTH=true`, which lives ONLY in a local,
+ *  gitignored `backend/.env` — it is not in `.env.example`, not committed, and
+ *  must never be set in any deployed / staging / demo environment.
+ *
+ *  When on: `requireAuth` returns `next()` immediately with a seeded
+ *  `authUser` (a real `auth.users` id, so `resolveKoboUser` still returns that
+ *  account's REAL `users` row via PostgREST, which is unaffected by the
+ *  outage). The real Supabase token check below is left completely intact —
+ *  this is a pure short-circuit, fully reversible by removing one env var.
+ * ═══════════════════════════════════════════════════════════════════════════ */
+const DEV_SKIP_AUTH = process.env.DEV_SKIP_AUTH === "true";
+
+/** Seeded identity injected when DEV_SKIP_AUTH is on. `id` is a real
+ *  `auth.users` id (the "Isaac Elue" test account), matching the seeded
+ *  session Claude Code used for earlier smoke tests. */
+const DEV_BYPASS_AUTH_USER = {
+  id: "e4ab56f1-197f-425c-b858-c58d0bc4d829",
+  email: "elueisaac14@gmail.com",
+  aud: "authenticated",
+  role: "authenticated",
+  app_metadata: { provider: "email", providers: ["email"] },
+  user_metadata: {},
+  created_at: "2026-08-26T19:57:23.515Z",
+} as unknown as User;
+
+if (DEV_SKIP_AUTH) {
+  console.warn(
+    "⚠️  DEV_SKIP_AUTH=true — requireAuth is BYPASSED with a seeded user. " +
+      "Real Supabase Auth is NOT being checked. Never run this in production or the demo."
+  );
+}
+
 /**
  * Verifies the bearer token via Supabase's own `auth.getUser(token)` — the
  * standard server-side session check (round-trips to Supabase Auth to
@@ -56,6 +93,13 @@ declare global {
  * header" from "expired token" from "malformed token" in the response body.
  */
 export const requireAuth: RequestHandler = async (req, res, next) => {
+  // ⚠️ DEV BYPASS — see the loud comment block above. Off by default.
+  if (DEV_SKIP_AUTH) {
+    req.authUser = DEV_BYPASS_AUTH_USER;
+    req.authToken = "dev-bypass";
+    return next();
+  }
+
   const header = req.headers.authorization;
   const token = header?.startsWith("Bearer ") ? header.slice(7).trim() : null;
 
