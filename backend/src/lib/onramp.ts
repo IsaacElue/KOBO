@@ -25,8 +25,14 @@ export interface OnrampSessionParams {
   walletAddress: string;
   /** Correlation id echoed back on the provider's webhook — a `funding_requests.id`. */
   reference: string;
-  /** End user's public IP (see resolveClientIp in the funding route). */
+  /** End user's public IP as this server sees it (resolveClientIp in the funding route). */
   userIp: string;
+  /**
+   * The IP MoonPay observed from the browser (from the frontend's own
+   * `/v4/ip_address` call). MoonPay-only; Transak ignores it. Null when the
+   * browser lookup failed.
+   */
+  clientObservedIp?: string | null;
 }
 
 export interface OnrampSessionResult {
@@ -55,5 +61,6 @@ export async function createOnrampSession(
     walletAddress: params.walletAddress,
     reference: params.reference,
     userIp: params.userIp,
+    clientObservedIp: params.clientObservedIp ?? null,
   });
 }

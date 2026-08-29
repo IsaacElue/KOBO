@@ -67,8 +67,15 @@ export interface CreateOnrampSessionParams {
   walletAddress: string;
   /** The `funding_requests.id` this session funds. Round-trips as `externalTransactionId`. */
   reference: string;
-  /** End user's public IP, for MoonPay's `allowedIpAddress` enforcement. */
+  /** End user's public IP as this server sees it (req.ip via trust proxy). */
   userIp: string;
+  /**
+   * The IP MoonPay observed from the *browser* (frontend called
+   * `/v4/ip_address` itself). Used to decide whether to IP-lock the widget URL
+   * — see the session-based IP check in `createOnrampSession`. Null when the
+   * browser lookup failed.
+   */
+  clientObservedIp?: string | null;
 }
 
 export interface CreateOnrampSessionResult {
@@ -119,14 +126,42 @@ function signWidgetUrl(url: string): string {
 export async function createOnrampSession(
   params: CreateOnrampSessionParams
 ): Promise<CreateOnrampSessionResult> {
-  const allowedIpAddress =
+  const serverIp =
     ALLOWED_IP_OVERRIDE || (isUnroutableIp(params.userIp) ? "" : params.userIp);
+  const clientIp =
+    params.clientObservedIp && !isUnroutableIp(params.clientObservedIp)
+      ? params.clientObservedIp
+      : "";
 
+  // Session-based IP check (per MoonPay support). MoonPay locks a signed URL to
+  // `allowedIpAddress` and shows "Unverified connection" if the IP it observes
+  // from the browser differs. The IP *this server* sees (req.ip) and the IP the
+  // *browser* uses to reach MoonPay can genuinely differ (split-tunnel VPN,
+  // CGNAT, IPv4/IPv6, multi-homing). So:
+  //   - server and browser agree on a routable IP → lock to it
+  //   - only one side has a routable IP           → lock to that one
+  //   - they disagree                             → OMIT allowedIpAddress
+  // Omitting only drops MoonPay's IP-match enforcement for this session — the
+  // HMAC signature below is still applied and still fully protects the URL from
+  // tampering. `clientIp` is technically client-reported (spoofable), but the
+  // worst a spoof does is lock *their own* session to an IP they don't hold,
+  // or drop a check that only *reduces* protection.
+  let allowedIpAddress = "";
+  let ipNote = "";
+  if (serverIp && clientIp) {
+    if (serverIp === clientIp) allowedIpAddress = serverIp;
+    else ipNote = `mismatch (server ${serverIp} / browser ${clientIp})`;
+  } else if (serverIp) {
+    allowedIpAddress = serverIp;
+  } else if (clientIp) {
+    allowedIpAddress = clientIp;
+  } else {
+    ipNote = "no routable IP from server or browser";
+  }
   if (!allowedIpAddress) {
-    throw new Error(
-      "Could not determine the end user's public IP for MoonPay's allowedIpAddress " +
-        "requirement (request IP is loopback/private). Behind a proxy, set TRUST_PROXY; " +
-        "for local dev, set MOONPAY_ALLOWED_IP_OVERRIDE to your public IP."
+    console.warn(
+      `MoonPay widget ${params.reference}: allowedIpAddress omitted — ${ipNote}. ` +
+        "Signature still enforced; MoonPay IP-match skipped for this session."
     );
   }
 
@@ -138,8 +173,8 @@ export async function createOnrampSession(
     baseCurrencyAmount: String(params.amountEur),
     walletAddress: params.walletAddress,
     externalTransactionId: params.reference,
-    allowedIpAddress,
   });
+  if (allowedIpAddress) query.set("allowedIpAddress", allowedIpAddress);
   if (REDIRECT_URL) query.set("redirectURL", REDIRECT_URL);
 
   const widgetUrl = signWidgetUrl(`${WIDGET_BASE_URL}?${query.toString()}`);

@@ -61,6 +61,7 @@ import { clearOnrampDraft, loadOnrampDraft } from "@/lib/kobo/onramp-draft";
 import { preferRedirectOnramp, type TransakBridgeEvent } from "@/lib/kobo/onramp-transak";
 import {
   clearFundingRedirect,
+  getMoonPayObservedIp,
   isMoonPayWidget,
   loadFundingRedirect,
   onrampPartnerName,
@@ -400,7 +401,15 @@ export function KoboApp({
     setFundingAmount(String(amountEur));
 
     try {
-      const res = await createFunding({ sender_id: authUser.id, amount_eur: amountEur });
+      // Ask MoonPay what IP it sees from this browser, so the backend can lock
+      // the widget URL to it only when its own view agrees (see lib/kobo/onramp.ts).
+      // Best-effort — null on failure, backend then uses req.ip.
+      const clientObservedIp = await getMoonPayObservedIp();
+      const res = await createFunding({
+        sender_id: authUser.id,
+        amount_eur: amountEur,
+        client_observed_ip: clientObservedIp,
+      });
       if (!res.onramp.widgetUrl) {
         toast.error("Couldn't start checkout — please try again.");
         setFundingStep("closed");

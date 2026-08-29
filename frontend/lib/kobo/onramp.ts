@@ -28,6 +28,39 @@ export function onrampPartnerName(widgetUrl: string): string {
   return isMoonPayWidget(widgetUrl) ? "MoonPay" : "Transak";
 }
 
+// ── MoonPay IP self-check ──────────────────────────────────────────────────
+// The MoonPay widget locks a signed URL to `allowedIpAddress` and rejects it
+// ("Unverified connection") if the IP it observes differs. The IP the *backend*
+// sees (req.ip) can differ from the one the *browser* uses to reach MoonPay
+// (split-tunnel VPN, CGNAT, IPv4/IPv6, multi-homing). So the browser asks
+// MoonPay directly what IP it sees, and passes it to POST /funding; the backend
+// only locks the URL when its own view agrees, and omits the lock otherwise
+// (the HMAC signature still protects the URL either way). Per MoonPay support.
+
+const MOONPAY_PUBLISHABLE_KEY = process.env.NEXT_PUBLIC_MOONPAY_PUBLISHABLE_KEY;
+
+/**
+ * The IP MoonPay observes from *this browser's* network path — the same one
+ * the widget itself will see. Best-effort: returns `null` on any failure
+ * (missing key, network error, timeout, unexpected shape), and the backend
+ * falls back to its own `req.ip`.
+ */
+export async function getMoonPayObservedIp(): Promise<string | null> {
+  if (!MOONPAY_PUBLISHABLE_KEY) return null;
+  try {
+    const res = await fetch(
+      `https://api.moonpay.com/v4/ip_address?apiKey=${encodeURIComponent(MOONPAY_PUBLISHABLE_KEY)}`,
+      { signal: AbortSignal.timeout(4000) }
+    );
+    if (!res.ok) return null;
+    const body: unknown = await res.json();
+    const ip = (body as { ipAddress?: unknown })?.ipAddress;
+    return typeof ip === "string" && ip.length > 0 ? ip : null;
+  } catch {
+    return null;
+  }
+}
+
 // ── funding redirect round-trip ────────────────────────────────────────────
 // When Add Funds redirects the whole tab out to the provider, we stash just
 // enough to resume on the way back. MoonPay returns the user to

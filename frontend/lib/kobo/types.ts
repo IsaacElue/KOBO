@@ -143,6 +143,12 @@ export type FundingStatus = "pending" | "confirmed" | "failed";
 export interface CreateFundingRequest {
   sender_id: string;
   amount_eur: number;
+  /**
+   * The IP MoonPay observes from the browser (from `getMoonPayObservedIp()`),
+   * so the backend can decide whether to IP-lock the widget URL. Optional —
+   * omitted / null when the lookup failed; the backend then uses its own req.ip.
+   */
+  client_observed_ip?: string | null;
 }
 
 /** Matches the real backend's `funding_requests` row shape (backend/src/routes/funding.ts). */

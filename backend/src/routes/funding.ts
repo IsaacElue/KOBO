@@ -34,8 +34,12 @@ function resolveClientIp(req: Request): string {
 // The funding request's own id is passed as the provider correlation
 // reference so the completion webhook (POST /webhooks/moonpay) can match the
 // row back without an extra lookup.
+// A dotted-quad IPv4 or a colon-y IPv6 — just enough to reject junk before it
+// reaches the widget-URL builder; not a strict validator.
+const IP_RE = /^[0-9a-fA-F.:]{3,45}$/;
+
 fundingRouter.post("/", requireAuth, async (req, res) => {
-  const { sender_id, amount_eur } = req.body ?? {};
+  const { sender_id, amount_eur, client_observed_ip } = req.body ?? {};
 
   if (!sender_id || typeof amount_eur !== "number") {
     return res.status(400).json({
@@ -84,6 +88,10 @@ fundingRouter.post("/", requireAuth, async (req, res) => {
       walletAddress: backendWallet.publicKey.toBase58(),
       reference: fundingRequest.id,
       userIp: resolveClientIp(req),
+      clientObservedIp:
+        typeof client_observed_ip === "string" && IP_RE.test(client_observed_ip)
+          ? client_observed_ip
+          : null,
     });
   } catch (err) {
     // Session creation failed — don't leave a funding request row with no
