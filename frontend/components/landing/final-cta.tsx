@@ -17,7 +17,7 @@ export function FinalCta() {
       </Reveal>
       <Reveal delay={0.12}>
         <div className="mt-9">
-          <CtaButton href="/" variant="inverse">
+          <CtaButton href="/?auth=signup" variant="inverse">
             Get started
           </CtaButton>
         </div>

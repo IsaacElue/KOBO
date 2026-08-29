@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, type ReactNode } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { KoboApp } from "@/components/kobo/kobo-app";
 import { SignupDialog } from "@/components/kobo/signup-dialog";
 import { LoginDialog } from "@/components/kobo/login-dialog";
@@ -40,22 +41,39 @@ const DEV_BYPASS_USER = { id: "ee2e6c34-a6e5-48a7-bc41-48231bfa2f77", name: "Isa
  * Mock mode bypasses all of this entirely — there's no real backend to
  * authenticate against, and the existing test suite renders `KoboApp`
  * directly with no gate around it at all, so this has to stay a no-op there.
+ *
+ * Real-auth, no session: a bare hit on "/" is sent to the marketing landing
+ * page ("/landing") rather than straight to a login box. The landing CTAs come
+ * back with an `?auth=login` / `?auth=signup` intent, which opens the matching
+ * form here instead of redirecting. A valid session is unchanged (→ pin-unlock
+ * → KoboApp); mock mode and the dev bypass are untouched.
  */
 export function AuthGate() {
   const mock = isMockMode();
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const authIntent = searchParams.get("auth"); // "login" | "signup" | null
   const [phase, setPhase] = useState<Phase>(mock ? "unlocked" : "loading");
   const [auth, setAuth] = useState<StoredAuth | null>(null);
 
   useEffect(() => {
     if (mock || DEV_SKIP_AUTH) return;
     const stored = getStoredAuth();
+    /* eslint-disable react-hooks/set-state-in-effect -- one-time gate decision
+       from a synchronous storage read on mount, not a render loop; same
+       category as the fetch-on-mount effects in kobo-app.tsx / activity-screen.tsx */
     if (stored) {
       setAuth(stored);
       setPhase("pin-unlock");
-    } else {
-      setPhase("login");
+      return;
     }
-  }, [mock]);
+    // No session. Honour an explicit auth intent from a landing CTA; otherwise
+    // bounce to the landing page. `phase` stays "loading" during the redirect.
+    if (authIntent === "signup") setPhase("signup");
+    else if (authIntent === "login") setPhase("login");
+    else router.replace("/landing");
+    /* eslint-enable react-hooks/set-state-in-effect */
+  }, [mock, authIntent, router]);
 
   // Catches a session dying anywhere else — a 401 from a protected call
   // (lib/kobo/api.ts's handleUnauthorized) or the header's logout button —
