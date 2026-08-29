@@ -19,9 +19,16 @@ const PUBLISHABLE_KEY = process.env.MOONPAY_PUBLISHABLE_KEY;
 const SECRET_KEY = process.env.MOONPAY_SECRET_KEY;
 const WEBHOOK_KEY = process.env.MOONPAY_WEBHOOK_KEY;
 
-// buy.moonpay.com switches to the sandbox automatically when the apiKey is a
-// pk_test_ key — there is no separate sandbox host in the current widget.
-const WIDGET_BASE_URL = process.env.MOONPAY_WIDGET_BASE_URL || "https://buy.moonpay.com";
+// Sandbox (pk_test_) → buy-sandbox.moonpay.com, live (pk_live_) →
+// buy.moonpay.com, per MoonPay support. In practice buy-sandbox 301-redirects
+// to buy.moonpay.com/v2/buy (the pk_test_ key is what actually selects the
+// test environment) and both hosts behave identically — but use the documented
+// host anyway. `MOONPAY_WIDGET_BASE_URL` overrides if MoonPay changes this.
+const WIDGET_BASE_URL =
+  process.env.MOONPAY_WIDGET_BASE_URL ||
+  (PUBLISHABLE_KEY?.startsWith("pk_live_")
+    ? "https://buy.moonpay.com"
+    : "https://buy-sandbox.moonpay.com");
 
 // Destination asset. Live: "usdc_sol" (USDC SPL, mint EPjF…Dt1v — confirmed via
 // GET /v3/currencies, metadata.networkCode "solana"). MoonPay's sandbox does
