@@ -87,6 +87,10 @@ function isUnroutableIp(ip: string): boolean {
     v.startsWith("192.168.") ||
     v.startsWith("169.254.") ||
     /^172\.(1[6-9]|2\d|3[01])\./.test(v) ||
+    // 100.64.0.0/10 — RFC 6598 carrier-grade NAT (Railway's internal proxy
+    // network). If this reaches here, `trust proxy` didn't resolve past the
+    // platform's proxy — fail loud rather than sign a URL MoonPay will reject.
+    /^100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\./.test(v) ||
     v.startsWith("fc") ||
     v.startsWith("fd")
   );

@@ -23,12 +23,18 @@ const allowedOrigins = (process.env.FRONTEND_ORIGIN || "http://localhost:3000")
   .map((o) => o.trim())
   .filter(Boolean);
 
-// Hosting platforms (Render/Railway/Fly/Heroku) and CDNs put the real client
-// IP in X-Forwarded-For; `trust proxy` makes req.ip resolve to it (used for
-// MoonPay's allowedIpAddress requirement — see routes/funding.ts). Env-driven
-// so it can be tightened per host: "1" = one proxy hop (typical PaaS, the
-// default), a number for N hops, a CIDR list, or "false" to trust nothing.
-app.set("trust proxy", process.env.TRUST_PROXY ?? 1);
+// `trust proxy` makes req.ip resolve to the real client IP from
+// X-Forwarded-For (used for MoonPay's allowedIpAddress — see routes/funding.ts).
+// Default trusts by network range, not hop count: loopback + RFC1918 private +
+// Railway's 100.64.0.0/10 CGNAT are treated as proxy infrastructure, so req.ip
+// becomes the first *public* address in the chain — the real client. A fixed
+// hop count ("1") got this wrong on Railway: it landed on the internal
+// 100.64.x.x proxy address. Override with TRUST_PROXY (a number, CIDR list, or
+// "false") if a host needs something different.
+app.set(
+  "trust proxy",
+  process.env.TRUST_PROXY ?? "loopback, uniquelocal, 100.64.0.0/10"
+);
 
 app.use(
   cors({
