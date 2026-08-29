@@ -80,14 +80,41 @@ const NON_RETRYABLE_PATTERNS = [
   "non-base58",
   "invalid public key",
   "invalid publickey",
+  "found no record of a prior credit", // account has never held SOL
+  "insufficient funds for rent",
+  "could not find account",
 ];
 
+/**
+ * A description that is never blank. spl-token / web3.js errors are frequently
+ * thrown with an empty `.message` but a meaningful class name
+ * (`TokenAccountNotFoundError`, …), and `SendTransactionError` keeps the useful
+ * detail in `.logs` — so fall back to `.name` and append `.logs` when present.
+ * Without this, a real failure lands in `failure_reason` as just
+ * "Unclassified error: ".
+ */
+function describeSolanaError(err: unknown): string {
+  if (!(err instanceof Error)) return String(err) || "unknown error";
+  const base = err.message.trim() || err.name || "unknown error";
+  const logs = (err as { logs?: string[] | null }).logs;
+  return Array.isArray(logs) && logs.length ? `${base} — logs: ${logs.join(" | ")}` : base;
+}
+
 function classifySolanaError(err: unknown): Error {
-  const message = err instanceof Error ? err.message : String(err);
+  const message = describeSolanaError(err);
   const lower = message.toLowerCase();
+  const name = err instanceof Error ? err.name : "";
 
   if (RETRYABLE_PATTERNS.some((p) => lower.includes(p))) {
     return new RetryableTransferError(message);
+  }
+  // spl-token throws these (name only, blank message) when a token account is
+  // missing and could not be created — on our side that's the pooled backend
+  // wallet having no devnet SOL to pay ATA rent + fees. Config, not transient.
+  if (name === "TokenAccountNotFoundError" || name === "TokenInvalidAccountOwnerError") {
+    return new NonRetryableTransferError(
+      `${message} — backend USDC token account is missing/unusable; the pooled wallet likely has no devnet SOL`
+    );
   }
   if (NON_RETRYABLE_PATTERNS.some((p) => lower.includes(p))) {
     return new NonRetryableTransferError(message);

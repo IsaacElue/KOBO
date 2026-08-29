@@ -47,7 +47,7 @@ export function AddFundsDialog({
           <DialogHeader>
             <DialogTitle>Add funds</DialogTitle>
             <DialogDescription>
-              Real USDC lands in your Kobo balance via Transak.
+              Real USDC lands in your Kobo balance via our licensed on-ramp partner.
             </DialogDescription>
           </DialogHeader>
 
