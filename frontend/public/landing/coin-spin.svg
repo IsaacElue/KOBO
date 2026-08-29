@@ -1,0 +1,128 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 470" width="400" height="470" role="img" aria-label="A coin spinning and settling from a euro to a US dollar coin">
+  <defs>
+    <radialGradient id="gold" cx="38%" cy="30%" r="80%">
+      <stop offset="0%" stop-color="#F8E9BE"/>
+      <stop offset="42%" stop-color="#DEBB6C"/>
+      <stop offset="74%" stop-color="#AE863E"/>
+      <stop offset="100%" stop-color="#7C5D28"/>
+    </radialGradient>
+    <radialGradient id="blue" cx="38%" cy="28%" r="82%">
+      <stop offset="0%" stop-color="#4C97E6"/>
+      <stop offset="55%" stop-color="#2775CA"/>
+      <stop offset="100%" stop-color="#1B5AA0"/>
+    </radialGradient>
+    <linearGradient id="sol" x1="0%" y1="100%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#9945FF"/>
+      <stop offset="100%" stop-color="#14F195"/>
+    </linearGradient>
+    <linearGradient id="rim" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#C7A65E"/>
+      <stop offset="50%" stop-color="#7C6231"/>
+      <stop offset="100%" stop-color="#4A3B1E"/>
+    </linearGradient>
+    <radialGradient id="sheen" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.28"/>
+      <stop offset="70%" stop-color="#ffffff" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+
+  <style>
+    #coin  { animation: bob 6s ease-in-out infinite; transform-box: fill-box; transform-origin: 50% 50%; }
+    #flip  { animation: flip 6s ease-in-out infinite; transform-box: fill-box; transform-origin: 50% 50%; }
+    #shade { animation: shade 6s ease-in-out infinite; transform-box: fill-box; transform-origin: 50% 50%; }
+    #euro  { animation: aEuro 6s steps(1,end) infinite; }
+    #usdc  { animation: aUsdc 6s steps(1,end) infinite; }
+    #mark  { animation: aMark 6s steps(1,end) infinite; }
+
+    @keyframes flip {
+      0%   { transform: scaleX(1); }
+      3%   { transform: scaleX(0.05); }
+      6%   { transform: scaleX(1); }
+      9%   { transform: scaleX(0.05); }
+      12%  { transform: scaleX(1); }
+      15%  { transform: scaleX(0.05); }
+      18%  { transform: scaleX(1); }
+      21%  { transform: scaleX(1.05); }
+      24%  { transform: scaleX(0.985); }
+      27%  { transform: scaleX(1); }
+      52%  { transform: scaleX(0.99); }
+      74%  { transform: scaleX(1); }
+      88%  { transform: scaleX(1); }
+      93%  { transform: scaleX(0.05); }
+      100% { transform: scaleX(1); }
+    }
+    @keyframes bob {
+      0%, 27% { transform: translateY(0); }
+      46%     { transform: translateY(-11px); }
+      62%     { transform: translateY(-3px); }
+      79%     { transform: translateY(-9px); }
+      93%,100% { transform: translateY(0); }
+    }
+    @keyframes shade {
+      0%, 27% { opacity: 0.5; transform: scale(1); }
+      46%     { opacity: 0.32; transform: scale(0.88); }
+      79%     { opacity: 0.4; transform: scale(0.93); }
+      93%,100% { opacity: 0.5; transform: scale(1); }
+    }
+    /* Faces cut over only while the coin is a sliver (3 / 9 / 15 / 93 %). */
+    @keyframes aEuro {
+      0%,2.9% { opacity: 1; } 3% { opacity: 0; }
+      92.9% { opacity: 0; } 93% { opacity: 1; } 100% { opacity: 1; }
+    }
+    @keyframes aUsdc {
+      0%,2.9% { opacity: 0; } 3% { opacity: 1; }
+      8.9% { opacity: 1; } 9% { opacity: 0; }
+      14.9% { opacity: 0; } 15% { opacity: 1; }
+      92.9% { opacity: 1; } 93% { opacity: 0; } 100% { opacity: 0; }
+    }
+    @keyframes aMark {
+      0%,8.9% { opacity: 0; } 9% { opacity: 1; }
+      14.9% { opacity: 1; } 15% { opacity: 0; } 100% { opacity: 0; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      #coin, #flip, #shade, #euro, #usdc, #mark { animation: none; }
+      #euro, #mark { opacity: 0; }
+      #usdc { opacity: 1; }
+      #flip { transform: none; }
+    }
+  </style>
+
+  <ellipse id="shade" cx="200" cy="432" rx="120" ry="20" fill="#000000" opacity="0.5"/>
+
+  <g id="coin">
+    <g id="flip">
+      <!-- milled edge, visible mostly at the pinch -->
+      <rect x="46" y="34" width="308" height="292" rx="150" fill="url(#rim)"/>
+
+      <!-- EURO -->
+      <g id="euro" class="face">
+        <circle cx="200" cy="180" r="150" fill="url(#gold)"/>
+        <circle cx="200" cy="180" r="126" fill="none" stroke="#6F5327" stroke-width="3" opacity="0.5"/>
+        <ellipse cx="152" cy="128" rx="70" ry="44" fill="url(#sheen)"/>
+        <text x="200" y="182" text-anchor="middle" dominant-baseline="central"
+              font-family="Georgia, 'Times New Roman', serif" font-size="176" font-weight="600" fill="#553F1C">€</text>
+      </g>
+
+      <!-- USDC -->
+      <g id="usdc" class="face" opacity="0">
+        <circle cx="200" cy="180" r="150" fill="url(#blue)"/>
+        <ellipse cx="152" cy="126" rx="66" ry="42" fill="url(#sheen)"/>
+        <circle cx="200" cy="180" r="112" fill="none" stroke="#ffffff" stroke-width="12" opacity="0.96"/>
+        <text x="200" y="188" text-anchor="middle" dominant-baseline="central"
+              font-family="'DejaVu Sans Mono', 'Courier New', monospace" font-size="150" font-weight="700" fill="#ffffff">$</text>
+      </g>
+
+      <!-- SOLANA -->
+      <g id="mark" class="face" opacity="0">
+        <circle cx="200" cy="180" r="150" fill="#0B0B10"/>
+        <ellipse cx="152" cy="126" rx="60" ry="38" fill="#ffffff" opacity="0.06"/>
+        <g transform="translate(200 180) skewX(-20)">
+          <rect x="-78" y="-51" width="156" height="30" rx="6" fill="url(#sol)"/>
+          <rect x="-78" y="-15" width="156" height="30" rx="6" fill="url(#sol)"/>
+          <rect x="-78" y="21"  width="156" height="30" rx="6" fill="url(#sol)"/>
+        </g>
+      </g>
+    </g>
+  </g>
+</svg>

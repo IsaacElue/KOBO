@@ -51,25 +51,25 @@ describe("Settings nav item", () => {
 });
 
 describe("Overview nav item", () => {
-  test("renders the real Overview screen, not the placeholder", async () => {
+  test("renders the real Overview dashboard, not the placeholder", async () => {
     const { user } = await renderKoboApp();
 
     await user.click(screen.getByRole("button", { name: "Overview" }));
     expect(
-      await screen.findByRole("heading", { name: /money that moves like a message/i })
+      await screen.findByRole("heading", { name: /welcome back/i })
     ).toBeInTheDocument();
     expect(screen.queryByText(/isn't built yet/i)).not.toBeInTheDocument();
+    // stat tiles + rate-watch card from the design export
+    expect(screen.getByText("AVAILABLE")).toBeInTheDocument();
+    expect(screen.getByText("SENT, LAST SIX MONTHS")).toBeInTheDocument();
   });
 
-  test("the hero 'Send money' button takes you to the Send screen", async () => {
+  test("the 'Send money now' rate-watch button takes you to the Send screen", async () => {
     const { user } = await renderKoboApp();
 
     await user.click(screen.getByRole("button", { name: "Overview" }));
-    const hero = await screen.findByRole("heading", { name: /money that moves like a message/i });
-    // the sidebar nav 'Send money' + the hero CTA both match — the hero one is the
-    // last in DOM order and lives in the same <header> as the heading
-    const heroCta = within(hero.closest("header")!).getByRole("button", { name: /send money/i });
-    await user.click(heroCta);
+    await screen.findByRole("heading", { name: /welcome back/i });
+    await user.click(screen.getByRole("button", { name: /send money now/i }));
     expect(screen.getByRole("button", { name: /confirm & continue/i })).toBeInTheDocument();
   });
 });

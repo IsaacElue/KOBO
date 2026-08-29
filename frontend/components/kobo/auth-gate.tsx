@@ -156,10 +156,14 @@ function DevBypassBanner() {
   );
 }
 
-/** Same app-shell gradient KoboApp itself uses, so the auth screens read as part of the app, not a separate marketing page. */
+/**
+ * Onboarding ground. The "Kobo Signup" design export puts sign-up/-in on a warm
+ * cream surface (distinct from the app's cool gradient shell), so these first-run
+ * screens read as onboarding. The PIN gate keeps its own dark treatment inside.
+ */
 function AuthShell({ children }: { children: ReactNode }) {
   return (
-    <div className="flex min-h-screen w-full items-center justify-center bg-gradient-to-b from-[#DCEDEA] via-kobo-bg to-[#E8F0F1] p-6">
+    <div className="flex min-h-screen w-full flex-col items-center justify-center bg-[#FAF7F0] p-6">
       {children}
     </div>
   );
