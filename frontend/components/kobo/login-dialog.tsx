@@ -46,10 +46,11 @@ export function LoginDialog({
         className="max-w-sm gap-0 rounded-[32px] border border-white/95 bg-white p-8 pb-7 shadow-[0_60px_110px_-44px_rgba(0,0,0,0.6)] ring-0"
       >
         <form onSubmit={handleSubmit}>
-          <DialogTitle className="text-2xl font-semibold tracking-tight text-kobo-ink">
-            Welcome back
+          <div className="mx-auto mb-5 size-14 rounded-2xl bg-gradient-to-br from-[#1E9B76] to-kobo-teal-800" />
+          <DialogTitle className="text-center text-[30px] font-bold tracking-tight text-kobo-ink">
+            Welcome back.
           </DialogTitle>
-          <DialogDescription className="mt-1.5 text-[14.5px] text-[#5E7A81]">
+          <DialogDescription className="mt-2 text-center text-[15.5px] leading-relaxed text-[#5E7A81]">
             Log in to your Kobo account.
           </DialogDescription>
 

@@ -1,12 +1,12 @@
 import type { Metadata } from "next";
-import { Plus_Jakarta_Sans, Geist_Mono } from "next/font/google";
+import { Outfit, Geist_Mono } from "next/font/google";
 import { Toaster } from "@/components/ui/sonner";
 import "./globals.css";
 
-// Rounded terminals read as approachable rather than clinical — worth more than
-// raw legibility when the task at hand (sending money to family) already carries
-// some anxiety. Kept off the sharper geometric grotesques fintech dashboards lean on.
-const sans = Plus_Jakarta_Sans({
+// Outfit — the sans used across the "Kobo Web App" design export. A clean,
+// slightly rounded geometric grotesque: approachable for a money app without
+// tipping into novelty. Numerics use Geist Mono (--font-geist-mono) as before.
+const sans = Outfit({
   variable: "--font-sans",
   subsets: ["latin"],
 });
