@@ -17,6 +17,7 @@ import type {
 } from "./types";
 import { CURRENT_USER, RECIPIENTS, TRANSFER_HISTORY, randomRate } from "./mock-data";
 import { API_URL, isMockMode } from "./config";
+import { generatePlaceholderWalletAddress } from "./solana";
 import { getValidAccessToken, handleUnauthorized, updateStoredUser } from "./auth";
 
 export { isMockMode };
@@ -159,7 +160,10 @@ async function mockCreateUser(req: CreateUserRequest): Promise<CreateUserRespons
     name: req.name,
     role: req.role,
     country: req.country,
-    wallet_address: req.wallet_address,
+    // Mock mode has no real Crossmint call to make — stand in with a
+    // random valid-format address, same as the real backend would
+    // eventually store, just not resolved from req.email for real.
+    wallet_address: req.wallet_address ?? generatePlaceholderWalletAddress(),
     created_at: new Date().toISOString(),
   };
 }

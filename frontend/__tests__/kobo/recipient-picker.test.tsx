@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { screen, within } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import { renderKoboApp } from "./test-utils";
 
 function openPicker(user: ReturnType<typeof import("@testing-library/user-event").default.setup>) {
@@ -55,7 +55,7 @@ describe("recipient picker", () => {
     expect(within(panel).getByRole("button", { name: /add new recipient/i })).toBeInTheDocument();
   });
 
-  test("add new recipient rejects an empty address and adds a valid one", async () => {
+  test("add new recipient by email — rejects an empty/invalid email and adds a valid one", async () => {
     const { user } = await renderKoboApp();
     await openPicker(user);
     const panel = screen.getByRole("region", { name: /saved recipients/i });
@@ -63,19 +63,53 @@ describe("recipient picker", () => {
     await user.click(within(panel).getByRole("button", { name: /add new recipient/i }));
 
     const dialog = await screen.findByRole("dialog", { name: /add new recipient/i });
+    // Email is the default/primary mode — no toggle click needed.
+    await user.click(within(dialog).getByRole("button", { name: /add recipient/i }));
+    expect(within(dialog).getByRole("alert")).toHaveTextContent(/enter the recipient's email address/i);
+
+    await user.type(within(dialog).getByLabelText(/email address/i), "not-an-email");
+    await user.click(within(dialog).getByRole("button", { name: /add recipient/i }));
+    expect(within(dialog).getByRole("alert")).toHaveTextContent(/doesn't look like a valid email address/i);
+
+    await user.clear(within(dialog).getByLabelText(/email address/i));
+    await user.type(within(dialog).getByLabelText(/name/i), "Folake Adeyemi");
+    await user.type(within(dialog).getByLabelText(/email address/i), "folake@example.com");
+    await user.click(within(dialog).getByRole("button", { name: /add recipient/i }));
+
+    // createUser() (mock mode) resolves after a real setTimeout — wait for the
+    // dialog to actually close rather than assuming the submit settled by now.
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog", { name: /add new recipient/i })).not.toBeInTheDocument();
+    });
+    const recipientCard = screen.getByText("RECIPIENT").closest("button")!;
+    expect(within(recipientCard).getByText("Folake Adeyemi")).toBeInTheDocument();
+    expect(await screen.findByText(/folake adeyemi added as a recipient/i)).toBeInTheDocument();
+  });
+
+  test("add new recipient by pasted address — via the 'paste it instead' toggle", async () => {
+    const { user } = await renderKoboApp();
+    await openPicker(user);
+    const panel = screen.getByRole("region", { name: /saved recipients/i });
+    await user.type(within(panel).getByPlaceholderText(/search saved recipients/i), "zzz-no-one");
+    await user.click(within(panel).getByRole("button", { name: /add new recipient/i }));
+
+    const dialog = await screen.findByRole("dialog", { name: /add new recipient/i });
+    await user.click(within(dialog).getByRole("button", { name: /paste it instead/i }));
+
     await user.click(within(dialog).getByRole("button", { name: /add recipient/i }));
     expect(within(dialog).getByRole("alert")).toHaveTextContent(/enter a solana wallet address/i);
 
-    await user.type(within(dialog).getByLabelText(/name/i), "Folake Adeyemi");
+    await user.type(within(dialog).getByLabelText(/name/i), "Tunde Bakare");
     await user.type(
       within(dialog).getByLabelText(/solana wallet address/i),
       "7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU"
     );
     await user.click(within(dialog).getByRole("button", { name: /add recipient/i }));
 
-    expect(screen.queryByRole("dialog", { name: /add new recipient/i })).not.toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog", { name: /add new recipient/i })).not.toBeInTheDocument();
+    });
     const recipientCard = screen.getByText("RECIPIENT").closest("button")!;
-    expect(within(recipientCard).getByText("Folake Adeyemi")).toBeInTheDocument();
-    expect(await screen.findByText(/folake adeyemi added as a recipient/i)).toBeInTheDocument();
+    expect(within(recipientCard).getByText("Tunde Bakare")).toBeInTheDocument();
   });
 });

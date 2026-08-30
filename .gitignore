@@ -26,3 +26,10 @@ yarn-error.log*
 
 # Backend-managed wallet keypair (devnet demo custody)
 backend/keys/
+
+# Unrelated local scratch — not part of the Kobo app, kept on disk, never committed.
+# Anchored to repo root (/kobo/, not kobo/) — the app itself has real
+# directories named "kobo" (frontend/components/kobo/, frontend/__tests__/kobo/,
+# backend routes, etc.) that must NOT be caught by this pattern.
+/.spettro/
+/kobo/

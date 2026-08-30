@@ -35,7 +35,10 @@ export interface CreateUserRequest {
   name: string;
   role: UserRole;
   country: string;
-  wallet_address: string;
+  /** One of wallet_address or email is required for role: "recipient". wallet_address wins if both are set. */
+  wallet_address?: string;
+  /** Recipient-only. Resolved server-side to a Crossmint-provisioned Solana wallet — see API_CONTRACT.md. */
+  email?: string;
 }
 
 /** Matches the real backend's `users` row shape (backend/src/routes/users.ts). */

@@ -7,7 +7,18 @@ is **actually implemented** on each side as of this sync, not what was planned.
 Update this file in place when either side's contract changes — don't append a new
 dated section, overwrite the stale one.
 
-**Latest addition (on-ramp provider → MoonPay):** `POST /funding` now builds a
+**Latest addition (recipient wallet-by-email, via Crossmint):** `POST /users`
+(role: `"recipient"`) now accepts `email` as an alternative to `wallet_address`.
+When `email` is sent instead, the backend get-or-creates a Crossmint MPC Solana
+wallet for that email (`backend/src/lib/crossmint.ts`, `resolveRecipientWallet`)
+and stores the resulting address exactly like a pasted one — same row shape,
+same downstream behavior, `POST /transfers`/`settleTransfer` unchanged. Pasting
+a real address still works unchanged; email is additive, not a replacement.
+**Not non-custodial** — see the new custody note in the `POST /users` section
+below before describing this anywhere user-facing. New env var:
+`CROSSMINT_API_KEY`. Full detail in "Resolved this sync" #19.
+
+**Prior addition (on-ramp provider → MoonPay):** `POST /funding` now builds a
 **MoonPay** widget URL instead of Transak — the response shape is unchanged
 (`onramp: { sessionId, widgetUrl }`) but `widgetUrl` is now a
 `https://buy.moonpay.com?…` URL and `sessionId` / `onramp_session_id` is always
@@ -301,7 +312,7 @@ dead afterward, `401`).
 
 ---
 
-## `POST /users` — **recipient-only as of this sync, see "Resolved this sync" #15**
+## `POST /users` — **recipient-only, now accepts email as an alternative to wallet_address — see "Resolved this sync" #19**
 
 Creates a **recipient**. Real sender creation moved to `POST /auth/signup`
 above — this endpoint no longer accepts `role: "sender"` at all, since it has
@@ -315,14 +326,36 @@ history.
   "name": "string",
   "role": "recipient",
   "country": "string",
-  "wallet_address": "string"
+  "wallet_address": "string",
+  "email": "string"
 }
 ```
-- All four fields required.
+- `name`, `role`, `country` required, as before.
+- **New this sync:** `wallet_address` is no longer required on its own —
+  exactly one of `wallet_address` or `email` must be provided.
+  - `wallet_address` present → unchanged behavior, checked with
+    `new PublicKey(...)` (base58 charset + correct 32-byte length), used
+    as-is.
+  - `wallet_address` absent, `email` present → checked against a basic
+    `name@domain.tld` regex, then resolved to a real Solana address via
+    `resolveRecipientWallet(email)` (`backend/src/lib/crossmint.ts`), which
+    get-or-creates a Crossmint MPC wallet keyed off that email
+    (idempotent — the same email always resolves to the same address, see
+    that file's doc comment). The resolved address is stored in
+    `wallet_address` exactly as if it had been pasted directly — nothing
+    downstream (`POST /transfers`, `settleTransfer`) knows or cares which
+    path produced it.
+  - Neither present → `400`.
+  - **Custody note, stated plainly because it's easy to overclaim:** a
+    wallet provisioned this way is **not non-custodial in practice**.
+    Crossmint holds the signing key on the server side until/unless the
+    recipient's own device generates a signer, which requires the recipient
+    to actually open a Crossmint-authenticated surface — nothing in Kobo
+    does that today (recipients have no login). The real, accurate claim is
+    narrower: the recipient no longer needs to already own a wallet to be
+    added.
 - `role` must be exactly `"recipient"` — `"sender"` is now a `400` with a
   pointer to `POST /auth/signup` (see below), not a working path.
-- `wallet_address` is checked with `new PublicKey(...)` (base58 charset + correct
-  32-byte length) — a format check only, no on-chain existence check.
 
 **Success response — `201`:** the created row (explicit column list now, not
 `select()`-all — doesn't leak the `auth_user_id`/`pin_hash` columns added this
@@ -337,14 +370,18 @@ sync, both always `null` for a recipient anyway):
   "created_at": "2026-08-25T12:00:00.000Z"
 }
 ```
+Identical shape regardless of whether `wallet_address` was pasted or resolved
+from `email` — the response never echoes back which path was used.
 
 **Error responses:**
 - `400` — `{ "error": "name is required" }`
 - `400` — `{ "error": "sender accounts are created via POST /auth/signup, not this endpoint" }` — new this sync, only for `role: "sender"` specifically.
 - `400` — `{ "error": "role must be one of: recipient" }` — any other invalid `role` value.
 - `400` — `{ "error": "country is required" }`
-- `400` — `{ "error": "wallet_address is required" }`
-- `400` — `{ "error": "wallet_address does not look like a valid Solana address" }`
+- `400` — `{ "error": "wallet_address does not look like a valid Solana address" }` — only when `wallet_address` was provided.
+- `400` — `{ "error": "email does not look like a valid email address" }` — only when `email` was provided instead.
+- `400` — `{ "error": "wallet_address or email is required" }` — new this sync, neither provided.
+- `502` — `{ "error": "Failed to provision a wallet for this email: <detail>" }` — new this sync, the Crossmint call failed (network, bad `CROSSMINT_API_KEY`, unexpected response shape). No `users` row is created on this path.
 - `500` — `{ "error": "<supabase error message>" }`
 
 No `GET /users` / listing / lookup endpoint exists — out of scope for now. Still
@@ -1549,6 +1586,29 @@ File refs are all under `frontend/`:
     correctly as "Delivered" rows, stats showing "2 / €0.10 / 1 person". `tsc`
     + `eslint` clean; `nav-and-tabs.test.tsx` updated ("every nav item opens a
     real screen") + a new Activity test. Test account deleted afterward.
+19. **Recipient wallet-by-email via Crossmint — backend + frontend.** Solves
+    the real adoption barrier flagged in `KOBO_BUILD_PLAN.md`: `POST /users`
+    used to hard-require a recipient to already own a Solana address. Backend:
+    `backend/src/lib/crossmint.ts` (`resolveRecipientWallet(email)`,
+    explicit GET-then-POST against Crossmint's Wallets API,
+    `POST/GET https://staging.crossmint.com/api/2025-06-09/wallets`,
+    `chainType: "solana"`, `type: "mpc"`, `owner: "email:<email>"` —
+    idempotent on that owner locator per Crossmint's docs and their own
+    `regulated-payouts-quickstart` reference repo). `routes/users.ts` now
+    accepts `email` as an alternative to `wallet_address` for `role:
+    "recipient"` — see the section above for the full request/error shape.
+    Frontend: `add-recipient-dialog.tsx` makes email the primary field, with
+    a "paste a Solana address instead" toggle for recipients who already
+    have a wallet — both paths call the same `createUser()`
+    (`lib/kobo/api.ts`), which now sends whichever of `email`/`wallet_address`
+    the form collected. `CreateUserRequest.wallet_address` is now optional.
+    Deliberately untouched: `settleTransfer()`, `POST /transfers`, `POST
+    /funding`, the pooled backend wallet, everything MoonPay — this only
+    changes how a recipient's `wallet_address` gets set.
+    **Custody, stated plainly:** this is Crossmint-custodial in practice, not
+    non-custodial — see the note in `POST /users` above. Don't call it
+    non-custodial in anything user-facing.
+    {{CROSSMINT_VERIFICATION_PLACEHOLDER}}
 
 ## Still open
 

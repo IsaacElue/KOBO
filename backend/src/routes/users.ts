@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { supabase } from "../lib/supabase";
 import { isPlausibleSolanaAddress } from "../lib/validation";
+import { resolveRecipientWallet } from "../lib/crossmint";
 
 export const usersRouter = Router();
 
@@ -10,8 +11,10 @@ export const usersRouter = Router();
 // not logged-in accounts, and still don't need one.
 const VALID_ROLES = ["recipient"] as const;
 
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
 usersRouter.post("/", async (req, res) => {
-  const { name, role, country, wallet_address } = req.body ?? {};
+  const { name, role, country, wallet_address, email } = req.body ?? {};
 
   if (!name || typeof name !== "string") {
     return res.status(400).json({ error: "name is required" });
@@ -27,18 +30,38 @@ usersRouter.post("/", async (req, res) => {
   if (!country || typeof country !== "string") {
     return res.status(400).json({ error: "country is required" });
   }
-  if (!wallet_address || typeof wallet_address !== "string") {
-    return res.status(400).json({ error: "wallet_address is required" });
-  }
-  if (!isPlausibleSolanaAddress(wallet_address)) {
-    return res.status(400).json({
-      error: "wallet_address does not look like a valid Solana address",
-    });
+
+  // Two ways to arrive at a wallet_address: pasted directly (unchanged
+  // behavior), or resolved from an email via Crossmint (new — see
+  // lib/crossmint.ts). wallet_address wins if both are somehow sent; email
+  // is only consulted when wallet_address is absent.
+  let resolvedWalletAddress: string;
+
+  if (wallet_address) {
+    if (typeof wallet_address !== "string" || !isPlausibleSolanaAddress(wallet_address)) {
+      return res.status(400).json({
+        error: "wallet_address does not look like a valid Solana address",
+      });
+    }
+    resolvedWalletAddress = wallet_address;
+  } else if (email) {
+    if (typeof email !== "string" || !EMAIL_RE.test(email)) {
+      return res.status(400).json({ error: "email does not look like a valid email address" });
+    }
+    try {
+      resolvedWalletAddress = await resolveRecipientWallet(email);
+    } catch (err) {
+      return res.status(502).json({
+        error: `Failed to provision a wallet for this email: ${(err as Error).message}`,
+      });
+    }
+  } else {
+    return res.status(400).json({ error: "wallet_address or email is required" });
   }
 
   const { data, error } = await supabase
     .from("users")
-    .insert({ name, role, country, wallet_address })
+    .insert({ name, role, country, wallet_address: resolvedWalletAddress })
     .select("id, name, role, country, wallet_address, created_at")
     .single();
 
