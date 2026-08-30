@@ -4,6 +4,8 @@ import { supabase } from "../lib/supabase";
 import { verifyWebhook } from "../lib/transak";
 import { verifyWebhook as verifyMoonPayWebhook } from "../lib/moonpay";
 import { creditBalance } from "../lib/balances";
+import { fundingDb, type FundingRequestDb } from "../lib/funding-repo";
+import type { FundingRail } from "../lib/onramp";
 import { settleTransfer } from "../lib/settlement";
 
 export const webhooksRouter = Router();
@@ -23,8 +25,16 @@ const FUNDING_PREFIX = "fund_";
  * 'pending') before crediting — unlike a Solana send, crediting a balance has
  * no natural idempotency key, so a retried/duplicate webhook call must be
  * blocked from crediting twice by the row's own status transition instead.
+ *
+ * Phase 1: `opts.expectedRail` must match the row's own `rail` — a webhook
+ * arriving on `/webhooks/moonpay` may only settle a funding request that was
+ * actually created via the `moonpay` rail, and likewise for `/webhooks/onramp`
+ * (Transak). Without this check, a funding request id becoming known/guessable
+ * across the wrong webhook route could be settled by the wrong provider's
+ * confirmation. `db` defaults to the real Supabase-backed repository; tests
+ * inject `FakeFundingDb` to exercise this logic with no network/DB.
  */
-async function handleFundingWebhook(
+export async function handleFundingWebhook(
   fundingRequestId: string,
   opts: {
     /** The provider's own transaction id, stored as `onramp_reference`. */
@@ -36,19 +46,27 @@ async function handleFundingWebhook(
      * (Transak's payload didn't reliably carry this).
      */
     creditedUsdc?: number | null;
-  }
+    /** Which rail this webhook route belongs to — must match the row's `rail`. */
+    expectedRail: FundingRail;
+  },
+  db: FundingRequestDb = fundingDb
 ): Promise<{ status: number; body: unknown }> {
-  const { data: fundingRequest, error: fetchError } = await supabase
-    .from("funding_requests")
-    .select("id, sender_id, amount_usdc, status")
-    .eq("id", fundingRequestId)
-    .maybeSingle();
-
-  if (fetchError) {
-    return { status: 500, body: { error: fetchError.message } };
+  let fundingRequest;
+  try {
+    fundingRequest = await db.getById(fundingRequestId);
+  } catch (fetchError) {
+    return { status: 500, body: { error: (fetchError as Error).message } };
   }
   if (!fundingRequest) {
     return { status: 404, body: { error: "No funding request matches this webhook's partnerOrderId/session" } };
+  }
+  if (fundingRequest.rail !== opts.expectedRail) {
+    return {
+      status: 409,
+      body: {
+        error: `Funding request rail is '${fundingRequest.rail}', but this webhook arrived on the '${opts.expectedRail}' route`,
+      },
+    };
   }
   if (fundingRequest.status !== "pending") {
     return {
@@ -60,16 +78,14 @@ async function handleFundingWebhook(
     return { status: 422, body: { error: "Funding request has no amount_usdc set" } };
   }
 
-  const { data: claimed, error: claimError } = await supabase
-    .from("funding_requests")
-    .update({ status: "confirmed", onramp_reference: opts.reference })
-    .eq("id", fundingRequestId)
-    .eq("status", "pending")
-    .select()
-    .maybeSingle();
-
-  if (claimError) {
-    return { status: 500, body: { error: claimError.message } };
+  let claimed;
+  try {
+    claimed = await db.claim(fundingRequestId, {
+      status: "confirmed",
+      onramp_reference: opts.reference,
+    });
+  } catch (claimError) {
+    return { status: 500, body: { error: (claimError as Error).message } };
   }
   if (!claimed) {
     return { status: 409, body: { error: "Funding request already processed (concurrent webhook)" } };
@@ -88,10 +104,7 @@ async function handleFundingWebhook(
     // swallowed, same principle as a failed transfer.
     const message = err instanceof Error ? err.message : String(err);
     console.error(`Funding request ${fundingRequestId} claimed but balance credit failed: ${message}`);
-    await supabase
-      .from("funding_requests")
-      .update({ status: "failed", failure_reason: message })
-      .eq("id", fundingRequestId);
+    await db.markFailed(fundingRequestId, message);
     return { status: 500, body: { error: message } };
   }
 
@@ -137,6 +150,7 @@ webhooksRouter.post("/onramp", async (req, res) => {
     const fundingRequestId = partnerOrderId.slice(FUNDING_PREFIX.length);
     const result = await handleFundingWebhook(fundingRequestId, {
       reference: webhookData.id ?? null,
+      expectedRail: "transak",
     });
     return res.status(result.status).json(result.body);
   }
@@ -158,6 +172,7 @@ webhooksRouter.post("/onramp", async (req, res) => {
     if (fundingBySession) {
       const result = await handleFundingWebhook(fundingBySession.id, {
         reference: webhookData.id ?? null,
+        expectedRail: "transak",
       });
       return res.status(result.status).json(result.body);
     }
@@ -254,6 +269,7 @@ webhooksRouter.post("/moonpay", async (req, res) => {
   const result = await handleFundingWebhook(fundingRequestId, {
     reference: data.id,
     creditedUsdc: data.quoteCurrencyAmount,
+    expectedRail: "moonpay",
   });
   return res.status(result.status).json(result.body);
 });

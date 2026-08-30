@@ -72,6 +72,7 @@ describe("funding redirect on-ramp path", () => {
       amount_eur: 100,
       amount_usdc: 108,
       status: "pending",
+      rail: "transak",
       onramp_session_id: "sess_redirect_test",
       onramp_reference: null,
       failure_reason: null,

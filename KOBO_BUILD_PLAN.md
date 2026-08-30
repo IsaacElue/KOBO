@@ -94,11 +94,26 @@ either way.
   **Superseded 2026-08-27:** Settings, Overview and Activity are all built now
   (see "New pages" below) — **the app has no "not built yet" stub screens
   left.** Send Money remains the demo's focus.
-- Recipients are Solana wallet address only — no phone-number-only recipients in
+- ~~Recipients are Solana wallet address only — no phone-number-only recipients in
   Phase 1. Placeholder copy corrected. Phone-number-only recipients would require
   Kobo generating and holding a custodial wallet on someone's behalf — a real
   feature with real custody/regulatory implications, contradicting the product
-  doc's non-custodial stance. Not being built now.
+  doc's non-custodial stance. Not being built now.~~
+  **Superseded (2026-08-30):** email-based recipient onboarding is now built —
+  `POST /users` accepts `email` as an alternative to `wallet_address`, resolved
+  via Crossmint's Wallets API to a real Solana address (`backend/src/lib/
+  crossmint.ts`). Pasting an address directly still works unchanged; this is
+  additive. **The custody concern this bullet originally raised is real and not
+  resolved, just no longer a blocker for shipping the feature — it's disclosed
+  instead:** a wallet provisioned this way is Crossmint-custodial in practice
+  (Crossmint holds the signing key server-side) until/unless the recipient's own
+  device generates a signer, which requires a Crossmint-authenticated surface
+  Kobo doesn't have today (recipients still have no login). So this is narrower
+  than "non-custodial wallets for recipients" — it's "a recipient no longer needs
+  to already own a wallet to be added," which is the actual adoption barrier this
+  was solving. Don't describe it as non-custodial anywhere user-facing. See
+  API_CONTRACT.md "Resolved this sync" #19 for the full implementation and test
+  results.
 - **Sender-side "balance" — SUPERSEDED (2026-08-25, later same day) — and now
   fully IMPLEMENTED (2026-08-26), backend and frontend both, verified live.**
   See API_CONTRACT.md "Resolved this sync" #12 (backend) and #14 (frontend) for
@@ -223,3 +238,52 @@ Scope: visual and motion polish layered on top of the now-real functionality, no
 ## 7. After Demo Day (not this week — reference only)
 
 Real closed pilot, repeat-usage/hold-time tracking, KYC decision revisited with real data, off-ramp partner conversations continuing in parallel, auth hardened toward production. Content/community/GTM strategy belongs here — after real usage signal exists, not before.
+
+---
+
+## 8. Funding Rail Roadmap — a separate initiative from the Demo Day plan above
+
+Everything above (sections 0–7) is the original mock-to-real / Demo Day plan.
+This section tracks a **distinct, founder-directed initiative**: making
+sender-side funding reliable and provider-independent, ahead of a Coinbase
+Onramp / SEPA / Stripe Treasury rollout. MoonPay's known IP-lock issue (an
+external MoonPay account-setting problem, not a Kobo bug — see
+API_CONTRACT.md's `POST /funding` section) is the immediate trigger; the
+underlying goal is that Kobo should not be structurally dependent on any one
+funding provider.
+
+**Founder decisions, stated once here so they aren't re-litigated:**
+- Provider names (MoonPay, Transak, Coinbase, ...) are never a user-facing
+  concept — the eventual UI offers funding *methods* ("Card", "Bank
+  transfer"), which map to a `rail` internally.
+- The three real rail *kinds* — hosted-session (Coinbase/MoonPay/Transak),
+  reconciled (SEPA), treasury (Stripe) — are genuinely different lifecycles
+  and must not be forced into one fake common interface just because two of
+  them happen to produce a widget URL today.
+- Coinbase is the primary production candidate; SEPA is a controlled
+  fallback; Stripe Treasury is explicitly experimental/test-mode until
+  provider approval and fraud/chargeback design exist.
+- USDC on Solana remains the canonical asset, EUR the canonical fiat — a
+  funding provider making USD or another chain easier is not a reason to
+  drift the product off either.
+
+**Phase 0 (architecture audit) — done.** Full read of the funding lifecycle,
+provider abstraction, webhook handling, money-safety posture, and a fit
+assessment of Coinbase/SEPA/Stripe against the existing `lib/onramp.ts`
+abstraction (verdict: Coinbase fits directly, SEPA and Stripe don't — see the
+audit transcript for the reasoning, not reproduced here).
+
+**Phase 1 (funding rail abstraction) — done.** Explicit `rail` identity on
+`funding_requests`, expanded status vocabulary for non-instant rails, atomic
+`creditBalance()`, the Transak pricing import-boundary fix, and the first
+backend automated test suite (previously zero). Coinbase/SEPA/Stripe are
+**not implemented** — only their names and reserved schema/type slots exist.
+Full technical detail, exactly what changed and why, and the honest list of
+what's still a gap: **API_CONTRACT.md, "Resolved this sync" #20.** Don't
+duplicate that detail here — this section is the product-level pointer, that
+one is the engineering record.
+
+**Phases 2–8 (Coinbase, SEPA, Stripe, money-safety hardening, funding UX,
+observability, production readiness)** — not started. Each will get its own
+entry here once it lands, same pattern as above: a short pointer to the full
+detail in API_CONTRACT.md, not a restatement.

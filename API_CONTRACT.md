@@ -7,7 +7,29 @@ is **actually implemented** on each side as of this sync, not what was planned.
 Update this file in place when either side's contract changes — don't append a new
 dated section, overwrite the stale one.
 
-**Latest addition (recipient wallet-by-email, via Crossmint):** `POST /users`
+**Latest addition (Funding Rail Abstraction — Phase 1):** `POST /funding` now
+accepts an explicit `rail` field (`"moonpay"` | `"transak"`, others reserved —
+see below) instead of being governed solely by the server-wide
+`ONRAMP_PROVIDER` env var; the response and `GET /funding/:id` now also
+return `rail`. `funding_requests` gained a `rail` column and three new
+`status` values (`awaiting_reconciliation`, `manual_review`,
+`payout_pending`) reserved for SEPA/Stripe, not produced by any code path yet.
+`creditBalance()` (`lib/balances.ts`) is now atomic — a Postgres
+`credit_balance()` function (`INSERT ... ON CONFLICT DO UPDATE`), replacing
+the old read-then-upsert that could lose a concurrent credit; verified live
+under real concurrency. `getMarketRate()` moved its import boundary from
+`lib/transak.ts` to a new `lib/rates.ts` (routes now depend on that, not on
+Transak directly) — **preserves exact current pricing behavior**, doesn't
+remove the underlying Transak-credential requirement (see "Resolved this
+sync" #20 for what that does and doesn't fix). Webhook handlers now reject a
+rail mismatch (a Transak webhook can't settle a MoonPay-created request, or
+vice versa) — new `409`. Coinbase/SEPA/Stripe are **not implemented** — the
+`FundingRail` type and DB constraints know their names, nothing else does;
+requesting one of those rails is a clean `501`, not a silent fallback. New
+backend test suite (`backend/src/test/`, vitest — was previously zero
+automated backend tests). Full detail in "Resolved this sync" #20.
+
+**Prior addition (recipient wallet-by-email, via Crossmint):** `POST /users`
 (role: `"recipient"`) now accepts `email` as an alternative to `wallet_address`.
 When `email` is sent instead, the backend get-or-creates a Crossmint MPC Solana
 wallet for that email (`backend/src/lib/crossmint.ts`, `resolveRecipientWallet`)
@@ -405,23 +427,32 @@ this flow is credited to the sender's row in `balances` once the provider's
 completion webhook confirms it — `POST /webhooks/moonpay` for MoonPay,
 `POST /webhooks/onramp` for Transak. See those sections below.
 
-**Provider swap:** `ONRAMP_PROVIDER` env (`moonpay` default | `transak`). Only
-the session-build and webhook-verify differ between providers; the
-request/response contract here is identical either way. Transak's path is kept
-fully intact for a fast swap-back (e.g. if Ramp Network comes back with
-Ireland/SEPA confirmed).
+**Provider swap:** `ONRAMP_PROVIDER` env (`moonpay` default | `transak`) is
+still the **default** when no explicit `rail` is sent — behavior unchanged for
+every existing caller. Only the session-build and webhook-verify differ
+between providers; the request/response contract here is identical either way.
+Transak's path is kept fully intact for a fast swap-back.
 
 **Request body** (`backend/src/routes/funding.ts`):
 ```json
-{ "sender_id": "uuid", "amount_eur": 100 }
+{ "sender_id": "uuid", "amount_eur": 100, "rail": "moonpay" }
 ```
-- Both fields required; `amount_eur` must be a JS `number` and `> 0`.
-- `sender_id` **must equal the authenticated caller's own `users.id`** (new
-  this sync — previously any existing `uuid` in `users`, any role, was
-  accepted; the old "Sender not found" `400` for a nonexistent id is gone,
-  replaced by the `403` identity check below, since the caller's own id is
-  now resolved from their session, not looked up from an arbitrary
-  client-supplied value).
+- `sender_id`, `amount_eur` required as before; `amount_eur` must be a JS
+  `number` and `> 0`.
+- `sender_id` **must equal the authenticated caller's own `users.id`**.
+- **New this sync — `rail`, optional.** One of `"moonpay"` | `"transak"` |
+  `"coinbase"` | `"sepa"` | `"stripe"` (case-insensitive, whitespace-trimmed).
+  Omitted → falls back to the `ONRAMP_PROVIDER` env default, exactly the
+  pre-Phase-1 behavior. Only `moonpay`/`transak` are actually implemented —
+  the other three are real, reserved type/schema values (the abstraction is
+  built for all three rail *kinds* — hosted-session, reconciled, treasury —
+  per the founder's Phase 1 brief) with no working code behind them yet;
+  requesting one is a `501`, never a silent fallback to a different rail. The
+  frontend does not send `rail` yet (no UI change this phase) — this field
+  exists so the backend no longer *requires* a single global provider once
+  more rails exist, per that same brief. **No provider names are meant to
+  reach end users** — a future funding-method picker ("Card" / "Bank
+  transfer") maps to a `rail` value internally, not shown as-is.
 
 **Success response — `201`:**
 ```json
@@ -431,6 +462,7 @@ Ireland/SEPA confirmed).
   "amount_eur": 100,
   "amount_usdc": 116.428667,
   "status": "pending",
+  "rail": "moonpay",
   "onramp_session_id": "string | null",
   "onramp_reference": null,
   "failure_reason": null,
@@ -438,8 +470,14 @@ Ireland/SEPA confirmed).
   "onramp": { "sessionId": "string | null", "widgetUrl": "https://buy.moonpay.com?apiKey=…&signature=… (MoonPay, HMAC-signed, directly loadable)" }
 }
 ```
-The whole `funding_requests` row (new table — see Data model below), plus the same
-`onramp: { sessionId, widgetUrl }` shape `POST /transfers` used to return.
+The whole `funding_requests` row (new table — see Data model below; `rail` new
+this sync), plus the same `onramp: { sessionId, widgetUrl }` shape `POST
+/transfers` used to return. `rail` in the response always reflects the rail
+that was actually used to build `onramp` — never re-derived from
+`ONRAMP_PROVIDER` after the fact, so the two can never disagree (a real bug in
+an early draft of this sync: the row briefly defaulted to the literal string
+`"moonpay"` independent of `ONRAMP_PROVIDER`, rather than sharing one resolved
+value with the session-creation call — fixed before this reached main).
 
 **MoonPay specifics:** `widgetUrl` is a signed `https://buy.moonpay.com?…` URL —
 no expiry (it's a signed param bundle, not a one-time session), origin
@@ -454,20 +492,25 @@ MoonPay. `amount_usdc` here is the pre-purchase estimate; the amount actually
 webhook, which can differ slightly.
 
 `amount_usdc` is computed with the **real live market rate**
-(`getMarketRate("EUR")`, `backend/src/lib/transak.ts` — the same function
-`GET /rate` uses), not a placeholder — this is a fresh code path with no old
-convention to preserve, and the figure directly determines how much gets credited
-to the sender's balance once confirmed, so accuracy matters here more than it did
-for the old display-only `POST /transfers` estimate (see "Still open" #9, still
-unresolved for the parts of the system it was already scoped to).
+(`getMarketRate("EUR")`, **now `backend/src/lib/rates.ts`** — the same
+function `GET /rate` uses; moved from a direct `lib/transak.ts` import this
+sync, see "Resolved this sync" #20), not a placeholder — this is a fresh code
+path with no old convention to preserve, and the figure directly determines
+how much gets credited to the sender's balance once confirmed, so accuracy
+matters here more than it did for the old display-only `POST /transfers`
+estimate (see "Still open" #9, still unresolved for the parts of the system it
+was already scoped to).
 
 **Error responses:**
 - `401` — `{ "error": "Missing or invalid Authorization header" }` / `"Invalid or expired session" }`
 - `400` — `{ "error": "sender_id and numeric amount_eur are required" }`
 - `400` — `{ "error": "amount_eur must be positive" }`
 - `400` — `{ "error": "sender_id must be a valid UUID" }`
+- `400` — `{ "error": "rail must be one of: moonpay, transak, coinbase, sepa, stripe" }` — new this sync, unknown `rail` string.
+- `400` — `{ "error": "rail must be a string" }` — new this sync, `rail` sent as a non-string.
 - `403` — `{ "error": "No sender account linked to this session" }` — a valid session with no linked `users` row.
 - `403` — `{ "error": "sender_id does not match the authenticated user" }`
+- `501` — `{ "error": "Funding rail 'sepa' is recognized but not implemented yet" }` — new this sync, a recognized-but-not-yet-implemented rail (`coinbase`/`sepa`/`stripe`) was explicitly requested, or is the current `ONRAMP_PROVIDER` default (it isn't — default is `moonpay` — but this checks the *resolved* rail either way). Checked before any rate quote or `funding_requests` insert — no wasted row.
 - `502` — `{ "error": "Failed to fetch conversion rate: <message>" }`
 - `502` — `{ "error": "Failed to create on-ramp widget session: <message>" }` — the
   `funding_requests` row is deleted server-side before this is returned (no
@@ -1609,6 +1652,159 @@ File refs are all under `frontend/`:
     non-custodial — see the note in `POST /users` above. Don't call it
     non-custodial in anything user-facing.
     {{CROSSMINT_VERIFICATION_PLACEHOLDER}}
+20. **Funding Rail Abstraction — Phase 1, backend only.** Per the founder's
+    explicit brief: build the abstraction around the real differences between
+    rail *kinds* (hosted-session / reconciled / treasury), add explicit rail
+    identity, make `creditBalance()` atomic, fix the hidden Transak pricing
+    coupling, establish backend test coverage (previously zero) — without
+    implementing Coinbase/SEPA/Stripe and without touching `solana.ts`,
+    `settlement.ts`, `transfers.ts`, `routes/transfers.ts`, `moonpay.ts`, or
+    `transak.ts`.
+
+    **Note on how this landed:** most of this phase's code (`lib/rates.ts`,
+    `lib/funding-repo.ts`, the migration, the atomic-credit function, the
+    rail type/routing changes, the vitest setup) was already present,
+    uncommitted, in the working tree when this sync began — done by a
+    separate session/tool working the same repo (a `.spettro/` directory,
+    unrelated to Kobo's own code, was the only trace of what did it). It was
+    inspected, not assumed correct: the migration had never actually been
+    applied to the real DB (`credit_balance` didn't exist yet — applied via
+    `scripts/run-migration.ts` and verified live under real `Promise.all`
+    concurrency); a real bug was found and fixed (`routes/funding.ts` was
+    defaulting a request's `rail` to the hardcoded string `"moonpay"`
+    independent of `ONRAMP_PROVIDER`, so with `ONRAMP_PROVIDER=transak` the
+    row would misrecord its own rail); the founder-mandated "provider/rail
+    mismatch" protection didn't exist in `handleFundingWebhook` at all and was
+    added; a stale bad import path in a test helper was fixed; a real
+    `credit_balance` RPC test-suite mismatch (`p_amount`/`p_user_id` argument
+    order) was resolved by applying the migration rather than editing tests to
+    match a broken function; and a `501`-vs-`502` gap (an unimplemented rail
+    was falling through to a generic provider-failure response, writing then
+    immediately failing a `funding_requests` row) was closed with an
+    early rail-implementability check. Full test suite (38 tests, `tsc`
+    clean) written/completed and run for real — see below.
+
+    **Backend, what actually changed:**
+    - `backend/src/lib/onramp.ts` — `FundingRail` (5-value type: `moonpay` |
+      `transak` | `coinbase` | `sepa` | `stripe`) and `FUNDING_RAILS`
+      alongside the existing `OnrampProvider`/`ONRAMP_PROVIDER`.
+      `createOnrampSession()` gained an optional `rail` param (defaults to
+      `ONRAMP_PROVIDER`, exact pre-Phase-1 behavior when omitted) and throws a
+      clear message for a recognized-but-unimplemented rail. New
+      `IMPLEMENTED_RAILS`/`isImplementedRail()` — the real/reserved split
+      (only `moonpay`/`transak` work; the other three are known to the type
+      system and the DB constraint, nothing else).
+    - `backend/src/lib/funding-repo.ts` (new) — `FundingRequestDb` interface
+      + the real Supabase-backed implementation (`fundingDb`), covering
+      `insert`/`getById`/`updateSession`/`claim`/`markFailed`. Existing
+      PostgREST calls relocated here unchanged in behavior; the point is
+      making the lifecycle (claim-once semantics) injectable for tests.
+    - `backend/src/lib/rates.ts` (new) — `getMarketRate()`, the new
+      provider-neutral rate-source boundary. Delegates to
+      `lib/transak.ts`'s `getMarketRate` (**unchanged, not touched** — same
+      Transak public quote call as before, so pricing behavior is identical).
+      `routes/funding.ts` and `routes/rate.ts` now import from here, not from
+      `lib/transak.ts` directly.
+      **What this does and does not fix:** it decouples the *import
+      boundary* (a future non-Transak rate source can be swapped in behind
+      this one function with no caller changes) and it's already true that
+      `getMarketRate` never read `ONRAMP_PROVIDER` — rate retrieval has never
+      actually depended on which provider is *selected*. What it does **not**
+      do: `lib/rates.ts` still transitively imports `lib/transak.ts`, whose
+      module-level guard requires **both** `TRANSAK_API_KEY` and
+      `TRANSAK_API_SECRET` to be set, even though price-quoting only ever
+      uses the key. Removing that would mean splitting `lib/transak.ts`,
+      which the founder's explicit preserve-list puts out of scope this
+      phase — flagging this honestly rather than pretending the credential
+      coupling is gone. Tested in `rate-source.test.ts`.
+    - `backend/src/lib/balances.ts` — `creditBalance()` is now one atomic
+      Supabase RPC call (`credit_balance`, see migration below) instead of a
+      read-then-upsert. `debitBalanceIfSufficient()` is **unchanged** (already
+      race-safe via its conditional `UPDATE ... WHERE usdc_balance >= amount`
+      — its doc comment's "not solved here" note about a concurrent credit
+      racing it is now moot, since the credit side is atomic too).
+    - `backend/src/routes/funding.ts` — accepts optional `rail` in the
+      request body (`parseRail()`, exported for direct testing); rejects an
+      unknown value with `400`, a recognized-but-unimplemented one with `501`
+      (checked before any rate quote or DB write); resolves the effective
+      rail **once** and reuses it for both the `funding_requests` insert and
+      the `createOnrampSession` call (the bug fix above). Response and `GET
+      /funding/:id` now include `rail`.
+    - `backend/src/routes/webhooks.ts` — `handleFundingWebhook` is now
+      exported, takes an injectable `db: FundingRequestDb` (defaults to the
+      real one — tests pass `FakeFundingDb`), and requires `opts.expectedRail`
+      to match the funding request's own `rail` or rejects with `409` before
+      ever claiming/crediting. Both webhook routes pass their own literal
+      rail (`"transak"`, `"moonpay"`).
+    - `backend/supabase/migrations/20260830180000_add_funding_rail.sql` — adds
+      `funding_requests.rail` (text, `check` against the 5 known values,
+      default `'moonpay'`), expands the `status` check constraint to add
+      `awaiting_reconciliation` / `manual_review` / `payout_pending` (reserved
+      for SEPA/Stripe, not produced by any code path yet — hosted-session
+      rails still only ever use `pending`/`confirmed`/`failed`), and creates
+      the `credit_balance(p_user_id, p_amount)` Postgres function (`security
+      definer`, `set search_path = public`, single `INSERT ... ON CONFLICT
+      (user_id) DO UPDATE SET usdc_balance = balances.usdc_balance +
+      p_amount`).
+    - `backend/supabase/migrations/20260830180100_backfill_funding_rail_from_session.sql`
+      (new, added during this review) — the first migration's `default
+      'moonpay'` backfill was wrong for the 11 real historical rows that
+      actually went through Transak before the MoonPay switch (identifiable
+      because only Transak ever populated `onramp_session_id` — MoonPay's is
+      always `null`). This corrects those specific rows. Verified against the
+      real table: 47 `moonpay` / 11 `transak` post-correction, zero rows where
+      session-presence disagrees with `rail`.
+
+    **Backend test suite (new — `backend/package.json` gained `vitest`,
+    `supertest`, `cross-env`; `npm test` / `npm run test:db`):**
+    `backend/src/test/` — `parse-rail.test.ts` (6, fast, no DB — valid/invalid
+    rail parsing), `onramp-selection.test.ts` (4, fast, mocked provider
+    modules — MoonPay/Transak routing compatibility + the unimplemented-rail
+    throw), `funding-repo.test.ts` (8, fast, in-memory `FakeFundingDb` —
+    claim-once semantics, the new status vocabulary), `funding-webhook.test.ts`
+    (8, fast, `FakeFundingDb` + mocked `creditBalance` — settlement, duplicate
+    settlement, concurrent double-delivery, both directions of provider/rail
+    mismatch, credited-amount preference), `rate-source.test.ts` (3, one real
+    network call — provider-independence + the import-boundary regression
+    guard), `balances-live.test.ts` (4, opt-in `RUN_DB_TESTS=1`, real Supabase
+    — atomic credit under real `Promise.all` concurrency, debit-never-overdraws),
+    `funding-route.test.ts` (5, opt-in `RUN_DB_TESTS=1` + `DEV_SKIP_AUTH=true`,
+    real Express app + real Supabase + real MoonPay URL-building, self-cleaning
+    — valid rail selection, invalid rail, the new 501 path with zero rows
+    written, rail-matches-session regression guard, and an explicitly
+    **documented, not fixed** creation-time duplicate: submitting the same
+    intent twice today still creates two independent `pending` rows — no
+    idempotency key on `POST /funding` itself exists, out of this phase's
+    explicit scope, flagged rather than silently left).
+    **Verified live:** `tsc --noEmit` clean; default suite 29/29 passed, 9
+    skipped (the opt-in live ones); `RUN_DB_TESTS=1` suite **38/38 passed**,
+    real concurrency proven against real Postgres, real HTTP requests against
+    a real Express app + real Supabase + a real MoonPay widget URL, all test
+    rows cleaned up (`funding_requests` count unchanged before/after: 58).
+    No `eslint`/lint tooling exists for `backend/` at all (frontend-only) —
+    nothing to run there.
+
+    **Remaining risks, not fixed this phase (by design or explicitly out of
+    scope):**
+    - No idempotency key on `POST /funding` creation — double-submission
+      creates duplicate `pending` rows (harmless today: nothing charges until
+      a webhook confirms one of them, and the DB-level webhook claim already
+      prevents a double-credit even from a duplicate row — flagged for a
+      future decision, not silently patched over).
+    - `lib/rates.ts` still requires `TRANSAK_API_SECRET` to be set even for a
+      MoonPay-only deployment (see the `lib/rates.ts` note above) — the import
+      *boundary* moved, the credential *coupling* didn't, because removing it
+      means touching `transak.ts`, explicitly out of scope this phase.
+    - `funding_requests.rail`'s `check` constraint currently only recognizes
+      the 5 known names; the DB has no concept of rail *kind*
+      (hosted-session/reconciled/treasury) — that distinction lives only in
+      `lib/onramp.ts`'s (TypeScript-only) `IMPLEMENTED_RAILS` list. Fine while
+      only hosted-session rails exist; Phase 3 (SEPA) will need to decide
+      whether `RAIL_KIND` becomes a real column or stays code-only.
+    - The Kraken-style rail-selection UX (item 1 of the founder's brief —
+      "Card" / "Bank transfer" instead of provider names) has **zero frontend
+      work done** — `rail` is accepted by the API but nothing sends it yet.
+      Deliberately deferred per item 13 ("no frontend redesign this phase").
 
 ## Still open
 

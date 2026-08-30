@@ -141,7 +141,28 @@ export interface BalanceResponse {
   updated_at: string | null;
 }
 
-export type FundingStatus = "pending" | "confirmed" | "failed";
+/**
+ * Phase 1 (Funding Rail Abstraction) added three reserved states for
+ * non-instant rails — awaiting_reconciliation (SEPA) and payout_pending
+ * (Stripe) aren't produced by any code path yet (no rail exists to produce
+ * them); manual_review is reserved for future ambiguous-transaction handling.
+ * No frontend UI branches on these yet — see API_CONTRACT.md "Resolved this
+ * sync" #20.
+ */
+export type FundingStatus =
+  | "pending"
+  | "confirmed"
+  | "failed"
+  | "awaiting_reconciliation"
+  | "manual_review"
+  | "payout_pending";
+
+/** A funding rail identifier. Only "moonpay"/"transak" are implemented — the
+ * others are real, reserved names the backend recognizes but rejects with a
+ * 501 (see lib/onramp.ts's IMPLEMENTED_RAILS, backend-side). Provider names
+ * are never meant to reach end users directly — a future funding-method
+ * picker ("Card"/"Bank transfer") would map to one of these internally. */
+export type FundingRail = "moonpay" | "transak" | "coinbase" | "sepa" | "stripe";
 
 export interface CreateFundingRequest {
   sender_id: string;
@@ -152,6 +173,13 @@ export interface CreateFundingRequest {
    * omitted / null when the lookup failed; the backend then uses its own req.ip.
    */
   client_observed_ip?: string | null;
+  /**
+   * Optional explicit rail — omitted falls back to the backend's
+   * ONRAMP_PROVIDER default, exactly today's behavior. Not sent by any
+   * current UI; exists for API-contract coherence with the Phase 1 backend
+   * change, not because the frontend uses it yet.
+   */
+  rail?: FundingRail;
 }
 
 /** Matches the real backend's `funding_requests` row shape (backend/src/routes/funding.ts). */
@@ -161,6 +189,8 @@ export interface FundingRecord {
   amount_eur: number;
   amount_usdc: number | null;
   status: FundingStatus;
+  /** New in Phase 1 — which rail actually created/settled this request. */
+  rail: FundingRail;
   onramp_session_id: string | null;
   onramp_reference: string | null;
   failure_reason: string | null;

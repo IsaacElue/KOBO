@@ -1,10 +1,16 @@
 import type { Request } from "express";
 import { Router } from "express";
-import { supabase } from "../lib/supabase";
-import { getMarketRate } from "../lib/transak";
-import { createOnrampSession } from "../lib/onramp";
+import { getMarketRate } from "../lib/rates";
+import {
+  createOnrampSession,
+  FUNDING_RAILS,
+  isImplementedRail,
+  ONRAMP_PROVIDER,
+  type FundingRail,
+} from "../lib/onramp";
 import { backendWallet } from "../lib/solana";
 import { getBalance } from "../lib/balances";
+import { fundingDb } from "../lib/funding-repo";
 import { requireAuth, resolveKoboUser } from "../lib/auth";
 
 export const fundingRouter = Router();
@@ -27,6 +33,21 @@ function resolveClientIp(req: Request): string {
   if (direct) return direct;
   const xff = String(req.headers["x-forwarded-for"] ?? "").split(",")[0];
   return stripV6(xff);
+}
+
+/**
+ * Validates an explicit rail from the request body. Returns the parsed rail
+ * or null when absent (caller defaults to ONRAMP_PROVIDER). Throws a
+ * user-facing error string for an invalid value so the route can 400 cleanly.
+ */
+export function parseRail(raw: unknown): FundingRail | null {
+  if (raw === undefined || raw === null) return null;
+  if (typeof raw !== "string") throw "rail must be a string";
+  const normalized = raw.trim().toLowerCase() as FundingRail;
+  if (!FUNDING_RAILS.includes(normalized)) {
+    throw `rail must be one of: ${FUNDING_RAILS.join(", ")}`;
+  }
+  return normalized;
 }
 
 // Builds an on-ramp widget session (MoonPay by default — see lib/onramp.ts)
@@ -53,12 +74,34 @@ fundingRouter.post("/", requireAuth, async (req, res) => {
     return res.status(400).json({ error: "sender_id must be a valid UUID" });
   }
 
+  // Phase 1: the API accepts an explicit rail. Absent → the server-wide
+  // ONRAMP_PROVIDER default (behavior unchanged for existing clients; the
+  // frontend sends no rail today, and the UX will map human-friendly funding
+  // methods → rails in a later phase — never exposing provider names).
+  let rail: FundingRail | null;
+  try {
+    rail = parseRail(req.body?.rail);
+  } catch (errorMessage) {
+    return res.status(400).json({ error: errorMessage });
+  }
+
   const koboUser = await resolveKoboUser(req.authUser!.id);
   if (!koboUser) {
     return res.status(403).json({ error: "No sender account linked to this session" });
   }
   if (koboUser.id !== sender_id) {
     return res.status(403).json({ error: "sender_id does not match the authenticated user" });
+  }
+
+  // Fail fast on a recognized-but-unimplemented rail (coinbase/sepa/stripe) —
+  // before quoting a rate or writing a funding_requests row this attempt can
+  // never actually complete. A clean 501, distinct from a genuine provider
+  // failure (502, below) once session creation is actually attempted.
+  const requestedRail = rail ?? ONRAMP_PROVIDER;
+  if (!isImplementedRail(requestedRail)) {
+    return res.status(501).json({
+      error: `Funding rail '${requestedRail}' is recognized but not implemented yet`,
+    });
   }
 
   let rate: number;
@@ -71,14 +114,24 @@ fundingRouter.post("/", requireAuth, async (req, res) => {
   }
   const amount_usdc = Number((amount_eur * rate).toFixed(6));
 
-  const { data: fundingRequest, error: insertError } = await supabase
-    .from("funding_requests")
-    .insert({ sender_id, amount_eur, amount_usdc, status: "pending" })
-    .select()
-    .single();
+  // One resolved value, computed once above (requestedRail) and reused for
+  // both the row and the session call below — they can never disagree about
+  // which rail this is. (An earlier draft resolved this twice, independently,
+  // and the two calls could disagree if ONRAMP_PROVIDER ever changed — fixed
+  // before this reached main.)
+  const resolvedRail: FundingRail = requestedRail;
 
-  if (insertError) {
-    return res.status(500).json({ error: insertError.message });
+  let fundingRequest;
+  try {
+    fundingRequest = await fundingDb.insert({
+      sender_id,
+      amount_eur,
+      amount_usdc,
+      status: "pending",
+      rail: resolvedRail,
+    });
+  } catch (insertError) {
+    return res.status(500).json({ error: (insertError as Error).message });
   }
 
   let onramp: { sessionId: string | null; widgetUrl: string };
@@ -92,25 +145,27 @@ fundingRouter.post("/", requireAuth, async (req, res) => {
         typeof client_observed_ip === "string" && IP_RE.test(client_observed_ip)
           ? client_observed_ip
           : null,
+      // The exact rail already committed to the row above — not re-resolved,
+      // so the session and the row can never disagree about which rail this is.
+      rail: resolvedRail,
     });
   } catch (err) {
     // Session creation failed — don't leave a funding request row with no
     // way to ever fund it. Roll back rather than leaving orphaned 'pending' state.
-    await supabase.from("funding_requests").delete().eq("id", fundingRequest.id);
+    await fundingDb.markFailed(fundingRequest.id, (err as Error).message);
     return res.status(502).json({
       error: `Failed to create on-ramp widget session: ${(err as Error).message}`,
     });
   }
 
-  const { data: updated, error: updateError } = await supabase
-    .from("funding_requests")
-    .update({ onramp_session_id: onramp.sessionId })
-    .eq("id", fundingRequest.id)
-    .select()
-    .single();
-
-  if (updateError) {
-    return res.status(500).json({ error: updateError.message });
+  let updated;
+  try {
+    updated = await fundingDb.updateSession(fundingRequest.id, onramp.sessionId);
+  } catch (updateError) {
+    return res.status(500).json({ error: (updateError as Error).message });
+  }
+  if (!updated) {
+    return res.status(500).json({ error: "Funding request disappeared during session creation" });
   }
 
   return res.status(201).json({
@@ -133,16 +188,11 @@ fundingRouter.get("/:id", requireAuth, async (req, res) => {
     return res.status(400).json({ error: "id must be a valid UUID" });
   }
 
-  const { data, error } = await supabase
-    .from("funding_requests")
-    .select(
-      "id, sender_id, amount_eur, amount_usdc, status, onramp_session_id, onramp_reference, failure_reason, created_at"
-    )
-    .eq("id", id)
-    .maybeSingle();
-
-  if (error) {
-    return res.status(500).json({ error: error.message });
+  let data;
+  try {
+    data = await fundingDb.getById(id);
+  } catch (error) {
+    return res.status(500).json({ error: (error as Error).message });
   }
 
   if (!data) {

@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { getMarketRate } from "../lib/transak";
+import { getMarketRate } from "../lib/rates";
 
 export const rateRouter = Router();
 

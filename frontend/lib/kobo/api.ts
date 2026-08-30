@@ -30,10 +30,17 @@ export const STATUS_LABEL: Record<TransferStatus, string> = {
   failed: "Transfer failed",
 };
 
+// Phase 1 (backend) added three reserved statuses for non-instant rails
+// (SEPA/Stripe) that no current UI path can ever produce — no rail exists
+// yet to create them. Labels included so this Record stays exhaustive against
+// FundingStatus without a runtime fallback string scattered elsewhere.
 export const FUNDING_STATUS_LABEL: Record<FundingStatus, string> = {
   pending: "Adding funds",
   confirmed: "Added",
   failed: "Couldn't add funds",
+  awaiting_reconciliation: "Waiting for bank transfer",
+  manual_review: "Under review",
+  payout_pending: "Payout in progress",
 };
 
 /** `Authorization: Bearer <token>` for a protected endpoint, or `{}` if there's no valid session (the request will then 401, same as today with no session at all). */
@@ -402,6 +409,9 @@ async function mockCreateFunding(
     amount_eur: req.amount_eur,
     amount_usdc,
     status: "pending",
+    // Mock mode has no real ONRAMP_PROVIDER to resolve against — "moonpay"
+    // matches the real backend's own default when rail is omitted.
+    rail: req.rail ?? "moonpay",
     onramp_session_id: id,
     onramp_reference: null,
     failure_reason: null,
