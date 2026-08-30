@@ -30,7 +30,7 @@ export function LandingHeader() {
           </a>
         </div>
 
-        <CtaButton href="/" variant="ghost">
+        <CtaButton href="/?auth=login" variant="ghost">
           Log in
         </CtaButton>
       </div>

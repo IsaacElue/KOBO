@@ -6,9 +6,13 @@ import { cn } from "@/lib/utils";
  *  - solid   forest-green gradient, cream text — the primary button
  *  - ghost   hairline border, ink text — the nav "Log in"
  *  - inverse cream fill, forest text — for use on the dark final-CTA band
+ *
+ * `href` defaults to "/?auth=signup" — the app root reads the `?auth=` intent
+ * (see AuthGate) and opens the sign-up form instead of bouncing back to the
+ * landing page. Pass "/?auth=login" for a log-in CTA.
  */
 export function CtaButton({
-  href = "/",
+  href = "/?auth=signup",
   children = "Start sending",
   variant = "solid",
   className,

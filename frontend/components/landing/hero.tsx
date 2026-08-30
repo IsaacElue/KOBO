@@ -79,7 +79,7 @@ export function Hero() {
       </p>
 
       <div data-hero-fade className="mt-8 flex justify-center">
-        <CtaButton href="/">Start sending</CtaButton>
+        <CtaButton href="/?auth=signup">Start sending</CtaButton>
       </div>
 
       <div data-hero-fade className="mt-16 sm:mt-20">
