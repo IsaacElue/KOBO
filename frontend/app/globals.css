@@ -214,9 +214,13 @@
   -webkit-font-smoothing: antialiased;
 }
 
+/* Selection: a light brand-green wash, not a solid fill. Must stay
+   translucent and leave the text its own colour, or selecting any run
+   (drag, ⌘A, find-on-page, or GSAP SplitText re-splitting the headline
+   on font load) paints an opaque block that reads as a render bug. */
 .landing-root ::selection {
-  background: var(--landing-green);
-  color: #ffffff;
+  background: rgba(30, 155, 118, 0.24);
+  color: inherit;
 }
 
 /* Headline line-clip for the word-rise intro (GSAP SplitText) */

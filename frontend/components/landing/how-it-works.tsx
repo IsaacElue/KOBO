@@ -87,22 +87,24 @@ function SendBand() {
 
 function ArriveBand() {
   return (
-    <section className="relative overflow-hidden px-6 py-28 text-landing-on-dark sm:px-12 sm:py-[150px]">
+    <section
+      className="relative overflow-hidden px-6 py-28 text-landing-on-dark sm:px-12 sm:py-[150px]"
+      style={{
+        background:
+          "radial-gradient(circle at 20% 20%, #0F5951 0%, #073F3C 55%, #04231F 100%)",
+      }}
+    >
+      {/* accent glow — a plain overlay, not a negative-z layer: with no
+         stacking context on .landing-root a -z-10 child paints behind the
+         page's cream background and the whole dark band disappears. */}
       <div
-        className="absolute inset-0 -z-10"
-        style={{
-          background:
-            "radial-gradient(circle at 20% 20%, #0F5951 0%, #073F3C 55%, #04231F 100%)",
-        }}
-      />
-      <div
-        className="absolute inset-0 -z-10"
+        className="pointer-events-none absolute inset-0"
         style={{
           background:
             "radial-gradient(circle at 82% 70%, rgba(30,155,118,.35), transparent 55%)",
         }}
       />
-      <div className="mx-auto grid max-w-[1200px] items-center gap-14 md:grid-cols-[1.1fr_1fr] md:gap-20">
+      <div className="relative z-10 mx-auto grid max-w-[1200px] items-center gap-14 md:grid-cols-[1.1fr_1fr] md:gap-20">
         <Reveal>
           <Eyebrow className="text-landing-on-dark/55">SETTLES ON SOLANA</Eyebrow>
           <h2 className="mt-4 text-[clamp(2rem,4.4vw,3rem)] font-bold leading-[1.08] tracking-[-0.03em]">
