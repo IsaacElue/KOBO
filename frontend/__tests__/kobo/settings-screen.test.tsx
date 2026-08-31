@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 import { screen, within } from "@testing-library/react";
-import { renderKoboApp } from "./test-utils";
+import { renderKoboApp, sidebarNavButton } from "./test-utils";
 
 /** Open Settings and wait for the real profile to have loaded (member-since only renders then). */
 async function openSettings() {
@@ -120,7 +120,7 @@ describe("Settings — preferences", () => {
     await user.click(screen.getByRole("button", { name: "GBP", pressed: false }));
     expect(screen.getByRole("button", { name: "GBP" })).toHaveAttribute("aria-pressed", "true");
 
-    await user.click(screen.getByRole("button", { name: "Send money" }));
+    await user.click(sidebarNavButton("Send money"));
     expect(await screen.findByRole("heading", { name: /send money home/i })).toBeInTheDocument();
     expect(screen.getByLabelText("Send currency")).toHaveTextContent("GBP");
   });
