@@ -164,14 +164,16 @@ export function SettingsScreen({
 
           <SettingsCard>
             <SectionLabel>SENDING DEFAULTS</SectionLabel>
-            <div className="flex items-center justify-between gap-5 border-b border-kobo-ink/[0.05] py-[18px]">
+            {/* Stacks on phones: the 3-pill group is `shrink-0`, so side-by-side
+                it crushed the description into ~7 one-word lines below 640px. */}
+            <div className="flex flex-col gap-3 border-b border-kobo-ink/[0.05] py-[18px] sm:flex-row sm:items-center sm:justify-between sm:gap-5">
               <div className="min-w-0">
                 <div className="text-[15.5px] font-medium text-kobo-ink">Default currency</div>
                 <div className="mt-1 text-[13.5px] text-[#6E8A91]">
                   Used for new transfers and rate alerts.
                 </div>
               </div>
-              <div className="flex shrink-0 gap-1.5">
+              <div className="flex gap-1.5 sm:shrink-0">
                 {CURRENCY_OPTIONS.map((code) => {
                   const active = code === defaultCurrency;
                   return (

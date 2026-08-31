@@ -270,7 +270,9 @@ function SendingStats({ transfers, loading }: { transfers: ActivityTransfer[] | 
   return (
     <section>
       <Eyebrow>Your sending</Eyebrow>
-      <div className="grid grid-cols-3 gap-3">
+      {/* 3-up on tablet+; stacked on phones — a currency figure won't fit a
+          ~56px tile at 360px (it clipped "€395.00" to "€395.0"). */}
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
         <StatTile label="Transfers completed" value={show(String(stats.count))} />
         <StatTile label="Sent all-time" value={show(`€${formatAmount(stats.totalEur)}`)} />
         <StatTile label={stats.people === 1 ? "Person reached" : "People reached"} value={show(String(stats.people))} />

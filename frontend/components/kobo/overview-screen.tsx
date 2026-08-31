@@ -175,13 +175,16 @@ export function OverviewScreen({
             )}
           </div>
 
-          <div className="mt-6 grid h-[170px] grid-cols-6 items-end gap-3.5">
+          <div className="mt-6 grid h-[170px] grid-cols-6 items-end gap-2 sm:gap-3.5">
             {stats.buckets.map((b, i) => {
               const last = i === stats.buckets.length - 1;
               const h = loading ? 8 : Math.round((b.total / peakBar) * 100);
               return (
                 <div key={b.key} className="flex flex-col items-center justify-end gap-2.5">
-                  <div className="font-mono text-[11.5px] text-[#7B959B]">
+                  {/* Per-bar € label needs ~40px; a column is ~31px at 360px, so
+                      it's tablet+ only. Bar heights + the headline total carry it
+                      on phones. */}
+                  <div className="hidden font-mono text-[11.5px] text-[#7B959B] sm:block">
                     {loading || b.total === 0 ? "—" : `€${Math.round(b.total)}`}
                   </div>
                   <div className="flex h-[120px] w-full items-end">
