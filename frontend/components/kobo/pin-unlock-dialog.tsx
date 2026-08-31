@@ -50,7 +50,7 @@ export function PinUnlockDialog({
       if (ok) {
         onUnlocked();
       } else {
-        setError("Incorrect PIN — try again.");
+        setError("Incorrect PIN. Try again.");
         setCode("");
       }
     } finally {

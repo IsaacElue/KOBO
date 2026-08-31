@@ -236,8 +236,8 @@ export function OverviewScreen({
             </div>
             <div className="mt-2.5 font-mono text-[21px]">1 EUR ≈ {rate} USDC</div>
             <p className="mt-2.5 mb-4.5 text-[13.5px] leading-relaxed text-kobo-mint-light/70">
-              Live market rate. It locks for 30 seconds once you start a transfer — no spread added
-              after that.
+              Live market rate. It locks for 30 seconds once you start a transfer, with no spread
+              added after that.
             </p>
             <Button
               onClick={onStartSend}

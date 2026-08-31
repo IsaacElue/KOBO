@@ -55,7 +55,7 @@ function SendBand() {
         </h2>
         <p className="mt-5 max-w-[460px] text-pretty text-[17px] leading-[1.6] text-landing-body">
           Pay in with SEPA Instant straight from your Irish bank. No wire forms,
-          no branch visits — just an amount and a name.
+          no branch visits. Just an amount and a name.
         </p>
       </Reveal>
 
@@ -74,7 +74,7 @@ function SendBand() {
             </svg>
           </div>
           <div className="flex items-center justify-between pt-1.5">
-            <span className="text-[14px] text-[#7b6a45]">Ngozi receives</span>
+            <span className="text-[14px] text-[#7b6a45]">Your recipient receives</span>
             <span className="text-[32px] font-bold tracking-[-0.02em] text-landing-mint-dark tabular-nums sm:text-[40px]">
               539.20 USDC
             </span>
@@ -111,9 +111,9 @@ function ArriveBand() {
             Arrives before the kettle boils.
           </h2>
           <p className="mt-5 max-w-[460px] text-pretty text-[17px] leading-[1.6] text-landing-on-dark/70">
-            Kobo settles every transfer on Solana — sub-second finality,
-            fractions of a cent in fees, and a record that&apos;s yours to
-            verify.
+            Kobo sends every transfer over Solana. It lands in about a second,
+            costs a fraction of a cent, and leaves a record you can check
+            yourself.
           </p>
         </Reveal>
 
@@ -152,27 +152,27 @@ function HoldBand() {
           Not every naira should rush to be spent.
         </h2>
         <p className="mt-5 max-w-[460px] text-pretty text-[17px] leading-[1.6] text-landing-body">
-          Most apps force an instant conversion, at whatever rate that hour
-          brings. Kobo delivers dollars that hold their value — she converts when
-          the rate, and the need, are right.
+          Most apps convert to naira right away, at whatever rate that hour
+          brings. Kobo delivers dollars that keep their value, so your recipient
+          can convert when the rate is good and the money is needed.
         </p>
       </Reveal>
 
       <Reveal delay={0.08}>
         <div className="rounded-[32px] bg-landing-surface p-9 shadow-[0_40px_80px_-50px_rgba(11,31,36,0.35)] sm:p-11">
           <div className="text-[13.5px] font-semibold tracking-[0.04em] text-landing-label">
-            NGOZI&apos;S BALANCE
+            YOUR RECIPIENT&apos;S BALANCE
           </div>
           <div className="mt-3.5 text-[44px] font-bold tracking-[-0.03em] tabular-nums">
             539.20{" "}
             <span className="text-[22px] font-medium text-landing-label">USDC</span>
           </div>
           <div className="mt-2 text-[14.5px] text-landing-muted">
-            ≈ ₦862,720 today, if she needed it
+            ≈ ₦862,720 today, if they needed it
           </div>
           <div className="mt-6 flex gap-2.5">
             <MiniStat k="Hold" v="Stays in USDC" />
-            <MiniStat k="Convert" v="Her call, any day" />
+            <MiniStat k="Convert" v="Their call, any day" />
           </div>
         </div>
       </Reveal>

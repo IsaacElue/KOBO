@@ -142,7 +142,7 @@ function MarketCard() {
           <div className="flex items-center gap-3 py-2">
             <TrendingUp className="size-[18px] text-[#9BB2B8]" strokeWidth={1.8} />
             <p className="text-[14px] text-[#7B959B]">
-              Market data is unavailable right now — try again in a minute.
+              Market data is unavailable right now. Try again in a minute.
             </p>
           </div>
         ) : (
@@ -327,7 +327,7 @@ function TransferHistory({
           </div>
         ) : transfers.length === 0 ? (
           <p className="py-6 text-center text-[14px] text-[#8AA3A9]">
-            No transfers yet — your history will show up here.
+            No transfers yet. Your history will show up here.
           </p>
         ) : (
           <div className="flex flex-col">

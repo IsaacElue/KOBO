@@ -74,8 +74,8 @@ export function Hero() {
         data-hero-fade
         className="mx-auto mt-6 max-w-[560px] text-pretty text-[18px] leading-[1.5] text-landing-body sm:text-[19px]"
       >
-        Send euros from Ireland to family in Nigeria as USDC — settled on Solana
-        in seconds, and held safely until they choose to convert it.
+        Send euros from Ireland to family in Nigeria as USDC. It settles on
+        Solana in seconds, and is held safely until they choose to convert it.
       </p>
 
       <div data-hero-fade className="mt-8 flex justify-center">

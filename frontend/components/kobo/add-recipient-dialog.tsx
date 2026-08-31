@@ -68,7 +68,7 @@ export function AddRecipientDialog({
       reset();
       onOpenChange(false);
     } catch {
-      toast.error("Couldn't add recipient — please try again.");
+      toast.error("Couldn't add recipient. Please try again.");
     } finally {
       setSubmitting(false);
     }

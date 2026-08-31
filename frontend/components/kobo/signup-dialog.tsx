@@ -57,7 +57,7 @@ export function SignupDialog({
       });
       onSuccess(auth);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Couldn't create your account — please try again.");
+      setError(err instanceof Error ? err.message : "Couldn't create your account. Please try again.");
     } finally {
       setSubmitting(false);
     }
@@ -75,7 +75,7 @@ export function SignupDialog({
             Let&apos;s get you sending.
           </DialogTitle>
           <DialogDescription className="mt-2 text-center text-[15.5px] leading-relaxed text-[#5E7A81]">
-            An account takes a minute — we&apos;ll use this to keep it secure.
+            An account takes a minute, and we&apos;ll use this to keep it secure.
           </DialogDescription>
 
           <div className="mt-6 flex flex-col gap-3.5">

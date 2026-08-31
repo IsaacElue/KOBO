@@ -118,7 +118,7 @@ function TransferReturn() {
           </div>
           <p className="mt-2 text-[14.5px] text-[#5E7A81]">
             Reference <span className="font-mono text-kobo-ink">{transferId}</span>. We couldn&apos;t
-            find this checkout on this device — check Activity for the latest status.
+            find this checkout on this device. Check Activity for the latest status.
           </p>
           <Button
             render={<Link href="/?onramp=activity" />}

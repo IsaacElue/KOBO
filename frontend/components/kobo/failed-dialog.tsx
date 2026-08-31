@@ -38,7 +38,7 @@ export function FailedDialog({
             Transfer failed
           </div>
           <div className="mt-2 text-[15px] text-[#5E7A81]">
-            No funds were moved — your balance is unaffected.
+            No funds were moved. Your balance is unaffected.
           </div>
         </div>
 

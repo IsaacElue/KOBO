@@ -54,7 +54,7 @@ export function PinSetupDialog({ onDone }: { onDone: () => void }) {
     }
 
     if (next !== firstPin) {
-      resetToCreate("PINs didn't match — let's try again.");
+      resetToCreate("PINs didn't match. Let's try again.");
       return;
     }
     void submit(next);
@@ -66,7 +66,7 @@ export function PinSetupDialog({ onDone }: { onDone: () => void }) {
       await setPin(pin);
       onDone();
     } catch (err) {
-      resetToCreate(err instanceof Error ? err.message : "Couldn't set your PIN — please try again.");
+      resetToCreate(err instanceof Error ? err.message : "Couldn't set your PIN. Please try again.");
     } finally {
       setSubmitting(false);
     }
@@ -83,7 +83,7 @@ export function PinSetupDialog({ onDone }: { onDone: () => void }) {
         </DialogTitle>
         <DialogDescription className="mt-2 text-[14.5px] leading-relaxed text-kobo-mint-light/62">
           {stage === "create"
-            ? "A quick 4-digit PIN to unlock Kobo next time — you'll still need your email and password to sign in on a new device."
+            ? "A quick 4-digit PIN to unlock Kobo next time. You'll still need your email and password to sign in on a new device."
             : "Enter it once more to confirm."}
         </DialogDescription>
 

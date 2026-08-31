@@ -45,7 +45,7 @@ export function RedirectHandoff({
           Continuing to {partnerName}
         </div>
         <p className="mt-2 max-w-sm text-[14.5px] text-[#5E7A81]">
-          Your payment details are handled directly by {partnerName}, our licensed on-ramp partner —
+          Your payment details are handled directly by {partnerName}, our licensed on-ramp partner.
           Kobo never sees them.
         </p>
       </div>
@@ -54,7 +54,7 @@ export function RedirectHandoff({
           href={widgetUrl}
           className="text-sm font-medium text-kobo-teal-600 underline underline-offset-4 hover:text-kobo-teal-800"
         >
-          Taking a while — continue to {partnerName}
+          Taking a while? Continue to {partnerName}
         </a>
       )}
     </div>

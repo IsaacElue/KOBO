@@ -12,11 +12,11 @@ const spaceGrotesk = Space_Grotesk({
 });
 
 export const metadata: Metadata = {
-  title: "Kobo — euro in, USDC out, on Solana",
+  title: "Kobo: euro in, USDC out, on Solana",
   description:
-    "Send euros from Ireland to family in Nigeria as USDC — settled on Solana in seconds, and held safely until they choose to convert it.",
+    "Send euros from Ireland to family in Nigeria as USDC. It settles on Solana in seconds, and is held safely until they choose to convert it.",
   openGraph: {
-    title: "Kobo — euro in, USDC out, on Solana",
+    title: "Kobo: euro in, USDC out, on Solana",
     description:
       "Euros from Ireland, digital dollars in Nigeria. Settled on Solana in seconds.",
     type: "website",

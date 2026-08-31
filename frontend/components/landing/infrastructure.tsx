@@ -36,7 +36,7 @@ export function Infrastructure() {
         <Reveal delay={0.1}>
           <p className="mx-auto mt-7 max-w-[48ch] text-[17px] leading-relaxed text-landing-mist">
             Solana confirms a transfer in seconds and costs a fraction of a cent
-            to use. That isn&apos;t a marketing detail — it&apos;s the reason a
+            to use. That isn&apos;t a marketing detail. It&apos;s the reason a
             two-minute, low-fee transfer from Dublin to Lagos is possible at all.
             The money doesn&apos;t sit in a correspondent bank for three days. It
             arrives on-chain, and it&apos;s final.
