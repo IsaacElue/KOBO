@@ -4,33 +4,30 @@ import { renderKoboApp, confirmSend } from "./test-utils";
 import { formatAmount } from "@/lib/kobo/format";
 
 describe("processing → success", () => {
-  test("advances through the status labels in order, then renders success", async () => {
+  test("runs the 3-step processing checklist, then renders success", async () => {
     const { user } = await renderKoboApp();
     await confirmSend(user);
 
     const status = await screen.findByRole("status", {}, { timeout: 2000 });
-    expect(status).toHaveTextContent(/securing your transfer/i);
+    expect(status).toHaveTextContent(/securing your transaction/i);
+    expect(status).toHaveTextContent(/applying your protected rate/i);
+    expect(status).toHaveTextContent(/broadcasting on-chain/i);
 
-    expect(
-      await screen.findByText(/converting eur to usdc/i, {}, { timeout: 2000 })
-    ).toBeInTheDocument();
-    expect(
-      await screen.findByText(/confirming on solana/i, {}, { timeout: 2000 })
-    ).toBeInTheDocument();
-
-    const success = await screen.findByRole("dialog", { name: /sent to adaeze/i }, { timeout: 2000 });
+    const success = await screen.findByRole("dialog", { name: /sent to adaeze/i }, { timeout: 5000 });
     expect(success).toBeInTheDocument();
   });
 
   test("the receipt shows recipient, reference, rate and fee derived from real math", async () => {
     const { user } = await renderKoboApp();
 
-    // €250 is the default amount; capture the live rate off the summary panel before confirming.
-    const rateText = screen.getByText(/^1 EUR ≈/).textContent!;
+    // €250 is the default amount; capture the exact 4dp rate off the header
+    // ticker before confirming (the summary panel's top line is a coarse 2dp
+    // "about" figure now).
+    const rateText = screen.getByText(/^1 EUR = /).textContent!;
     const rate = parseFloat(rateText.match(/([\d.]+) USDC/)![1]);
 
     await confirmSend(user);
-    const success = await screen.findByRole("dialog", { name: /sent to adaeze/i }, { timeout: 4000 });
+    const success = await screen.findByRole("dialog", { name: /sent to adaeze/i }, { timeout: 6000 });
 
     const expectedFee = 250 * 0.0053;
     const expectedReceive = (250 - expectedFee) * rate;
@@ -47,7 +44,7 @@ describe("processing → success", () => {
   test("Done resets to the form", async () => {
     const { user } = await renderKoboApp();
     await confirmSend(user);
-    const success = await screen.findByRole("dialog", { name: /sent to adaeze/i }, { timeout: 4000 });
+    const success = await screen.findByRole("dialog", { name: /sent to adaeze/i }, { timeout: 6000 });
 
     await user.click(within(success).getByRole("button", { name: /^done$/i }));
 
@@ -58,7 +55,7 @@ describe("processing → success", () => {
   test("Download receipt closes the dialog and shows a toast", async () => {
     const { user } = await renderKoboApp();
     await confirmSend(user);
-    const success = await screen.findByRole("dialog", { name: /sent to adaeze/i }, { timeout: 4000 });
+    const success = await screen.findByRole("dialog", { name: /sent to adaeze/i }, { timeout: 6000 });
 
     await user.click(within(success).getByRole("button", { name: /download receipt/i }));
 

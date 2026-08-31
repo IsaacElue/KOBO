@@ -11,9 +11,10 @@ import { RecipientPicker } from "@/components/kobo/recipient-picker";
 import { RecentTransfers } from "@/components/kobo/recent-transfers";
 import { TransferSummaryPanel } from "@/components/kobo/transfer-summary-panel";
 import { PasscodeDialog } from "@/components/kobo/passcode-dialog";
-import { SendConfirmationDialog } from "@/components/kobo/send-confirmation-dialog";
+import { UndoGraceDialog } from "@/components/kobo/undo-grace-dialog";
 import { AddFundsDialog } from "@/components/kobo/add-funds-dialog";
 import { ProcessingOverlay } from "@/components/kobo/processing-overlay";
+import { ProcessingChecklist, SEND_PROCESSING_STEPS } from "@/components/kobo/processing-checklist";
 import { SuccessDialog } from "@/components/kobo/success-dialog";
 import { FailedDialog } from "@/components/kobo/failed-dialog";
 import { AddRecipientDialog } from "@/components/kobo/add-recipient-dialog";
@@ -55,10 +56,11 @@ import {
   pollFundingStatus,
   pollTransferStatus,
   FUNDING_STATUS_LABEL,
-  STATUS_LABEL,
   type ApiError,
 } from "@/lib/kobo/api";
 import { formatAmount, nameToInitials } from "@/lib/kobo/format";
+import { buildHabitSummary } from "@/lib/kobo/habit";
+import { loadDefaultCurrency, saveDefaultCurrency } from "@/lib/kobo/preferences";
 import { clearOnrampDraft, loadOnrampDraft } from "@/lib/kobo/onramp-draft";
 import { preferRedirectOnramp, type TransakBridgeEvent } from "@/lib/kobo/onramp-transak";
 import {
@@ -79,7 +81,7 @@ import type {
   TransferStatus,
 } from "@/lib/kobo/types";
 
-type Step = "form" | "passcode" | "confirm" | "processing" | "success" | "failed";
+type Step = "form" | "passcode" | "undo" | "processing" | "success" | "failed";
 type FundingStep = "closed" | "amount" | "onramp" | "processing";
 
 const RATE_LOCK_SECONDS = 30;
@@ -99,6 +101,8 @@ function draftRecipient(recipientId: string, snapshot: { name: string; initials:
 export function KoboApp({
   authUser = CURRENT_USER,
   onLogout,
+  undoGraceSeconds = 5,
+  processingStepMs = 900,
 }: {
   /**
    * The signed-in sender — real (`AuthUser` from `POST /auth/signup`/`login`,
@@ -110,7 +114,18 @@ export function KoboApp({
   authUser?: { id: string; name: string };
   /** Omitted in mock mode (AuthGate never renders a real auth shell around mock mode), present in real mode. */
   onLogout?: () => void;
+  /**
+   * Length of the post-passcode undo grace window. Default 5s (the product spec);
+   * tests pass 0 to run straight through to processing without a real wait.
+   */
+  undoGraceSeconds?: number;
+  /**
+   * Per-step cadence of the processing checklist, which also sets the minimum
+   * time it stays up. Default 900ms (the design handoff); tests shrink it.
+   */
+  processingStepMs?: number;
 } = {}) {
+  const minProcessingMs = SEND_PROCESSING_STEPS.length * processingStepMs;
   const router = useRouter();
   const searchParams = useSearchParams();
 
@@ -127,7 +142,9 @@ export function KoboApp({
     }
     return RECIPIENTS;
   });
-  const [currency, setCurrency] = useState<CurrencyCode>(() => loadOnrampDraft()?.currency ?? "EUR");
+  const [currency, setCurrency] = useState<CurrencyCode>(
+    () => loadOnrampDraft()?.currency ?? loadDefaultCurrency() ?? "EUR"
+  );
   const [amount, setAmount] = useState(() => loadOnrampDraft()?.amount ?? "250");
   const [recipientId, setRecipientId] = useState(() => loadOnrampDraft()?.recipientId ?? RECIPIENTS[0].id);
   const [rate, setRate] = useState(randomRate("EUR"));
@@ -136,8 +153,7 @@ export function KoboApp({
 
   const [step, setStep] = useState<Step>("form");
   const [code, setCode] = useState("");
-  const [transferStatus, setTransferStatus] = useState<TransferStatus>("pending");
-  const [transferId, setTransferId] = useState("");
+  const [undoSecs, setUndoSecs] = useState(undoGraceSeconds);
   const [reference, setReference] = useState("");
   const [failureReason, setFailureReason] = useState<string | null>(null);
 
@@ -327,52 +343,7 @@ export function KoboApp({
     setStep("form");
   }
 
-  function onKeyPress(key: string) {
-    if (!key) return;
-    if (key === "⌫") {
-      setCode((c) => c.slice(0, -1));
-      return;
-    }
-    const next = (code + key).slice(0, 4);
-    setCode(next);
-    if (next.length === 4) {
-      setTimeout(() => setStep("confirm"), 220);
-    }
-  }
-
-  // Sending is now instant (balance-checked, no Transak session) — confirm here,
-  // then poll GET /transfers/:id for real status, same pattern as before.
-  async function handleSendConfirm() {
-    setStep("processing");
-    setTransferStatus("pending");
-    setFailureReason(null);
-
-    try {
-      const res = await createTransfer({
-        sender_id: authUser.id,
-        recipient_id: recipient.id,
-        amount_eur: amt * currencyMeta.eurRate,
-      });
-      // onramp_reference is always null for an instant-send transfer (it never
-      // touches Transak) — falls back to the transfer's real id, same as before.
-      const ref = res.onramp_reference || res.id;
-      setTransferId(res.id);
-      setReference(ref);
-      settleFromTransfer(res.status, res.id, res.failure_reason);
-    } catch (err) {
-      const apiErr = err as ApiError;
-      setStep("form");
-      if (apiErr.code === "INSUFFICIENT_BALANCE") {
-        toast.error("Not enough balance. Add funds first.");
-        openAddFunds();
-      } else {
-        toast.error("Couldn't send. Please try again.");
-      }
-    }
-  }
-
   function settleFromTransfer(status: TransferStatus, id: string, failure_reason: string | null) {
-    setTransferStatus(status);
     if (status === "confirmed") {
       setStep("success");
       refreshBalance();
@@ -384,7 +355,6 @@ export function KoboApp({
       // 'pending' (shouldn't happen post-response) or 'sent' (confirmation
       // timed out, not a failure) — keep polling for the real terminal status.
       pollTransferStatus(id, (transfer) => {
-        setTransferStatus(transfer.status);
         if (transfer.status === "confirmed") {
           setStep("success");
           refreshBalance();
@@ -396,6 +366,95 @@ export function KoboApp({
       });
     }
   }
+
+  // Sending is now instant (balance-checked, no Transak session) — fire here,
+  // then poll GET /transfers/:id for real status, same pattern as before. The
+  // 3-step processing checklist is on screen throughout; `holdThenRun` keeps it
+  // up for at least MIN_PROCESSING_MS so it plays out rather than flashing when
+  // the request returns fast (mock mode, or a very quick confirm).
+  async function handleSendConfirm() {
+    setStep("processing");
+    setFailureReason(null);
+
+    const startedAt = Date.now();
+    const holdThenRun = (fn: () => void) => {
+      const wait = Math.max(0, minProcessingMs - (Date.now() - startedAt));
+      if (wait === 0) fn();
+      else setTimeout(fn, wait);
+    };
+
+    try {
+      const res = await createTransfer({
+        sender_id: authUser.id,
+        recipient_id: recipient.id,
+        amount_eur: amt * currencyMeta.eurRate,
+      });
+      // onramp_reference is always null for an instant-send transfer (it never
+      // touches Transak) — falls back to the transfer's real id, same as before.
+      const ref = res.onramp_reference || res.id;
+      setReference(ref);
+      holdThenRun(() => settleFromTransfer(res.status, res.id, res.failure_reason));
+    } catch (err) {
+      const apiErr = err as ApiError;
+      holdThenRun(() => {
+        setStep("form");
+        if (apiErr.code === "INSUFFICIENT_BALANCE") {
+          toast.error("Not enough balance. Add funds first.");
+          openAddFunds();
+        } else {
+          toast.error("Couldn't send. Please try again.");
+        }
+      });
+    }
+  }
+
+  /** The undo grace window elapsed uncancelled — the transfer is now really sent. */
+  function proceedFromUndo() {
+    setStep("processing");
+    void handleSendConfirm();
+  }
+
+  function cancelUndo() {
+    setStep("form");
+    setCode("");
+    setUndoSecs(undoGraceSeconds);
+    toast("Cancelled. Nothing left your account.");
+  }
+
+  function onKeyPress(key: string) {
+    if (!key) return;
+    if (key === "⌫") {
+      setCode((c) => c.slice(0, -1));
+      return;
+    }
+    const next = (code + key).slice(0, 4);
+    setCode(next);
+    if (next.length === 4) {
+      setTimeout(() => {
+        if (undoGraceSeconds > 0) {
+          setUndoSecs(undoGraceSeconds);
+          setStep("undo");
+        } else {
+          proceedFromUndo();
+        }
+      }, 220);
+    }
+  }
+
+  // Undo countdown: one tick per second while the grace window is open; hitting
+  // zero broadcasts. Nothing has been sent up to this point, so a cancel here
+  // genuinely stops it.
+  useEffect(() => {
+    if (step !== "undo") return;
+    if (undoSecs <= 0) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- fires the real send once the grace window elapses; terminal, not a render loop
+      proceedFromUndo();
+      return;
+    }
+    const t = setTimeout(() => setUndoSecs((s) => s - 1), 1000);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [step, undoSecs]);
 
   async function handleAddFundsSubmit(amountEur: number) {
     setFundingStep("onramp");
@@ -472,6 +531,7 @@ export function KoboApp({
   function reset() {
     setStep("form");
     setCode("");
+    setUndoSecs(undoGraceSeconds);
     setSecsUntilLock(RATE_LOCK_SECONDS);
     setFailureReason(null);
   }
@@ -567,7 +627,17 @@ export function KoboApp({
             onRemove={handleRemoveRecipient}
           />
         ) : navIndex === SETTINGS_INDEX ? (
-          <SettingsScreen authUser={authUser} onLogout={onLogout} />
+          <SettingsScreen
+            authUser={authUser}
+            onLogout={onLogout}
+            defaultCurrency={currency}
+            onDefaultCurrencyChange={(next) => {
+              handleCurrencyChange(next);
+              saveDefaultCurrency(next);
+            }}
+            onGoToHelp={() => setNavIndex(HELP_INDEX)}
+            onManageFunding={openAddFunds}
+          />
         ) : navIndex === OVERVIEW_INDEX ? (
           <OverviewScreen
             userName={authUser.name}
@@ -694,22 +764,18 @@ export function KoboApp({
         onBack={back}
       />
 
-      <SendConfirmationDialog
-        open={step === "confirm"}
-        recipient={recipient}
-        sentStr={sentStr}
-        feeStr={feeStr}
-        receiveStr={receiveStr}
-        onConfirm={handleSendConfirm}
-        onCancel={back}
-      />
-
-      <ProcessingOverlay
-        open={step === "processing"}
-        label={STATUS_LABEL[transferStatus]}
+      <UndoGraceDialog
+        open={step === "undo"}
         sentStr={sentStr}
         firstName={firstName}
+        secondsRemaining={undoSecs}
+        totalSeconds={undoGraceSeconds || 1}
+        onCancel={cancelUndo}
       />
+
+      {step === "processing" && (
+        <ProcessingChecklist sentStr={sentStr} firstName={firstName} stepMs={processingStepMs} />
+      )}
 
       <SuccessDialog
         open={step === "success"}
@@ -721,6 +787,7 @@ export function KoboApp({
         feeStr={feeStr}
         rate={rateStr}
         reference={reference}
+        habit={buildHabitSummary(amt, currencyMeta.symbol)}
         onDone={reset}
         onDownloadReceipt={handleDownloadReceipt}
       />

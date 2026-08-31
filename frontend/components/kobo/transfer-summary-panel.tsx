@@ -26,6 +26,10 @@ export function TransferSummaryPanel({
   disabled?: boolean;
 }) {
   const lockPct = Math.round((secsUntilLock / 30) * 100);
+  // Top line stays deliberately coarse (2dp) so it reads as a stable "about"
+  // rate, not a jittery precise figure; the exact 4dp rate lives in the
+  // "Converted at" breakdown row below.
+  const approxRate = Number.isFinite(Number(rate)) ? Number(rate).toFixed(2) : rate;
 
   return (
     <Card className="sticky top-0 gap-0 rounded-[30px] border border-white/95 bg-gradient-to-br from-white/92 to-[#EEF5F6]/78 p-7 shadow-[0_34px_66px_-46px_rgba(11,31,36,0.75)] backdrop-blur-xl ring-0">
@@ -36,7 +40,7 @@ export function TransferSummaryPanel({
         </span>
         <div className="min-w-0 flex-1">
           <div className="font-mono text-[13.5px] text-kobo-ink">
-            1 {currencyCode} ≈ {rate} USDC
+            1 {currencyCode} ≈ {approxRate} USDC
           </div>
           <div className="mt-2 h-[3px] overflow-hidden rounded-full bg-kobo-ink/[0.08]">
             <div
@@ -46,7 +50,7 @@ export function TransferSummaryPanel({
           </div>
         </div>
         <span className="whitespace-nowrap text-[12.5px] text-[#7B959B]">
-          Locks in {secsUntilLock}s
+          Rate held · refreshes in {secsUntilLock}s
         </span>
       </div>
 

@@ -3,12 +3,22 @@ import userEvent from "@testing-library/user-event";
 import { KoboApp } from "@/components/kobo/kobo-app";
 import { Toaster } from "@/components/ui/sonner";
 
-/** Renders the full app (with Toaster mounted) and waits past the loading skeleton. */
-export async function renderKoboApp() {
+/**
+ * Renders the full app (with Toaster mounted) and waits past the loading
+ * skeleton. `undoGraceSeconds` defaults to 0 here so `confirmSend` runs straight
+ * through the post-passcode undo window without a real wait; pass a positive
+ * value to exercise that window.
+ */
+export async function renderKoboApp(
+  opts: { undoGraceSeconds?: number; processingStepMs?: number } = {}
+) {
   const user = userEvent.setup();
   const utils = render(
     <>
-      <KoboApp />
+      <KoboApp
+        undoGraceSeconds={opts.undoGraceSeconds ?? 0}
+        processingStepMs={opts.processingStepMs ?? 20}
+      />
       <Toaster />
     </>
   );
@@ -17,12 +27,11 @@ export async function renderKoboApp() {
 }
 
 /**
- * Confirm & Continue -> passcode -> the in-app confirmation dialog (real
- * instant-send path, no Transak checkout). Stops right after entering the
- * passcode, before the confirmation dialog's own Confirm click, so callers
- * that need to assert on the confirmation step itself can do so first.
+ * Confirm & Continue -> passcode -> 4 digits. With the default `undoGraceSeconds:
+ * 0` from `renderKoboApp`, entering the fourth digit advances straight to the
+ * processing checklist (the real instant-send path, no Transak checkout).
  */
-export async function openPasscodeThenConfirmDialog(
+export async function confirmSend(
   user: ReturnType<typeof import("@testing-library/user-event").default.setup>
 ) {
   await user.click(screen.getByRole("button", { name: /confirm & continue/i }));
@@ -30,15 +39,6 @@ export async function openPasscodeThenConfirmDialog(
   for (const d of ["1", "2", "3", "4"]) {
     await user.click(within(passcodeDialog).getByRole("button", { name: `Digit ${d}` }));
   }
-  return screen.findByRole("dialog", { name: /confirm transfer/i });
-}
-
-/** Goes all the way through to a submitted instant send (passcode + confirmation dialog's Confirm click). */
-export async function confirmSend(
-  user: ReturnType<typeof import("@testing-library/user-event").default.setup>
-) {
-  const confirmDialog = await openPasscodeThenConfirmDialog(user);
-  await user.click(within(confirmDialog).getByRole("button", { name: /^confirm$/i }));
 }
 
 /**
