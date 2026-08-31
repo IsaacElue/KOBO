@@ -134,6 +134,17 @@
   --kobo-mint-dark: #155e4c;
   --kobo-sand: #f6ecd8;
   --kobo-sand-dark: #8a6a2f;
+
+  /* Distance from the viewport bottom that bottom-anchored toasts sit at.
+     Desktop: the plain sonner default. Below lg (1024px) the mobile bottom
+     tab bar occupies ~56px + the safe-area inset, so lift toasts above it. */
+  --kobo-toast-offset-bottom: 24px;
+}
+
+@media (max-width: 1023.98px) {
+  :root {
+    --kobo-toast-offset-bottom: calc(56px + env(safe-area-inset-bottom, 0px) + 12px);
+  }
 }
 
 .dark {

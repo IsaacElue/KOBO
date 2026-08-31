@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Outfit, Geist_Mono } from "next/font/google";
 import { Toaster } from "@/components/ui/sonner";
 import "./globals.css";
@@ -21,6 +21,13 @@ export const metadata: Metadata = {
   description: "Send EUR home as USDC, usually within two minutes.",
 };
 
+// `viewport-fit=cover` so `env(safe-area-inset-*)` resolves to real values on
+// notched iOS / Android gesture-bar devices — the mobile bottom tab bar uses it
+// (components/kobo/bottom-nav.tsx). width/initial-scale are Next's defaults.
+export const viewport: Viewport = {
+  viewportFit: "cover",
+};
+
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html
@@ -29,7 +36,13 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
     >
       <body className="min-h-full flex flex-col">
         {children}
-        <Toaster position="bottom-right" />
+        {/* Bottom offset lifts toasts clear of the mobile bottom tab bar
+            (< 1024px); resolves to the plain 24px on desktop. See globals.css. */}
+        <Toaster
+          position="bottom-right"
+          offset={{ bottom: "var(--kobo-toast-offset-bottom)" }}
+          mobileOffset={{ bottom: "var(--kobo-toast-offset-bottom)" }}
+        />
       </body>
     </html>
   );

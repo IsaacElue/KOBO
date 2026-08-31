@@ -1,9 +1,9 @@
 import { describe, expect, test } from "vitest";
 import { screen, within } from "@testing-library/react";
-import { renderKoboApp } from "./test-utils";
+import { renderKoboApp, sidebarNavButton } from "./test-utils";
 
 async function goToRecipients(user: ReturnType<typeof import("@testing-library/user-event").default.setup>) {
-  await user.click(screen.getByRole("button", { name: "Recipients" }));
+  await user.click(sidebarNavButton("Recipients"));
   return screen.findByRole("heading", { name: "Recipients" });
 }
 

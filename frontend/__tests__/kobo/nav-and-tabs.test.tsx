@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
-import { screen, within } from "@testing-library/react";
-import { renderKoboApp } from "./test-utils";
+import { screen } from "@testing-library/react";
+import { renderKoboApp, sidebarNavButton } from "./test-utils";
 import { NAV_ITEMS } from "@/lib/kobo/nav";
 
 describe("Request tab", () => {
@@ -19,10 +19,9 @@ describe("Request tab", () => {
 describe("nav items", () => {
   test("every nav item now opens a real screen — none show the 'isn't built yet' stub", async () => {
     const { user } = await renderKoboApp();
-    const sidebar = screen.getByRole("navigation");
 
     for (const label of NAV_ITEMS) {
-      await user.click(within(sidebar).getByRole("button", { name: label }));
+      await user.click(sidebarNavButton(label));
       expect(screen.queryByText(/isn't built yet/i)).not.toBeInTheDocument();
     }
   });
@@ -32,7 +31,7 @@ describe("Recipients nav item", () => {
   test("renders the real Recipients screen, not the placeholder", async () => {
     const { user } = await renderKoboApp();
 
-    await user.click(screen.getByRole("button", { name: "Recipients" }));
+    await user.click(sidebarNavButton("Recipients"));
     expect(screen.getByRole("heading", { name: "Recipients" })).toBeInTheDocument();
     expect(screen.queryByText(/isn't built yet/i)).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: /add recipient/i })).toBeInTheDocument();
@@ -43,7 +42,7 @@ describe("Settings nav item", () => {
   test("renders the real Settings screen, not the placeholder", async () => {
     const { user } = await renderKoboApp();
 
-    await user.click(screen.getByRole("button", { name: "Settings" }));
+    await user.click(sidebarNavButton("Settings"));
     expect(await screen.findByRole("heading", { name: "Settings" })).toBeInTheDocument();
     expect(screen.queryByText(/isn't built yet/i)).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: /change passcode/i })).toBeInTheDocument();
@@ -55,7 +54,7 @@ describe("Overview nav item", () => {
   test("renders the real Overview dashboard, not the placeholder", async () => {
     const { user } = await renderKoboApp();
 
-    await user.click(screen.getByRole("button", { name: "Overview" }));
+    await user.click(sidebarNavButton("Overview"));
     expect(
       await screen.findByRole("heading", { name: /welcome back/i })
     ).toBeInTheDocument();
@@ -68,7 +67,7 @@ describe("Overview nav item", () => {
   test("the 'Send money now' rate-watch button takes you to the Send screen", async () => {
     const { user } = await renderKoboApp();
 
-    await user.click(screen.getByRole("button", { name: "Overview" }));
+    await user.click(sidebarNavButton("Overview"));
     await screen.findByRole("heading", { name: /welcome back/i });
     await user.click(screen.getByRole("button", { name: /send money now/i }));
     expect(screen.getByRole("button", { name: /confirm & continue/i })).toBeInTheDocument();
@@ -79,7 +78,7 @@ describe("Activity nav item", () => {
   test("renders the real Activity screen with market + history sections", async () => {
     const { user } = await renderKoboApp();
 
-    await user.click(screen.getByRole("button", { name: "Activity" }));
+    await user.click(sidebarNavButton("Activity"));
     expect(await screen.findByRole("heading", { name: "Activity" })).toBeInTheDocument();
     expect(screen.queryByText(/isn't built yet/i)).not.toBeInTheDocument();
     expect(screen.getByText("Market")).toBeInTheDocument();

@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import { AppSidebar } from "@/components/kobo/app-sidebar";
+import { BottomNav } from "@/components/kobo/bottom-nav";
 import { AppHeader } from "@/components/kobo/app-header";
 import { DashboardSkeleton } from "@/components/kobo/dashboard-skeleton";
 import { SendAmountCard } from "@/components/kobo/send-amount-card";
@@ -598,7 +599,7 @@ export function KoboApp({
     : null;
 
   return (
-    <div className="flex min-h-screen w-full bg-gradient-to-b from-[#DCEDEA] via-kobo-bg to-[#E8F0F1] text-kobo-ink">
+    <div className="flex min-h-screen w-full bg-gradient-to-b from-[#DCEDEA] via-kobo-bg to-[#E8F0F1] pb-[calc(3.5rem+env(safe-area-inset-bottom))] text-kobo-ink lg:pb-0">
       <AppSidebar
         activeIndex={navIndex}
         onSelect={setNavIndex}
@@ -741,6 +742,8 @@ export function KoboApp({
           </div>
         )}
       </main>
+
+      <BottomNav activeIndex={navIndex} onSelect={setNavIndex} />
 
       <AddRecipientDialog
         open={addRecipientOpen}

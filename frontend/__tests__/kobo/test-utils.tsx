@@ -27,6 +27,16 @@ export async function renderKoboApp(
 }
 
 /**
+ * The desktop sidebar's nav button for a given label. Both the sidebar and the
+ * mobile bottom bar carry the same labels; jsdom applies no CSS so both are in
+ * the tree at once, and an unscoped `getByRole("button", { name })` would be
+ * ambiguous. The sidebar is the `<aside>` (role "complementary").
+ */
+export function sidebarNavButton(label: string) {
+  return within(screen.getByRole("complementary")).getByRole("button", { name: label });
+}
+
+/**
  * Confirm & Continue -> passcode -> 4 digits. With the default `undoGraceSeconds:
  * 0` from `renderKoboApp`, entering the fourth digit advances straight to the
  * processing checklist (the real instant-send path, no Transak checkout).

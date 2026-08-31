@@ -29,7 +29,7 @@ export function AppSidebar({
         <span className="text-xl font-semibold tracking-tight text-kobo-ink">Kobo</span>
       </div>
 
-      <nav className="flex flex-col gap-1">
+      <nav aria-label="Primary" className="flex flex-col gap-1">
         {NAV_ITEMS.map((label, i) => (
           <button
             key={label}
