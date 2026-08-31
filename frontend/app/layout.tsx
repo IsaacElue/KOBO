@@ -24,8 +24,13 @@ export const metadata: Metadata = {
 // `viewport-fit=cover` so `env(safe-area-inset-*)` resolves to real values on
 // notched iOS / Android gesture-bar devices — the mobile bottom tab bar uses it
 // (components/kobo/bottom-nav.tsx). width/initial-scale are Next's defaults.
+//
+// `themeColor` tints mobile browser chrome (iOS status bar, Android address bar)
+// with the brand's deep forest green — `--kobo-teal-800` from globals.css, the
+// dark end of every primary gradient in the app.
 export const viewport: Viewport = {
   viewportFit: "cover",
+  themeColor: "#073f3c",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
