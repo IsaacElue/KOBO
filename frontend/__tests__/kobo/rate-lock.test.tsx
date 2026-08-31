@@ -3,8 +3,14 @@ import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { KoboApp } from "@/components/kobo/kobo-app";
 
 function secondsLeft() {
-  const text = screen.getByText(/^Locks in \d+s$/).textContent!;
-  return parseInt(text.match(/(\d+)s/)![1], 10);
+  const text = screen.getByText(/refreshes in \d+s/).textContent!;
+  return parseInt(text.match(/refreshes in (\d+)s/)![1], 10);
+}
+
+// The summary panel's top line is a coarse 2dp "about" rate now; the header
+// carries the exact 4dp figure, which is what we compare across a re-randomise.
+function exactRate() {
+  return screen.getByText(/^1 EUR = /).textContent;
 }
 
 describe("rate lock countdown", () => {
@@ -23,7 +29,7 @@ describe("rate lock countdown", () => {
     });
 
     const start = secondsLeft();
-    const rateBefore = screen.getByText(/^1 EUR ≈/).textContent;
+    const rateBefore = exactRate();
 
     // Advance to just before wraparound: the countdown should keep draining.
     await act(async () => {
@@ -36,8 +42,8 @@ describe("rate lock countdown", () => {
       await vi.advanceTimersByTimeAsync(1000);
     });
     expect(secondsLeft()).toBe(30);
-    const rateAfter = screen.getByText(/^1 EUR ≈/).textContent;
-    // Extremely unlikely for the random rate to collide across a re-randomisation.
+    const rateAfter = exactRate();
+    // Extremely unlikely for the random 4dp rate to collide across a re-randomisation.
     expect(rateAfter).not.toBe(rateBefore);
   });
 

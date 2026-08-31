@@ -28,8 +28,8 @@ describe("passcode dialog", () => {
     expect(dots(dialog)).toEqual([true, true, false, false]);
   });
 
-  test("the 4th digit auto-advances into the in-app confirmation dialog", async () => {
-    const { user } = await renderKoboApp();
+  test("the 4th digit auto-advances into the undo grace window", async () => {
+    const { user } = await renderKoboApp({ undoGraceSeconds: 5 });
     const dialog = await openPasscode(user);
 
     for (const d of ["1", "2", "3", "4"]) {
@@ -37,9 +37,8 @@ describe("passcode dialog", () => {
     }
 
     expect(dots(dialog)).toEqual([true, true, true, true]);
-    expect(
-      await screen.findByRole("dialog", { name: /confirm transfer/i }, { timeout: 2000 })
-    ).toBeInTheDocument();
+    const undo = await screen.findByRole("dialog", { name: /sending .* to/i }, { timeout: 2000 });
+    expect(within(undo).getByRole("button", { name: /cancel transfer/i })).toBeInTheDocument();
   });
 
   test("the close button returns to the form and clears the entered code", async () => {

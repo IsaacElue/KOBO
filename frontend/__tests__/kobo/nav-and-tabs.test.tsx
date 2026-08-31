@@ -46,7 +46,8 @@ describe("Settings nav item", () => {
     await user.click(screen.getByRole("button", { name: "Settings" }));
     expect(await screen.findByRole("heading", { name: "Settings" })).toBeInTheDocument();
     expect(screen.queryByText(/isn't built yet/i)).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /update password/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /change passcode/i })).toBeInTheDocument();
+    expect(screen.getByRole("switch", { name: "Rate alerts" })).toBeInTheDocument();
   });
 });
 

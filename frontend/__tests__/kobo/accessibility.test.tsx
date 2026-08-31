@@ -49,7 +49,7 @@ describe("overlay dismissal + focus management", () => {
   test("Escape closes the success dialog and resets to the form", async () => {
     const { user } = await renderKoboApp();
     await confirmSend(user);
-    await screen.findByRole("dialog", { name: /sent to adaeze/i }, { timeout: 4000 });
+    await screen.findByRole("dialog", { name: /sent to adaeze/i }, { timeout: 6000 });
 
     await user.keyboard("{Escape}");
 
