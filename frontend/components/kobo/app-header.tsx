@@ -51,8 +51,12 @@ export function AppHeader({
   }, []);
 
   return (
-    <header className="flex items-center justify-between gap-6 border-b border-kobo-ink/[0.06] bg-white/45 px-6 py-4 backdrop-blur-xl sm:px-10">
-      <div className="flex max-w-[420px] flex-1 items-center gap-2.5 rounded-2xl border border-kobo-ink/[0.07] bg-white/75 px-4 py-2.5">
+    <header className="flex items-center justify-end gap-6 border-b border-kobo-ink/[0.06] bg-white/45 px-6 py-4 backdrop-blur-xl sm:px-10 lg:justify-between">
+      {/* Search is display-only for now — there's no global search backing it, so
+          it's hidden on phones/tablets where it would eat most of the header
+          width. Revisit as a real feature (cross-entity query + results surface)
+          rather than wiring this input up in isolation. */}
+      <div className="hidden max-w-[420px] flex-1 items-center gap-2.5 rounded-2xl border border-kobo-ink/[0.07] bg-white/75 px-4 py-2.5 lg:flex">
         <Search className="size-[15px] shrink-0 text-[#8AA3A9]" strokeWidth={1.9} />
         <Input
           placeholder="Search recipients, transfers, references"
