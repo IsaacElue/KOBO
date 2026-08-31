@@ -169,7 +169,7 @@ function DevBypassBanner() {
   return (
     <div className="sticky top-0 z-[200] flex items-center justify-center gap-2 border-b-2 border-amber-600 bg-amber-400 px-4 py-2 text-center text-[12.5px] font-bold tracking-tight text-amber-950">
       <span aria-hidden>⚠️</span>
-      DEV AUTH BYPASS ACTIVE — not real authentication. Never enable in production or the demo.
+      DEV AUTH BYPASS ACTIVE. Not real authentication. Never enable in production or the demo.
     </div>
   );
 }

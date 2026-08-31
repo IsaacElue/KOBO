@@ -51,7 +51,7 @@ export function AppHeader({
         </div>
         <button
           onClick={onLogout ? () => setConfirmingLogout(true) : undefined}
-          aria-label={onLogout ? "Account menu — log out" : undefined}
+          aria-label={onLogout ? "Account menu, log out" : undefined}
           className="flex items-center gap-2.5 rounded-full border border-kobo-ink/[0.07] bg-white/70 py-1.5 pr-3.5 pl-1.5 transition-all hover:-translate-y-px hover:bg-white active:scale-[0.97]"
         >
           <Avatar>

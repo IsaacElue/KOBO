@@ -33,7 +33,7 @@ const FAQ_GROUPS: { title: string; items: Faq[] }[] = [
       },
       {
         q: "Can I cancel a transfer after sending it?",
-        a: "Once a transfer is confirmed on-chain it can't be reversed — that's what makes it fast. Double-check the recipient before you confirm.",
+        a: "Once a transfer is confirmed on-chain it can't be reversed, and that's what makes it fast. Double-check the recipient before you confirm.",
       },
       {
         q: "What happens if I enter the wrong wallet address?",
@@ -46,7 +46,7 @@ const FAQ_GROUPS: { title: string; items: Faq[] }[] = [
     items: [
       {
         q: "Why do you hold USDC instead of converting to naira automatically?",
-        a: "Instant conversion locks in whatever rate that hour brings. Holding USDC lets your recipient choose when to convert — often to their advantage.",
+        a: "Instant conversion locks in whatever rate that hour brings. Holding USDC lets your recipient choose when to convert, often to their advantage.",
       },
       {
         q: "What if I lose my PIN?",
@@ -54,7 +54,7 @@ const FAQ_GROUPS: { title: string; items: Faq[] }[] = [
       },
       {
         q: "Is my money insured while it sits as USDC?",
-        a: "Funds are held in audited, fully-collateralized USDC. We publish audit results monthly — see Security in Settings.",
+        a: "Funds are held in audited, fully-collateralized USDC. We publish audit results monthly. See Security in Settings.",
       },
     ],
   },
@@ -63,7 +63,7 @@ const FAQ_GROUPS: { title: string; items: Faq[] }[] = [
     items: [
       {
         q: "What does Kobo charge per transfer?",
-        a: "A small spread built into the rate you see before confirming — no separate fee, no surprise deduction on the other end.",
+        a: "A small spread built into the rate you see before confirming. No separate fee, no surprise deduction on the other end.",
       },
       {
         q: "Is there a limit on how much I can send?",
@@ -81,7 +81,7 @@ export function HelpScreen({ onGoToFaq }: { onGoToFaq?: () => void }) {
   const [message, setMessage] = useState("");
 
   function submit() {
-    toast.success("Message sent — we reply within a few hours");
+    toast.success("Message sent. We reply within a few hours");
     setMessage("");
   }
 
@@ -92,7 +92,7 @@ export function HelpScreen({ onGoToFaq }: { onGoToFaq?: () => void }) {
           How can we help?
         </h1>
         <p className="mx-auto max-w-[460px] text-pretty text-[16px] leading-relaxed text-[#5E7A81]">
-          Whatever it&apos;s about, we&apos;ll sort it calmly — your money is safe while we do.
+          Whatever it&apos;s about, we&apos;ll sort it calmly. Your money is safe while we do.
         </p>
       </div>
 
@@ -102,7 +102,7 @@ export function HelpScreen({ onGoToFaq }: { onGoToFaq?: () => void }) {
             icon={<MessageCircle className="size-[19px] text-kobo-mint-dark" strokeWidth={1.8} />}
             title="Chat with us"
             sub="Usually replies in under 2 minutes"
-            onClick={() => toast("Live chat — a specialist replies in under 2 minutes")}
+            onClick={() => toast("Live chat. A specialist replies in under 2 minutes")}
           />
           <ContactCard
             icon={<Mail className="size-[19px] text-kobo-mint-dark" strokeWidth={1.8} />}

@@ -98,8 +98,8 @@ export function AddRecipientDialog({
     } catch {
       toast.error(
         mode === "email"
-          ? "Couldn't set up a wallet for that email — please try again."
-          : "Couldn't add recipient — please try again."
+          ? "Couldn't set up a wallet for that email. Please try again."
+          : "Couldn't add recipient. Please try again."
       );
     } finally {
       setSubmitting(false);
@@ -118,7 +118,7 @@ export function AddRecipientDialog({
             <DialogTitle>Add new recipient</DialogTitle>
             <DialogDescription>
               {mode === "email"
-                ? "They'll receive USDC even if they don't have a wallet yet — we'll set one up for them."
+                ? "They'll receive USDC even if they don't have a wallet yet. We'll set one up for them."
                 : "They'll receive USDC directly to this wallet."}
             </DialogDescription>
           </DialogHeader>
@@ -189,7 +189,7 @@ export function AddRecipientDialog({
               className="self-start text-sm text-kobo-ink/60 underline-offset-2 hover:underline"
             >
               {mode === "email"
-                ? "They already have a Solana address — paste it instead"
+                ? "They already have a Solana address. Paste it instead"
                 : "Use their email instead"}
             </button>
           </div>

@@ -66,7 +66,7 @@ describe("embedded on-ramp step (Add Funds)", () => {
     await user.click(within(checkout).getByRole("button", { name: /close checkout/i }));
 
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-    expect(await screen.findByText(/add funds cancelled — nothing was charged/i)).toBeInTheDocument();
+    expect(await screen.findByText(/add funds cancelled\. nothing was charged/i)).toBeInTheDocument();
   });
 
   test("a TRANSAK_WIDGET_CLOSE message is also treated as a cancel", async () => {
@@ -76,6 +76,6 @@ describe("embedded on-ramp step (Add Funds)", () => {
     simulateTransakEvent("TRANSAK_WIDGET_CLOSE");
 
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-    expect(await screen.findByText(/add funds cancelled — nothing was charged/i)).toBeInTheDocument();
+    expect(await screen.findByText(/add funds cancelled\. nothing was charged/i)).toBeInTheDocument();
   });
 });

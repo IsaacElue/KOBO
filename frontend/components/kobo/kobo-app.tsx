@@ -200,10 +200,10 @@ export function KoboApp({
   useEffect(() => {
     const outcome = searchParams.get("onramp");
     if (outcome === "cancelled") {
-      toast("Payment cancelled — nothing was charged.");
+      toast("Payment cancelled. Nothing was charged.");
       router.replace("/");
     } else if (outcome === "failed") {
-      toast.error("That attempt didn't go through — your details are still here.");
+      toast.error("That attempt didn't go through. Your details are still here.");
       router.replace("/");
     } else if (outcome === "activity") {
       router.replace("/");
@@ -244,11 +244,11 @@ export function KoboApp({
       if (funding.status === "confirmed") {
         setBalance(funding.balance);
         toast.success(
-          `Added ${formatAmount(funding.amount_eur)} — your balance is now ${funding.balance.toFixed(2)} USDC`
+          `Added ${formatAmount(funding.amount_eur)}. Your balance is now ${funding.balance.toFixed(2)} USDC`
         );
         setFundingStep("closed");
       } else if (funding.status === "failed") {
-        toast.error(funding.failure_reason || "Couldn't add funds — please try again.");
+        toast.error(funding.failure_reason || "Couldn't add funds. Please try again.");
         setFundingStep("closed");
       }
     });
@@ -310,7 +310,7 @@ export function KoboApp({
       // the real gate.
     }
     if (receiveUsdc > currentBalance) {
-      toast.error("Not enough balance — add funds first.");
+      toast.error("Not enough balance. Add funds first.");
       openAddFunds();
       return;
     }
@@ -363,10 +363,10 @@ export function KoboApp({
       const apiErr = err as ApiError;
       setStep("form");
       if (apiErr.code === "INSUFFICIENT_BALANCE") {
-        toast.error("Not enough balance — add funds first.");
+        toast.error("Not enough balance. Add funds first.");
         openAddFunds();
       } else {
-        toast.error("Couldn't send — please try again.");
+        toast.error("Couldn't send. Please try again.");
       }
     }
   }
@@ -413,7 +413,7 @@ export function KoboApp({
         client_observed_ip: clientObservedIp,
       });
       if (!res.onramp.widgetUrl) {
-        toast.error("Couldn't start checkout — please try again.");
+        toast.error("Couldn't start checkout. Please try again.");
         setFundingStep("closed");
         return;
       }
@@ -429,7 +429,7 @@ export function KoboApp({
       }
       setFundingOnrampSession(res.onramp);
     } catch {
-      toast.error("Couldn't start checkout — please try again.");
+      toast.error("Couldn't start checkout. Please try again.");
       setFundingStep("closed");
     }
   }
@@ -447,10 +447,10 @@ export function KoboApp({
         setFundingStatus(funding.status);
         if (funding.status === "confirmed") {
           setBalance(funding.balance);
-          toast.success(`Added ${formatAmount(funding.amount_eur)} — your balance is now ${funding.balance.toFixed(2)} USDC`);
+          toast.success(`Added ${formatAmount(funding.amount_eur)}. Your balance is now ${funding.balance.toFixed(2)} USDC`);
           setFundingStep("closed");
         } else if (funding.status === "failed") {
-          toast.error(funding.failure_reason || "Couldn't add funds — please try again.");
+          toast.error(funding.failure_reason || "Couldn't add funds. Please try again.");
           setFundingStep("closed");
         }
       },
@@ -465,7 +465,7 @@ export function KoboApp({
       finishFundingCheckout("failed");
     } else if (event.kind === "widget-closed") {
       setFundingStep("closed");
-      toast("Add funds cancelled — nothing was charged.");
+      toast("Add funds cancelled. Nothing was charged.");
     }
   }
 
@@ -529,7 +529,7 @@ export function KoboApp({
     setAmount(String(transfer.amountEur));
     setRecipientId(transfer.recipientId);
     setDetailTransferId(null);
-    toast.success("Details filled in — review and confirm.");
+    toast.success("Details filled in. Review and confirm.");
   }
 
   const detailTransfer = TRANSFER_HISTORY.find((h) => h.id === detailTransferId) ?? null;
@@ -598,8 +598,8 @@ export function KoboApp({
                     Send money home
                   </h1>
                   <p className="max-w-xl text-[15.5px] text-[#5E7A81]">
-                    {currencyMeta.pluralNoun} from your account, USDC in their wallet — usually
-                    within two minutes.
+                    {currencyMeta.pluralNoun} from your account, USDC in their wallet.
+                    Usually within two minutes.
                   </p>
                 </div>
                 <TabsList variant="line" className="h-auto gap-2.5 bg-transparent p-0">
@@ -661,7 +661,7 @@ export function KoboApp({
               <TabsContent value="request">
                 <Card className="rounded-[28px] border border-white/90 bg-white/80 p-10 text-center ring-0">
                   <p className="text-[15px] text-[#5E7A81]">
-                    Requesting money isn&apos;t available yet — check back soon.
+                    Requesting money isn&apos;t available yet. Check back soon.
                   </p>
                 </Card>
               </TabsContent>

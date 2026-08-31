@@ -95,7 +95,7 @@ export async function createTransfer(req: CreateTransferRequest): Promise<Transf
     const body = await res.json().catch(() => null);
     if (res.status === 401) {
       handleUnauthorized();
-      throw new Error("Your session has expired — please sign in again");
+      throw new Error("Your session has expired. Please sign in again");
     }
     if (res.status === 400 || res.status === 403 || res.status === 500) {
       const err = new Error(body?.error ?? `POST /transfers failed: ${res.status}`) as ApiError;
@@ -116,7 +116,7 @@ async function mockCreateTransfer(req: CreateTransferRequest): Promise<TransferR
   const amount_usdc = Number((req.amount_eur * rate).toFixed(6));
 
   if (mockBalanceUsdc < amount_usdc) {
-    const err = new Error("Insufficient balance — add funds before sending") as ApiError;
+    const err = new Error("Insufficient balance. Add funds before sending") as ApiError;
     err.code = "INSUFFICIENT_BALANCE";
     err.requiredUsdc = amount_usdc;
     throw err;
@@ -187,7 +187,7 @@ export async function getProfile(): Promise<UserProfile> {
     const res = await fetch(`${API_URL}/auth/me`, { headers: await authHeaders() });
     if (res.status === 401) {
       handleUnauthorized();
-      throw new Error("Your session has expired — please sign in again");
+      throw new Error("Your session has expired. Please sign in again");
     }
     if (!res.ok) {
       const body: { error?: string } | null = await res.json().catch(() => null);
@@ -214,7 +214,7 @@ export async function updateProfile(updates: { name?: string; country?: string }
     });
     if (res.status === 401) {
       handleUnauthorized();
-      throw new Error("Your session has expired — please sign in again");
+      throw new Error("Your session has expired. Please sign in again");
     }
     if (!res.ok) {
       const body: { error?: string } | null = await res.json().catch(() => null);
@@ -247,7 +247,7 @@ export async function changePassword(currentPassword: string, newPassword: strin
     });
     if (res.status === 401) {
       handleUnauthorized();
-      throw new Error("Your session has expired — please sign in again");
+      throw new Error("Your session has expired. Please sign in again");
     }
     if (!res.ok) {
       const body: { error?: string } | null = await res.json().catch(() => null);
@@ -304,7 +304,7 @@ export async function getMyTransfers(): Promise<ActivityTransfer[]> {
     const res = await fetch(`${API_URL}/transfers`, { headers: await authHeaders() });
     if (res.status === 401) {
       handleUnauthorized();
-      throw new Error("Your session has expired — please sign in again");
+      throw new Error("Your session has expired. Please sign in again");
     }
     if (!res.ok) throw new Error(`GET /transfers failed: ${res.status}`);
     const body: { transfers: ActivityTransfer[] } = await res.json();
@@ -353,7 +353,7 @@ export async function getBalance(userId: string): Promise<number> {
     const res = await fetch(`${API_URL}/balances/${userId}`, { headers: await authHeaders() });
     if (res.status === 401) {
       handleUnauthorized();
-      throw new Error("Your session has expired — please sign in again");
+      throw new Error("Your session has expired. Please sign in again");
     }
     if (!res.ok) throw new Error(`GET /balances/${userId} failed: ${res.status}`);
     const body: BalanceResponse = await res.json();
@@ -380,7 +380,7 @@ export async function createFunding(
     });
     if (res.status === 401) {
       handleUnauthorized();
-      throw new Error("Your session has expired — please sign in again");
+      throw new Error("Your session has expired. Please sign in again");
     }
     if (!res.ok) {
       const body: { error?: string } | null = await res.json().catch(() => null);
@@ -446,7 +446,7 @@ export async function getFundingRequest(
     const res = await fetch(`${API_URL}/funding/${id}`, { headers: await authHeaders() });
     if (res.status === 401) {
       handleUnauthorized();
-      throw new Error("Your session has expired — please sign in again");
+      throw new Error("Your session has expired. Please sign in again");
     }
     if (!res.ok) throw new Error(`GET /funding/${id} failed: ${res.status}`);
     return res.json();
@@ -531,7 +531,7 @@ export async function getTransfer(
     const res = await fetch(`${API_URL}/transfers/${id}`, { headers: await authHeaders() });
     if (res.status === 401) {
       handleUnauthorized();
-      throw new Error("Your session has expired — please sign in again");
+      throw new Error("Your session has expired. Please sign in again");
     }
     if (!res.ok) throw new Error(`GET /transfers/${id} failed: ${res.status}`);
     return res.json();

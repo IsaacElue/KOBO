@@ -87,7 +87,7 @@ export function SettingsScreen({
       setCountry(updated.country);
       toast.success("Profile updated");
     } catch (err) {
-      setProfileError(err instanceof Error ? err.message : "Couldn't save your changes — please try again.");
+      setProfileError(err instanceof Error ? err.message : "Couldn't save your changes. Please try again.");
     } finally {
       setSavingProfile(false);
     }
@@ -120,13 +120,13 @@ export function SettingsScreen({
       setNewPw("");
       setConfirmPw("");
       if (onLogout) {
-        toast.success("Password updated — please sign in again");
+        toast.success("Password updated. Please sign in again");
         onLogout();
       } else {
         toast.success("Password updated");
       }
     } catch (err) {
-      setPwError(err instanceof Error ? err.message : "Couldn't update your password — please try again.");
+      setPwError(err instanceof Error ? err.message : "Couldn't update your password. Please try again.");
     } finally {
       setSavingPw(false);
     }
@@ -139,7 +139,7 @@ export function SettingsScreen({
       setWalletCopied(true);
       setTimeout(() => setWalletCopied(false), 1600);
     } catch {
-      toast.error("Couldn't copy — select and copy it manually.");
+      toast.error("Couldn't copy. Select and copy it manually.");
     }
   }
 
