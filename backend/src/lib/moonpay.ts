@@ -43,12 +43,16 @@ const CRYPTO_CURRENCY_CODE = process.env.MOONPAY_CRYPTO_CURRENCY_CODE || "usdc_s
 const BASE_CURRENCY_CODE = process.env.MOONPAY_BASE_CURRENCY_CODE || "eur";
 
 // This account enforces "IP restriction on signed URLs": every signed widget
-// URL must carry `allowedIpAddress` = the end user's public IP, or MoonPay
-// rejects it with 5_PARTNERS_IP_MISSING. In production behind a proxy the
-// request IP (see resolveClientIp / `trust proxy` in index.ts) is the real
-// client IP. For local dev the request IP is loopback and won't match the IP
-// the browser actually loads the widget from, so set this override to your
-// current public IP.
+// URL must carry `allowedIpAddress` — **a hash of** the end user's public IP,
+// not the raw address (Phase 2 fix; see hashAllowedIp below — a real bug had
+// this sending the raw IP, confirmed live before this fix, see
+// API_CONTRACT.md's Phase 2 entry) — or MoonPay rejects it with
+// 5_PARTNERS_IP_MISSING. In production behind a proxy the request IP (see
+// resolveClientIp in routes/funding.ts / `trust proxy` in index.ts) is the
+// real client IP. For local dev the request IP is loopback and won't match
+// the IP the browser actually loads the widget from, so set this override to
+// your current public IP (still hashed before use — this only changes which
+// raw IP feeds the hash).
 const ALLOWED_IP_OVERRIDE = process.env.MOONPAY_ALLOWED_IP_OVERRIDE || "";
 
 // Where MoonPay returns the customer after the purchase — it appends
@@ -111,6 +115,56 @@ function isUnroutableIp(ip: string): boolean {
 }
 
 /**
+ * Normalizes an IP to the exact string MoonPay hashes for IP-matching
+ * (dev.moonpay.com — IP matching): IPv4 dotted-quad with no leading zeros;
+ * IPv6 RFC 5952 canonical form (lowercase, longest zero-run compressed with
+ * `::`, no leading zeros per group) — the one normalization detail that held
+ * up identically across two independent reads of MoonPay's docs (Phase 2
+ * Step 2/3 investigation), unlike the hash encoding itself (see
+ * hashAllowedIp's doc comment).
+ *
+ * Uses the WHATWG URL parser's IPv6 host serializer for canonicalization
+ * rather than hand-rolling zero-run compression — verified to reproduce
+ * MoonPay's own worked example exactly: `2001:0DB8:0000:...:0001` ->
+ * `2001:db8::1`. No IPv4 equivalent trick exists (and none is needed —
+ * leading-zero stripping is a one-line split/parseInt/join).
+ */
+function normalizeIpForHashing(ip: string): string {
+  const trimmed = ip.replace(/^::ffff:/i, "").trim();
+  if (trimmed.includes(":")) {
+    // IPv6 — bracket it and let the URL parser produce RFC 5952 canonical form.
+    return new URL(`http://[${trimmed}]`).hostname.replace(/^\[|\]$/g, "");
+  }
+  return trimmed
+    .split(".")
+    .map((octet) => String(parseInt(octet, 10)))
+    .join(".");
+}
+
+/**
+ * MoonPay's IP-matching hash for `allowedIpAddress` (dev.moonpay.com — IP
+ * matching): HMAC-SHA256 of the normalized IP, keyed with the account secret.
+ *
+ * ⚠️ ENCODING PINNED TO base64, NOT INDEPENDENTLY VERIFIED — per explicit
+ * founder instruction (Phase 2 Step 3): base64 is the only HMAC output
+ * encoding documented anywhere in MoonPay's docs for this account (used for
+ * the URL signature itself, confirmed correct via a real test vector — see
+ * signWidgetUrl below). Two independent reads of the IP-matching doc page
+ * disagreed on whether this specific hash's encoding is even stated (one
+ * showed a base64 code sample, one showed none at all) — this is a real,
+ * reported ambiguity, not a settled fact quietly resolved. The live E2E test
+ * (Phase 2 Step 4) is what actually confirms or refutes this: if the widget
+ * still shows "Unverified Connection" with a correctly normalized IP, hex is
+ * the next thing to try — not something to silently switch to here.
+ */
+function hashAllowedIp(ip: string): string {
+  return crypto
+    .createHmac("sha256", SECRET_KEY!)
+    .update(normalizeIpForHashing(ip))
+    .digest("base64");
+}
+
+/**
  * HMAC-SHA256 of the URL's query string (leading `?` included), base64, then
  * URL-encoded — MoonPay's documented widget URL signature
  * (dev.moonpay.com — URL signing). Verified against the official
@@ -153,19 +207,43 @@ export async function createOnrampSession(
   // tampering. `clientIp` is technically client-reported (spoofable), but the
   // worst a spoof does is lock *their own* session to an IP they don't hold,
   // or drop a check that only *reduces* protection.
-  let allowedIpAddress = "";
+  let resolvedIp = "";
+  let ipSource = "";
   let ipNote = "";
   if (serverIp && clientIp) {
-    if (serverIp === clientIp) allowedIpAddress = serverIp;
-    else ipNote = `mismatch (server ${serverIp} / browser ${clientIp})`;
+    if (serverIp === clientIp) {
+      resolvedIp = serverIp;
+      ipSource = "server+browser agree";
+    } else {
+      ipNote = `mismatch (server ${serverIp} / browser ${clientIp})`;
+    }
   } else if (serverIp) {
-    allowedIpAddress = serverIp;
+    resolvedIp = serverIp;
+    ipSource = "server only";
   } else if (clientIp) {
-    allowedIpAddress = clientIp;
+    resolvedIp = clientIp;
+    ipSource = "browser only";
   } else {
     ipNote = "no routable IP from server or browser";
   }
-  if (!allowedIpAddress) {
+
+  // Phase 2 fix: allowedIpAddress must be a HASH of the IP, not the raw
+  // address (see hashAllowedIp's doc comment for the pinned-but-unverified
+  // encoding). Sending the raw IP here was the confirmed root cause of this
+  // account's persistent IP-match failures.
+  const allowedIpAddress = resolvedIp ? hashAllowedIp(resolvedIp) : "";
+
+  // §14-safe diagnostics: IP family, which side's IP won, and only an 8-char
+  // hash PREFIX — never the secret, never the full hash, never the full URL
+  // (which carries apiKey). Enough to confirm hashing ran and roughly which
+  // path was taken, without logging anything sensitive.
+  if (allowedIpAddress) {
+    const family = resolvedIp.includes(":") ? "IPv6" : "IPv4";
+    console.log(
+      `MoonPay widget ${params.reference}: allowedIpAddress hashed ` +
+        `(family: ${family}, source: ${ipSource}, hash prefix: ${allowedIpAddress.slice(0, 8)}...)`
+    );
+  } else {
     console.warn(
       `MoonPay widget ${params.reference}: allowedIpAddress omitted — ${ipNote}. ` +
         "Signature still enforced; MoonPay IP-match skipped for this session."

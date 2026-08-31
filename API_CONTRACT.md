@@ -13,11 +13,27 @@ Conversion Engine → Stripe POC → funding UX → hardening → observability 
 production readiness. **Coinbase is archived** — Phase 2A's research stands
 (see COINBASE_FEASIBILITY.md, now banner-marked archived) but nothing is being
 built against it; its reserved `FundingRail` value and DB slot stay, unused.
-MoonPay's `verify_widget_signature 400` failure — previously attributed to an
-IP-lock and treated as an external/unsolvable account issue — is now **under
-active investigation with evidence**, not assumed. Findings land in this file
-once Step 2 of that investigation completes; see KOBO_BUILD_PLAN.md section 8
-for the current roadmap status.
+MoonPay's persistent IP-verification failure — previously attributed to an
+IP-lock and treated as an external/unsolvable account issue — turned out to be
+**a real code bug, found and fixed**: `allowedIpAddress` was sent as the raw
+customer IP (`lib/moonpay.ts`); MoonPay's current docs
+(dev.moonpay.com — IP matching) require it to be `HMAC-SHA256(secretKey,
+normalizedIp)`, base64-encoded. A raw IP can never equal MoonPay's own computed
+hash of the observed IP, so IP-matching failed on every request that included
+it. Confirmed live before and after: `POST /funding` used to return a widget
+URL with `allowedIpAddress=95.83.222.154` (a plain dotted-quad); after the fix,
+the same call returns a base64 HMAC value. The URL's own signature mechanism
+(the separate `signature` param) was independently verified correct via a real
+test vector against MoonPay's documented example — never the problem.
+**One thing not resolved, stated plainly rather than assumed:** the digest
+encoding for this specific hash (base64 vs hex) is pinned to base64 per
+explicit founder decision — it's the only encoding MoonPay documents anywhere
+for this account (used for the URL signature itself), but two independent
+reads of the IP-matching doc page disagreed on whether this hash's own
+encoding is even stated. The live E2E test is what actually settles this, not
+this fix in isolation — see `lib/moonpay.ts`'s `hashAllowedIp` doc comment for
+the full caveat. See KOBO_BUILD_PLAN.md section 8 for the current roadmap
+status.
 
 **Prior addition (Funding Rail Abstraction — Phase 1):** `POST /funding` now
 accepts an explicit `rail` field (`"moonpay"` | `"transak"`, others reserved —
@@ -495,11 +511,15 @@ value with the session-creation call — fixed before this reached main).
 no expiry (it's a signed param bundle, not a one-time session), origin
 `buy.moonpay.com`. `sessionId` and the stored `onramp_session_id` are **always
 `null`** (MoonPay has no session id — correlation is `externalTransactionId`,
-set to the `funding_requests.id`). The URL carries `allowedIpAddress` = the
-caller's IP (`req.ip` via `trust proxy`; `MOONPAY_ALLOWED_IP_OVERRIDE` for local
-dev) — this MoonPay account enforces IP-bound signed URLs, so a widget opened
-from a different IP than the one that called `POST /funding` is rejected by
-MoonPay. `amount_usdc` here is the pre-purchase estimate; the amount actually
+set to the `funding_requests.id`). The URL carries `allowedIpAddress` = **a
+base64 HMAC-SHA256 hash of** the caller's IP (Phase 2 fix — previously sent
+raw, a real bug; see `lib/moonpay.ts`'s `hashAllowedIp`), keyed with
+`MOONPAY_SECRET_KEY`, IP resolved via `resolveClientIp` in `routes/funding.ts`
+(`X-Forwarded-For` first hop → `CF-Connecting-IP` → `req.ip`;
+`MOONPAY_ALLOWED_IP_OVERRIDE` for local dev, still hashed before use) — this
+MoonPay account enforces IP-bound signed URLs, so a widget opened from a
+different IP than the one that called `POST /funding` is rejected by MoonPay.
+`amount_usdc` here is the pre-purchase estimate; the amount actually
 **credited** on confirmation is MoonPay's real `quoteCurrencyAmount` from the
 webhook, which can differ slightly.
 

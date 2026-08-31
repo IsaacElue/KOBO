@@ -19,20 +19,34 @@ const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
- * The end user's public IP, for MoonPay's `allowedIpAddress` requirement.
- * `req.ip` already resolves through Express's `trust proxy` setting
- * (`app.set("trust proxy", …)` in index.ts) — the leftmost client entry of
- * `X-Forwarded-For` on a PaaS/CDN, the socket address locally. We only strip
- * the IPv4-mapped-IPv6 prefix and fall back to the raw first XFF hop if `req.ip`
- * somehow comes back empty; anything loopback/private is handled downstream in
- * `lib/moonpay.ts` (which requires the override env for local dev).
+ * The end user's public IP, for MoonPay's `allowedIpAddress` requirement
+ * (hashed before use — see lib/moonpay.ts's hashAllowedIp).
+ *
+ * Precedence (Phase 2, explicit per founder spec): X-Forwarded-For first hop
+ * → CF-Connecting-IP → req.ip. Deployment assumptions, stated plainly:
+ *   - Local dev: no proxy headers are set at all, so this always falls
+ *     through to `req.ip`, which is loopback — MOONPAY_ALLOWED_IP_OVERRIDE
+ *     exists precisely for this case (still hashed downstream).
+ *   - Railway (current deploy target): sets X-Forwarded-For, not
+ *     CF-Connecting-IP — this resolves from the first branch. `req.ip` would
+ *     also work here (Express's `trust proxy` in index.ts is configured for
+ *     Railway's proxy range), kept only as a final fallback.
+ *   - A Cloudflare-fronted deploy (not current, included for
+ *     forward-compatibility per founder spec): CF-Connecting-IP is Cloudflare's
+ *     own resolved client IP, generally more trustworthy than a possibly
+ *     multi-hop X-Forwarded-For — checked second in case a future deploy adds
+ *     Cloudflare in front of Railway.
+ * Not a general-purpose header-parsing utility — three fixed sources, in a
+ * fixed order, documented here because that order is a real, debuggable
+ * assumption, not because this needs to be reusable elsewhere.
  */
 function resolveClientIp(req: Request): string {
   const stripV6 = (ip: string) => ip.replace(/^::ffff:/, "").trim();
-  const direct = stripV6(req.ip ?? "");
-  if (direct) return direct;
   const xff = String(req.headers["x-forwarded-for"] ?? "").split(",")[0];
-  return stripV6(xff);
+  if (stripV6(xff)) return stripV6(xff);
+  const cfConnectingIp = String(req.headers["cf-connecting-ip"] ?? "");
+  if (stripV6(cfConnectingIp)) return stripV6(cfConnectingIp);
+  return stripV6(req.ip ?? "");
 }
 
 /**
