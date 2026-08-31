@@ -10,6 +10,14 @@ vi.mock("../lib/moonpay", () => ({
 vi.mock("../lib/transak", () => ({
   createWidgetSession: vi.fn(async () => ({ widgetUrl: "https://global.transak.com?mock=1", sessionId: "sess_mock" })),
 }));
+vi.mock("../lib/crossmint-onramp", () => ({
+  createOnrampSession: vi.fn(async () => ({
+    orderId: "order_mock",
+    clientSecret: "secret_mock",
+    paymentStatus: "requires-kyc",
+    kyc: { provider: "persona", inquiryId: "inq_mock" },
+  })),
+}));
 
 describe("lib/onramp.ts — rail routing (Phase 1 abstraction)", () => {
   beforeEach(() => {
@@ -68,5 +76,51 @@ describe("lib/onramp.ts — rail routing (Phase 1 abstraction)", () => {
     vi.resetModules();
     const onramp = await import("../lib/onramp");
     await expect(onramp.createOnrampSession({ ...baseParams, rail: "sepa" })).rejects.toThrow(/not implemented/i);
+  });
+
+  it("Crossmint staging POC: explicit rail:'crossmint' routes to crossmint-onramp.createOnrampSession and surfaces checkout fields", async () => {
+    vi.resetModules();
+    const onramp = await import("../lib/onramp");
+    const crossmintOnramp = await import("../lib/crossmint-onramp");
+    const result = await onramp.createOnrampSession({
+      ...baseParams,
+      rail: "crossmint",
+      amountUsdc: 108.5,
+      payerEmail: "sender@example.com",
+    });
+    expect(crossmintOnramp.createOnrampSession).toHaveBeenCalledTimes(1);
+    expect(crossmintOnramp.createOnrampSession).toHaveBeenCalledWith(
+      expect.objectContaining({
+        amountEur: 100,
+        amountUsdc: 108.5,
+        reference: baseParams.reference,
+        payerEmail: "sender@example.com",
+      })
+    );
+    expect(result.widgetUrl).toBe("");
+    expect(result.sessionId).toBe("order_mock");
+    expect(result.checkoutClientSecret).toBe("secret_mock");
+    expect(result.paymentStatus).toBe("requires-kyc");
+    expect(result.kycInquiryId).toBe("inq_mock");
+  });
+
+  it("Crossmint rail rejects a request with no payerEmail rather than silently proceeding", async () => {
+    vi.resetModules();
+    const onramp = await import("../lib/onramp");
+    const crossmintOnramp = await import("../lib/crossmint-onramp");
+    await expect(
+      onramp.createOnrampSession({ ...baseParams, rail: "crossmint", amountUsdc: 108.5 })
+    ).rejects.toThrow(/payerEmail/i);
+    expect(crossmintOnramp.createOnrampSession).not.toHaveBeenCalled();
+  });
+
+  it("Crossmint rail rejects a request with no amountUsdc rather than silently proceeding", async () => {
+    vi.resetModules();
+    const onramp = await import("../lib/onramp");
+    const crossmintOnramp = await import("../lib/crossmint-onramp");
+    await expect(
+      onramp.createOnrampSession({ ...baseParams, rail: "crossmint", payerEmail: "sender@example.com" })
+    ).rejects.toThrow(/amountUsdc/i);
+    expect(crossmintOnramp.createOnrampSession).not.toHaveBeenCalled();
   });
 });

@@ -1,5 +1,6 @@
 import * as moonpay from "./moonpay";
 import * as transak from "./transak";
+import * as crossmintOnramp from "./crossmint-onramp";
 
 /**
  * Active on-ramp provider selector. MoonPay is current; Transak is kept intact
@@ -32,7 +33,8 @@ export type FundingRail =
   | "transak"
   | "coinbase"
   | "sepa"
-  | "stripe";
+  | "stripe"
+  | "crossmint";
 
 export const FUNDING_RAILS: readonly FundingRail[] = [
   "moonpay",
@@ -40,6 +42,7 @@ export const FUNDING_RAILS: readonly FundingRail[] = [
   "coinbase",
   "sepa",
   "stripe",
+  "crossmint",
 ] as const;
 
 /**
@@ -50,7 +53,7 @@ export const FUNDING_RAILS: readonly FundingRail[] = [
  * return a clean `501` for `coinbase`/`sepa`/`stripe` instead of creating a
  * `funding_requests` row it already knows can never succeed.
  */
-export const IMPLEMENTED_RAILS: readonly FundingRail[] = ["moonpay", "transak"];
+export const IMPLEMENTED_RAILS: readonly FundingRail[] = ["moonpay", "transak", "crossmint"];
 
 export function isImplementedRail(rail: FundingRail): boolean {
   return IMPLEMENTED_RAILS.includes(rail);
@@ -72,11 +75,26 @@ export interface OnrampSessionParams {
   clientObservedIp?: string | null;
   /** Explicit rail for this request. Defaults to the ONRAMP_PROVIDER env. */
   rail?: FundingRail;
+  /** Crossmint-only: the pre-computed USDC estimate for this funding
+   * request (routes/funding.ts already derives it via getMarketRate).
+   * Crossmint's order body wants the crypto-side amount, not fiat. */
+  amountUsdc?: number;
+  /** Crossmint-only: identifies the paying end-user (KYC, receipt). */
+  payerEmail?: string;
 }
 
 export interface OnrampSessionResult {
+  /** Hosted-session rails (MoonPay/Transak): the redirect/embed URL. Empty
+   * for Crossmint — it uses an embedded-checkout client secret instead. */
   widgetUrl: string;
   sessionId: string | null;
+  /** Crossmint-only: required client-side to mount Crossmint's embedded
+   * checkout SDK. Treat like a bearer credential — never log in full. */
+  checkoutClientSecret?: string;
+  /** Crossmint-only: "requires-kyc" | "awaiting-payment" | ... */
+  paymentStatus?: string;
+  /** Crossmint-only, present only when paymentStatus is "requires-kyc". */
+  kycInquiryId?: string;
 }
 
 /**
@@ -112,6 +130,36 @@ export async function createOnrampSession(
       userIp: params.userIp,
       clientObservedIp: params.clientObservedIp ?? null,
     });
+  }
+
+  if (rail === "crossmint") {
+    // STAGING POC (KOBO — CROSSMINT RAIL IMPLEMENTATION). Order creation
+    // only — the webhook that would credit this automatically does not
+    // exist yet (see routes/webhooks.ts: the exact Onramp webhook event
+    // contract could not be verified against docs or staging — Crossmint's
+    // webhook endpoints are console-only to register, and completing a real
+    // order requires the payer's own KYC/payment click-through). A
+    // 'crossmint' funding_requests row will sit 'pending' until that's
+    // resolved — expected for this staging POC, not a bug.
+    if (!params.payerEmail) {
+      throw new Error("Crossmint rail requires payerEmail (the authenticated sender's email)");
+    }
+    if (typeof params.amountUsdc !== "number") {
+      throw new Error("Crossmint rail requires amountUsdc (pre-computed by routes/funding.ts)");
+    }
+    const result = await crossmintOnramp.createOnrampSession({
+      amountEur: params.amountEur,
+      amountUsdc: params.amountUsdc,
+      reference: params.reference,
+      payerEmail: params.payerEmail,
+    });
+    return {
+      widgetUrl: "",
+      sessionId: result.orderId,
+      checkoutClientSecret: result.clientSecret,
+      paymentStatus: result.paymentStatus,
+      kycInquiryId: result.kyc?.inquiryId,
+    };
   }
 
   throw new Error(

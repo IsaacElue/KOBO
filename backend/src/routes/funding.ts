@@ -148,7 +148,7 @@ fundingRouter.post("/", requireAuth, async (req, res) => {
     return res.status(500).json({ error: (insertError as Error).message });
   }
 
-  let onramp: { sessionId: string | null; widgetUrl: string };
+  let onramp: Awaited<ReturnType<typeof createOnrampSession>>;
   try {
     onramp = await createOnrampSession({
       amountEur: amount_eur,
@@ -162,6 +162,9 @@ fundingRouter.post("/", requireAuth, async (req, res) => {
       // The exact rail already committed to the row above — not re-resolved,
       // so the session and the row can never disagree about which rail this is.
       rail: resolvedRail,
+      // Crossmint-only (see lib/onramp.ts) — ignored by moonpay/transak.
+      amountUsdc: amount_usdc,
+      payerEmail: req.authUser?.email,
     });
   } catch (err) {
     // Session creation failed — don't leave a funding request row with no
@@ -187,6 +190,10 @@ fundingRouter.post("/", requireAuth, async (req, res) => {
     onramp: {
       sessionId: onramp.sessionId,
       widgetUrl: onramp.widgetUrl,
+      // Crossmint-only fields — undefined for moonpay/transak.
+      checkoutClientSecret: onramp.checkoutClientSecret,
+      paymentStatus: onramp.paymentStatus,
+      kycInquiryId: onramp.kycInquiryId,
     },
   });
 });

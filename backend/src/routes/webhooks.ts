@@ -3,6 +3,11 @@ import { Router } from "express";
 import { supabase } from "../lib/supabase";
 import { verifyWebhook } from "../lib/transak";
 import { verifyWebhook as verifyMoonPayWebhook } from "../lib/moonpay";
+import {
+  verifyCrossmintWebhookSignature,
+  CrossmintWebhookUnconfiguredError,
+  type CrossmintWebhookHeaders,
+} from "../lib/crossmint-onramp";
 import { creditBalance } from "../lib/balances";
 import { fundingDb, type FundingRequestDb } from "../lib/funding-repo";
 import type { FundingRail } from "../lib/onramp";
@@ -270,6 +275,96 @@ webhooksRouter.post("/moonpay", async (req, res) => {
     reference: data.id,
     creditedUsdc: data.quoteCurrencyAmount,
     expectedRail: "moonpay",
+  });
+  return res.status(result.status).json(result.body);
+});
+
+/**
+ * STAGING OBSERVATION ONLY (KOBO — CROSSMINT WEBHOOK OBSERVATION / STEP 4).
+ *
+ * Crossmint's Onramp-specific webhook event names and payload shape are
+ * NOT confirmed anywhere in current docs — the only concrete event names
+ * found (orders.payment.succeeded, orders.delivery.completed) are
+ * documented exclusively under Checkout V2/V3, not confirmed to apply to
+ * Onramp orders (see the Crossmint feasibility spike + Step 1 report).
+ * Per explicit instruction, this does NOT guess at that contract.
+ *
+ * What this route DOES do: verify the one piece of the contract that IS
+ * confirmed (Crossmint's generic Svix signature scheme — see
+ * lib/crossmint-onramp.ts), then safely log the real payload so the actual
+ * contract can be read off a genuine staging delivery instead of assumed.
+ *
+ * What this route deliberately does NOT do: parse the payload into a typed
+ * shape, correlate it to a funding_requests row, call
+ * handleFundingWebhook, credit any balance, or transition any row to
+ * 'confirmed'. Zero ledger side effects — safe to receive real or malformed
+ * traffic. Temporary: once a real event has been observed and the contract
+ * is confirmed, this becomes a real handler following the MoonPay pattern
+ * (verify -> correlate -> claim -> credit, exactly-once).
+ */
+export function observeCrossmintWebhook(
+  rawBody: string,
+  headers: CrossmintWebhookHeaders
+): { status: number; body: unknown } {
+  try {
+    verifyCrossmintWebhookSignature(rawBody, headers);
+  } catch (err) {
+    if (err instanceof CrossmintWebhookUnconfiguredError) {
+      console.error(
+        "Crossmint webhook received but CROSSMINT_WEBHOOK_SECRET is not set yet " +
+          "— cannot verify, rejecting. Register the staging endpoint in Crossmint's " +
+          "console and set the resulting whsec_ secret to enable verification."
+      );
+      return { status: 503, body: { error: "Webhook receiver not yet configured" } };
+    }
+    console.error(`Rejected unsigned/invalid Crossmint webhook: ${(err as Error).message}`);
+    return { status: 401, body: { error: "Invalid webhook signature" } };
+  }
+
+  let payload: unknown;
+  try {
+    payload = JSON.parse(rawBody);
+  } catch {
+    console.error("Crossmint webhook signature valid but body is not valid JSON — logging raw body length only");
+    console.error(`Malformed payload, ${rawBody.length} bytes`);
+    return { status: 400, body: { error: "Malformed JSON payload" } };
+  }
+
+  logCrossmintWebhookObservation(payload, headers.svixId);
+  return { status: 200, body: { received: true, observed: true } };
+}
+
+// Best-effort extraction across a few plausible shapes, purely for a
+// quick-glance summary line — NEVER relied on for behavior (no crediting,
+// no state transition reads this). The full raw payload is logged
+// regardless, which is the actual ground truth this route exists to
+// capture; the summary is a convenience, not a source of truth.
+function logCrossmintWebhookObservation(payload: unknown, svixId: string | undefined): void {
+  const p = payload as Record<string, any>;
+  const topLevelKeys = p && typeof p === "object" ? Object.keys(p) : [];
+  const bestEffort = {
+    type: p?.type ?? p?.event ?? p?.data?.type ?? null,
+    orderId: p?.data?.orderId ?? p?.order?.orderId ?? p?.orderId ?? p?.data?.order?.orderId ?? null,
+    paymentStatus: p?.data?.payment?.status ?? p?.order?.payment?.status ?? p?.payment?.status ?? null,
+    deliveryStatus:
+      p?.data?.lineItems?.[0]?.delivery?.status ??
+      p?.order?.lineItems?.[0]?.delivery?.status ??
+      p?.lineItems?.[0]?.delivery?.status ??
+      null,
+  };
+  console.log("=== CROSSMINT WEBHOOK OBSERVED (staging, observation-only — not credited, no state change) ===");
+  console.log(`svix-id: ${svixId ?? "(none)"}`);
+  console.log(`top-level keys: ${topLevelKeys.join(", ") || "(none — not an object)"}`);
+  console.log(`best-effort field guess: ${JSON.stringify(bestEffort)}`);
+  console.log(`FULL PAYLOAD:\n${JSON.stringify(payload, null, 2)}`);
+}
+
+webhooksRouter.post("/crossmint", async (req, res) => {
+  const rawBody = (req as Request & { rawBody?: string }).rawBody ?? "";
+  const result = observeCrossmintWebhook(rawBody, {
+    svixId: req.header("svix-id") ?? undefined,
+    svixTimestamp: req.header("svix-timestamp") ?? undefined,
+    svixSignature: req.header("svix-signature") ?? undefined,
   });
   return res.status(result.status).json(result.body);
 });

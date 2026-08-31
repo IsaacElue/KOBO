@@ -5,6 +5,7 @@ describe("parseRail — POST /funding rail validation (fast, no DB)", () => {
   it("valid funding rail selection: accepts a known rail", () => {
     expect(parseRail("moonpay")).toBe("moonpay");
     expect(parseRail("transak")).toBe("transak");
+    expect(parseRail("crossmint")).toBe("crossmint");
   });
 
   it("is case-insensitive and trims whitespace", () => {
