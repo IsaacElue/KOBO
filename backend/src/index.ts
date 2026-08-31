@@ -9,6 +9,9 @@ import { rateRouter } from "./routes/rate";
 import { fundingRouter } from "./routes/funding";
 import { authRouter } from "./routes/auth";
 import { marketRouter } from "./routes/market";
+// ⚠️ TEMPORARY — delete this import + the mount line below after the
+// Crossmint real-domain checkout test (see routes/_tmp-crossmint-harness-route.ts).
+import { tmpCrossmintHarnessRouter } from "./routes/_tmp-crossmint-harness-route";
 
 const app = express();
 const port = process.env.PORT || 4000;
@@ -67,6 +70,8 @@ app.use("/users", usersRouter);
 app.use("/rate", rateRouter);
 app.use("/funding", fundingRouter);
 app.use("/market", marketRouter);
+// ⚠️ TEMPORARY — remove after the Crossmint real-domain checkout test.
+app.use("/_tmp-crossmint-harness", tmpCrossmintHarnessRouter);
 
 app.listen(port, () => {
   console.log(`API listening on port ${port}`);
