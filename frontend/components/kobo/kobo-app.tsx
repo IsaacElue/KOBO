@@ -614,6 +614,8 @@ export function KoboApp({
           rate={rateStr}
           userName={authUser.name}
           userInitials={nameToInitials(authUser.name)}
+          onGoToSettings={() => setNavIndex(SETTINGS_INDEX)}
+          onGoToHelp={() => setNavIndex(HELP_INDEX)}
           onLogout={onLogout}
         />
 
