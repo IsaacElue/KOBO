@@ -8,7 +8,8 @@ import { SuccessDialog } from "@/components/kobo/success-dialog";
 import { FailedDialog } from "@/components/kobo/failed-dialog";
 import { Button } from "@/components/ui/button";
 import { pollTransferStatus, STATUS_LABEL } from "@/lib/kobo/api";
-import { SUPPORT_EMAIL } from "@/lib/kobo/mock-data";
+import { buildHabitSummary } from "@/lib/kobo/habit";
+import { CURRENCIES, SUPPORT_EMAIL } from "@/lib/kobo/mock-data";
 import {
   clearOnrampDraft,
   loadOnrampDraft,
@@ -98,6 +99,10 @@ function TransferReturn() {
           feeStr={draft.feeStr}
           rate={draft.rate}
           reference={draft.reference}
+          habit={buildHabitSummary(
+            parseFloat(draft.sentStr.replace(/[^\d.]/g, "")) || 0,
+            CURRENCIES[draft.currency].symbol
+          )}
           onDone={goHome}
           onDownloadReceipt={goHome}
         />

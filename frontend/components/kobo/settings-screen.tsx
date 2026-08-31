@@ -3,133 +3,89 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { toast } from "sonner";
 import { Card } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
+import { ToggleSwitch } from "@/components/kobo/toggle-switch";
+import { EditProfileDialog } from "@/components/kobo/edit-profile-dialog";
+import { ChangePasscodeDialog } from "@/components/kobo/change-passcode-dialog";
 import { LogoutConfirmDialog } from "@/components/kobo/logout-confirm-dialog";
-import { SUPPORT_EMAIL } from "@/lib/kobo/mock-data";
-import { changePassword, getProfile, updateProfile } from "@/lib/kobo/api";
-import type { UserProfile } from "@/lib/kobo/types";
-import { Check, Copy, LogOut, Mail } from "lucide-react";
+import { getProfile } from "@/lib/kobo/api";
+import {
+  loadToggles,
+  saveToggles,
+  type SettingsToggleKey,
+  type SettingsToggles,
+} from "@/lib/kobo/preferences";
+import type { CurrencyCode, UserProfile } from "@/lib/kobo/types";
+import { Check, ChevronRight, Copy, LogOut, ShieldCheck } from "lucide-react";
 
 /**
- * Settings — profile, email, password, wallet, account details, support, and
- * logout. All real data: `GET /auth/me` for the profile (the only endpoint
- * that returns a sender their own email + member-since), `PATCH /auth/profile`
- * and `POST /auth/password` for the two editable things. No invented fields —
- * every value shown comes straight from the profile response.
+ * Settings, rebuilt to the "Kobo Web App" design handoff: a two-column card
+ * layout — Preferences (local toggles) and Sending defaults on the left; a
+ * Profile card and a Security actions list on the right. The still-real,
+ * still-tested flows (edit name/country via `PATCH /auth/profile`, change
+ * password via `POST /auth/password`) now live behind dialogs opened from the
+ * "Edit" control and the "Change passcode" row rather than inline forms.
  *
- * `onLogout` is `AuthGate`'s real logout flow, omitted in mock mode exactly
- * like the header's — the Log out section then simply isn't rendered, same as
- * the header avatar isn't clickable there.
+ * Toggles and (mostly) Sending defaults have no backend yet, so they're client
+ * state per the handoff. `Default currency` is the exception: it drives the
+ * live send currency and persists (see lib/kobo/preferences.ts).
  */
+
+const TOGGLE_ROWS: { key: SettingsToggleKey; label: string; desc: string }[] = [
+  { key: "rateAlerts", label: "Rate alerts", desc: "Ping me when the USDC rate beats my average." },
+  { key: "biometric", label: "Biometric approval", desc: "Use Face ID instead of the 4-digit passcode." },
+  { key: "emailReceipts", label: "Email receipts", desc: "A PDF receipt after every delivered transfer." },
+  { key: "monthlyDigest", label: "Monthly digest", desc: "What you sent, where it went, what it cost." },
+];
+
+const CURRENCY_OPTIONS: CurrencyCode[] = ["EUR", "GBP", "USD"];
+
 export function SettingsScreen({
   authUser,
   onLogout,
+  defaultCurrency,
+  onDefaultCurrencyChange,
+  onGoToHelp,
+  onManageFunding,
 }: {
   authUser: { id: string; name: string };
   onLogout?: () => void;
+  defaultCurrency: CurrencyCode;
+  onDefaultCurrencyChange: (currency: CurrencyCode) => void;
+  onGoToHelp?: () => void;
+  onManageFunding?: () => void;
 }) {
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loadError, setLoadError] = useState(false);
 
-  const [name, setName] = useState(authUser.name);
-  const [country, setCountry] = useState("");
-  const [savingProfile, setSavingProfile] = useState(false);
-  const [profileError, setProfileError] = useState("");
-
-  const [currentPw, setCurrentPw] = useState("");
-  const [newPw, setNewPw] = useState("");
-  const [confirmPw, setConfirmPw] = useState("");
-  const [savingPw, setSavingPw] = useState(false);
-  const [pwError, setPwError] = useState("");
-
-  const [logoutOpen, setLogoutOpen] = useState(false);
+  const [toggles, setToggles] = useState<SettingsToggles>(() => loadToggles());
   const [walletCopied, setWalletCopied] = useState(false);
+
+  const [editOpen, setEditOpen] = useState(false);
+  const [passcodeOpen, setPasscodeOpen] = useState(false);
+  const [logoutOpen, setLogoutOpen] = useState(false);
 
   async function loadProfile() {
     setLoadError(false);
     try {
-      const p = await getProfile();
-      setProfile(p);
-      setName(p.name);
-      setCountry(p.country);
+      setProfile(await getProfile());
     } catch {
       setLoadError(true);
     }
   }
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- one-time fetch-on-mount, same pattern as kobo-app.tsx's refreshRate/refreshBalance
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- one-time fetch-on-mount, same pattern as kobo-app.tsx
     loadProfile();
   }, []);
 
-  const profileDirty =
-    !!profile && (name.trim() !== profile.name || country.trim() !== profile.country);
-
-  async function handleSaveProfile(e: React.FormEvent) {
-    e.preventDefault();
-    if (!profile) return;
-    if (!name.trim()) {
-      setProfileError("Enter your name.");
-      return;
-    }
-    if (!country.trim()) {
-      setProfileError("Enter your country.");
-      return;
-    }
-
-    setSavingProfile(true);
-    setProfileError("");
-    try {
-      const updated = await updateProfile({ name: name.trim(), country: country.trim() });
-      setProfile(updated);
-      setName(updated.name);
-      setCountry(updated.country);
-      toast.success("Profile updated");
-    } catch (err) {
-      setProfileError(err instanceof Error ? err.message : "Couldn't save your changes. Please try again.");
-    } finally {
-      setSavingProfile(false);
-    }
-  }
-
-  async function handleChangePassword(e: React.FormEvent) {
-    e.preventDefault();
-    if (!currentPw || !newPw) {
-      setPwError("Enter your current and new password.");
-      return;
-    }
-    if (newPw.length < 8) {
-      setPwError("New password must be at least 8 characters.");
-      return;
-    }
-    if (newPw !== confirmPw) {
-      setPwError("New passwords don't match.");
-      return;
-    }
-    if (newPw === currentPw) {
-      setPwError("Your new password must be different from your current one.");
-      return;
-    }
-
-    setSavingPw(true);
-    setPwError("");
-    try {
-      await changePassword(currentPw, newPw);
-      setCurrentPw("");
-      setNewPw("");
-      setConfirmPw("");
-      if (onLogout) {
-        toast.success("Password updated. Please sign in again");
-        onLogout();
-      } else {
-        toast.success("Password updated");
-      }
-    } catch (err) {
-      setPwError(err instanceof Error ? err.message : "Couldn't update your password. Please try again.");
-    } finally {
-      setSavingPw(false);
-    }
+  function setToggle(key: SettingsToggleKey, next: boolean) {
+    setToggles((prev) => {
+      const updated = { ...prev, [key]: next };
+      saveToggles(updated);
+      return updated;
+    });
   }
 
   async function copyWallet() {
@@ -147,13 +103,21 @@ export function SettingsScreen({
     ? new Date(profile.created_at).toLocaleDateString("en-IE", { month: "long", year: "numeric" })
     : "—";
   const email = profile?.email ?? "—";
+  const displayName = profile?.name ?? authUser.name;
+  const initials = displayName
+    .split(" ")
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((w) => w[0]!.toUpperCase())
+    .join("");
+  const ibanTail = authUser.id.slice(-4).toUpperCase();
 
   return (
     <div className="flex-1 overflow-y-auto p-6 pb-10 sm:p-10">
       <div className="mb-6.5">
         <h1 className="mb-2 text-3xl font-semibold tracking-tight sm:text-[34px]">Settings</h1>
-        <p className="max-w-xl text-[15.5px] text-[#5E7A81]">
-          Your account, security, and how to reach us.
+        <p className="max-w-xl text-[15.5px] text-[#4C6B72]">
+          Account, security and how we reach you.
         </p>
       </div>
 
@@ -170,206 +134,183 @@ export function SettingsScreen({
         </Card>
       )}
 
-      <div className="flex max-w-2xl flex-col gap-5">
-        {/* Profile */}
-        <Section
-          title="Profile"
-          description="Your name as it appears on Kobo, and where you're sending from."
-        >
-          <form onSubmit={handleSaveProfile} className="flex flex-col gap-4">
-            <Field label="Name" htmlFor="settings-name">
-              <Input
-                id="settings-name"
-                value={name}
-                onChange={(e) => {
-                  setName(e.target.value);
-                  if (profileError) setProfileError("");
-                }}
-                autoComplete="name"
-                disabled={!profile}
-              />
-            </Field>
-            <Field label="Country" htmlFor="settings-country" hint="Two-letter code, e.g. IE">
-              <Input
-                id="settings-country"
-                value={country}
-                onChange={(e) => {
-                  setCountry(e.target.value);
-                  if (profileError) setProfileError("");
-                }}
-                autoComplete="country"
-                disabled={!profile}
-              />
-            </Field>
-            {profileError && (
-              <p role="alert" className="text-sm text-destructive">
-                {profileError}
-              </p>
-            )}
+      <div className="grid items-start gap-6 min-[1180px]:grid-cols-[minmax(440px,1.35fr)_minmax(360px,0.9fr)]">
+        {/* Left column */}
+        <div className="flex min-w-0 flex-col gap-5">
+          <SettingsCard>
+            <SectionLabel>PREFERENCES</SectionLabel>
             <div>
-              <Button
-                type="submit"
-                disabled={!profileDirty || savingProfile}
-                className="h-auto rounded-full bg-gradient-to-br from-kobo-teal-500 to-kobo-teal-800 px-6 py-2.5 text-[14.5px] font-medium text-kobo-mint-light shadow-lg shadow-kobo-teal-900/40 hover:-translate-y-0.5 hover:opacity-95"
-              >
-                {savingProfile ? "Saving…" : "Save changes"}
-              </Button>
+              {TOGGLE_ROWS.map((row, i) => (
+                <div
+                  key={row.key}
+                  className={cn(
+                    "flex items-center gap-5 py-[17px]",
+                    i < TOGGLE_ROWS.length - 1 && "border-b border-kobo-ink/[0.05]"
+                  )}
+                >
+                  <div className="min-w-0 flex-1">
+                    <div className="text-[15.5px] font-medium text-kobo-ink">{row.label}</div>
+                    <div className="mt-1 text-[13.5px] text-[#6E8A91]">{row.desc}</div>
+                  </div>
+                  <ToggleSwitch
+                    label={row.label}
+                    checked={toggles[row.key]}
+                    onChange={(next) => setToggle(row.key, next)}
+                  />
+                </div>
+              ))}
             </div>
-          </form>
-        </Section>
+          </SettingsCard>
 
-        {/* Email */}
-        <Section title="Email address" description="Used to sign in on a new device.">
-          <DetailRow label="Email" value={email} mono />
-          <p className="mt-3 text-[13px] leading-relaxed text-[#7B959B]">
-            Changing your email needs a confirmation link sent to both addresses, which
-            isn&apos;t available yet.{" "}
-            <a
-              href={`mailto:${SUPPORT_EMAIL}?subject=Change my email`}
-              className="font-medium text-kobo-teal-600 hover:text-kobo-ink"
-            >
-              Contact support
-            </a>{" "}
-            to change it.
-          </p>
-        </Section>
-
-        {/* Password */}
-        <Section
-          title="Password"
-          description="You'll be signed out and need to log in again with the new one."
-        >
-          <form onSubmit={handleChangePassword} className="flex flex-col gap-4">
-            <Field label="Current password" htmlFor="settings-current-pw">
-              <Input
-                id="settings-current-pw"
-                type="password"
-                value={currentPw}
-                onChange={(e) => {
-                  setCurrentPw(e.target.value);
-                  if (pwError) setPwError("");
-                }}
-                autoComplete="current-password"
-              />
-            </Field>
-            <Field label="New password" htmlFor="settings-new-pw" hint="At least 8 characters">
-              <Input
-                id="settings-new-pw"
-                type="password"
-                value={newPw}
-                onChange={(e) => {
-                  setNewPw(e.target.value);
-                  if (pwError) setPwError("");
-                }}
-                autoComplete="new-password"
-              />
-            </Field>
-            <Field label="Confirm new password" htmlFor="settings-confirm-pw">
-              <Input
-                id="settings-confirm-pw"
-                type="password"
-                value={confirmPw}
-                onChange={(e) => {
-                  setConfirmPw(e.target.value);
-                  if (pwError) setPwError("");
-                }}
-                autoComplete="new-password"
-                aria-invalid={!!pwError}
-                aria-describedby={pwError ? "settings-pw-error" : undefined}
-              />
-            </Field>
-            {pwError && (
-              <p id="settings-pw-error" role="alert" className="text-sm text-destructive">
-                {pwError}
-              </p>
-            )}
-            <div>
-              <Button
-                type="submit"
-                disabled={savingPw}
-                className="h-auto rounded-full bg-gradient-to-br from-kobo-teal-500 to-kobo-teal-800 px-6 py-2.5 text-[14.5px] font-medium text-kobo-mint-light shadow-lg shadow-kobo-teal-900/40 hover:-translate-y-0.5 hover:opacity-95"
-              >
-                {savingPw ? "Updating…" : "Update password"}
-              </Button>
+          <SettingsCard>
+            <SectionLabel>SENDING DEFAULTS</SectionLabel>
+            <div className="flex items-center justify-between gap-5 border-b border-kobo-ink/[0.05] py-[18px]">
+              <div className="min-w-0">
+                <div className="text-[15.5px] font-medium text-kobo-ink">Default currency</div>
+                <div className="mt-1 text-[13.5px] text-[#6E8A91]">
+                  Used for new transfers and rate alerts.
+                </div>
+              </div>
+              <div className="flex shrink-0 gap-1.5">
+                {CURRENCY_OPTIONS.map((code) => {
+                  const active = code === defaultCurrency;
+                  return (
+                    <button
+                      key={code}
+                      type="button"
+                      aria-pressed={active}
+                      onClick={() => onDefaultCurrencyChange(code)}
+                      className={cn(
+                        "rounded-full border border-kobo-ink/10 px-[15px] py-[9px] text-[14px] font-medium text-[#33565E] transition-transform active:scale-95",
+                        active ? "bg-[#EFF5F6]" : "bg-white hover:bg-[#F6FAFA]"
+                      )}
+                    >
+                      {code}
+                    </button>
+                  );
+                })}
+              </div>
             </div>
-          </form>
-        </Section>
 
-        {/* Account details */}
-        <Section title="Account details">
-          <div className="flex flex-col gap-1.5">
-            <DetailRow label="Name" value={profile?.name ?? "—"} />
-            <DetailRow label="Email" value={email} mono />
-            <DetailRow label="Country" value={profile?.country ?? "—"} />
-            <DetailRow label="Member since" value={memberSince} />
-          </div>
-        </Section>
+            <div className="flex items-center justify-between gap-5 border-b border-kobo-ink/[0.05] py-[18px]">
+              <div className="min-w-0">
+                <div className="text-[15.5px] font-medium text-kobo-ink">Funding account</div>
+                <div className="mt-1 text-[13.5px] text-[#6E8A91]">
+                  Instant SEPA · IBAN ·· {ibanTail}
+                </div>
+              </div>
+              <PillButton
+                onClick={() =>
+                  onManageFunding
+                    ? onManageFunding()
+                    : toast("Manage your funding account from Add funds.")
+                }
+              >
+                Manage
+              </PillButton>
+            </div>
 
-        {/* Wallet */}
-        <Section title="Linked address">
-          <div className="flex items-center justify-between gap-3 rounded-2xl bg-[#F6FAFA] px-3.5 py-2.5">
-            <span className="truncate font-mono text-[12.5px] text-[#5E7A81]">
-              {profile?.wallet_address ?? "—"}
-            </span>
-            <Button
-              variant="ghost"
-              size="icon"
-              aria-label="Copy linked address"
-              disabled={!profile}
-              onClick={copyWallet}
-              className="size-8 shrink-0 rounded-full text-[#8AA3A9] hover:bg-kobo-teal-600/10 hover:text-kobo-teal-700"
-            >
-              {walletCopied ? (
-                <Check className="size-[15px]" strokeWidth={2} />
-              ) : (
-                <Copy className="size-[15px]" strokeWidth={1.9} />
-              )}
-            </Button>
-          </div>
-          <p className="mt-3 text-[13px] leading-relaxed text-[#7B959B]">
-            Kobo sends USDC from its own pooled wallet, so this address isn&apos;t used to
-            hold or move your money. It&apos;s kept on file in case direct wallet payouts
-            are added later.
-          </p>
-        </Section>
+            <div className="flex items-center justify-between gap-5 py-[18px]">
+              <div className="min-w-0 flex-1">
+                <div className="text-[15.5px] font-medium text-kobo-ink">Linked address</div>
+                <div className="mt-1 truncate font-mono text-[12.5px] text-[#6E8A91]">
+                  {profile?.wallet_address ?? "—"}
+                </div>
+              </div>
+              <PillButton onClick={copyWallet} disabled={!profile}>
+                {walletCopied ? (
+                  <>
+                    <Check className="size-[13px]" strokeWidth={2.2} />
+                    Copied
+                  </>
+                ) : (
+                  <>
+                    <Copy className="size-[13px]" strokeWidth={1.9} />
+                    Copy
+                  </>
+                )}
+              </PillButton>
+            </div>
+          </SettingsCard>
+        </div>
 
-        {/* Support */}
-        <Section title="Help & support">
-          <p className="text-[14px] leading-relaxed text-[#5E7A81]">
-            Something not working, or a question about a transfer? Email us and we&apos;ll
-            usually reply within one business day.
-          </p>
-          <div className="mt-4">
-            <Button
-              variant="outline"
-              onClick={() => {
-                window.location.href = `mailto:${SUPPORT_EMAIL}`;
-              }}
-              className="h-auto gap-2 rounded-full border-kobo-ink/[0.14] px-5 py-2.5 text-[14px] text-[#33565E] hover:border-kobo-teal-600 hover:text-kobo-ink"
-            >
-              <Mail className="size-[15px]" strokeWidth={1.9} />
-              {SUPPORT_EMAIL}
-            </Button>
-          </div>
-        </Section>
-
-        {/* Log out */}
-        {onLogout && (
-          <Section title="Log out" description="End your session on this device.">
-            <div>
+        {/* Right column */}
+        <div className="flex min-w-0 flex-col gap-5">
+          <SettingsCard>
+            <div className="flex items-start justify-between gap-4">
+              <div className="flex min-w-0 items-center gap-3.5">
+                <div className="flex size-[52px] shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-[#D7F0E2] to-[#BFE7D1] text-[17px] font-semibold text-[#155E4C]">
+                  {initials}
+                </div>
+                <div className="min-w-0">
+                  <div className="truncate text-[18px] font-semibold tracking-tight text-kobo-ink">
+                    {displayName}
+                  </div>
+                  <div className="truncate text-[13.5px] text-[#6E8A91]">{email}</div>
+                </div>
+              </div>
               <Button
                 variant="outline"
-                onClick={() => setLogoutOpen(true)}
-                className="h-auto gap-2 rounded-full border-kobo-ink/[0.14] px-5 py-2.5 text-[14px] text-[#33565E] hover:border-kobo-teal-600 hover:text-kobo-ink"
+                aria-label="Edit profile"
+                onClick={() => setEditOpen(true)}
+                className="h-auto shrink-0 rounded-full border-kobo-ink/[0.12] px-4 py-2 text-[13px] font-medium text-[#12645D] hover:border-kobo-teal-600 hover:text-kobo-ink"
               >
-                <LogOut className="size-[15px]" strokeWidth={1.9} />
-                Log out
+                Edit
               </Button>
             </div>
-          </Section>
-        )}
+
+            <div className="mt-4 flex items-center gap-2 rounded-2xl bg-kobo-mint-light px-3.5 py-3">
+              <ShieldCheck className="size-[15px] text-[#155E4C]" strokeWidth={2} />
+              <span className="text-[13.5px] font-medium text-[#155E4C]">
+                Identity verified · Tier 3 limits
+              </span>
+            </div>
+
+            <p className="mt-3.5 text-[13.5px] leading-relaxed text-[#4C6B72]">
+              Member since <span>{memberSince}</span>. Monthly sending limit €15,000. Request an
+              increase any time from support.
+            </p>
+          </SettingsCard>
+
+          <SettingsCard>
+            <SectionLabel>SECURITY</SectionLabel>
+            <div className="-mx-3">
+              <ActionRow label="Change passcode" onClick={() => setPasscodeOpen(true)} />
+              <ActionRow
+                label="Trusted devices · 2"
+                onClick={() => toast("You're signed in on 2 trusted devices.")}
+              />
+              <ActionRow
+                label="Download my data"
+                onClick={() => toast("We'll email you a copy of your data within 48 hours.")}
+              />
+              <ActionRow label="Help & support" onClick={() => onGoToHelp?.()} />
+              {onLogout && (
+                <ActionRow
+                  label="Log out"
+                  destructive
+                  icon={<LogOut className="size-[15px]" strokeWidth={1.9} />}
+                  onClick={() => setLogoutOpen(true)}
+                />
+              )}
+            </div>
+          </SettingsCard>
+        </div>
       </div>
 
+      <EditProfileDialog
+        key={editOpen ? "edit-open" : "edit-closed"}
+        open={editOpen}
+        onOpenChange={setEditOpen}
+        profile={profile}
+        onSaved={setProfile}
+      />
+      <ChangePasscodeDialog
+        key={passcodeOpen ? "pw-open" : "pw-closed"}
+        open={passcodeOpen}
+        onOpenChange={setPasscodeOpen}
+        onLogout={onLogout}
+      />
       {onLogout && (
         <LogoutConfirmDialog open={logoutOpen} onOpenChange={setLogoutOpen} onConfirm={onLogout} />
       )}
@@ -377,61 +318,67 @@ export function SettingsScreen({
   );
 }
 
-function Section({
-  title,
-  description,
-  children,
-}: {
-  title: string;
-  description?: string;
-  children: ReactNode;
-}) {
+function SettingsCard({ children }: { children: ReactNode }) {
   return (
-    <Card className="gap-0 rounded-[28px] border border-white/90 bg-white p-6.5 shadow-[0_24px_50px_-42px_rgba(11,31,36,0.7)] ring-0">
-      <div className="mb-5">
-        <h2 className="text-base font-semibold tracking-tight text-kobo-ink">{title}</h2>
-        {description && <p className="mt-1 text-[13px] text-[#8AA3A9]">{description}</p>}
-      </div>
+    <Card className="gap-0 rounded-[28px] border border-white/90 bg-white p-6.5 shadow-[0_24px_50px_-38px_rgba(11,31,36,0.75)] ring-0">
       {children}
     </Card>
   );
 }
 
-function Field({
-  label,
-  htmlFor,
-  hint,
-  children,
-}: {
-  label: string;
-  htmlFor: string;
-  hint?: string;
-  children: ReactNode;
-}) {
+function SectionLabel({ children }: { children: ReactNode }) {
   return (
-    <div className="flex flex-col gap-1.5">
-      <label htmlFor={htmlFor} className="text-sm font-medium text-kobo-ink">
-        {label}
-      </label>
+    <div className="mb-1.5 text-[11.5px] font-semibold tracking-[0.16em] text-[#6E8A91]">
       {children}
-      {hint && <span className="text-[12.5px] text-[#8AA3A9]">{hint}</span>}
     </div>
   );
 }
 
-function DetailRow({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
+function PillButton({
+  children,
+  onClick,
+  disabled,
+}: {
+  children: ReactNode;
+  onClick: () => void;
+  disabled?: boolean;
+}) {
   return (
-    <div className="flex items-center justify-between gap-4 rounded-2xl bg-[#F6FAFA] px-3.5 py-2.5">
-      <span className="shrink-0 text-[13px] text-[#8AA3A9]">{label}</span>
-      <span
-        className={
-          mono
-            ? "min-w-0 text-right font-mono text-[12.5px] break-all text-kobo-ink"
-            : "min-w-0 truncate text-right text-[14px] text-kobo-ink"
-        }
-      >
-        {value}
-      </span>
-    </div>
+    <Button
+      variant="outline"
+      onClick={onClick}
+      disabled={disabled}
+      className="h-auto shrink-0 gap-1.5 rounded-full border-kobo-ink/[0.12] px-5 py-2.5 text-[14px] font-semibold text-[#12645D] hover:border-kobo-teal-600 hover:bg-[#EFF7F4] hover:text-kobo-ink"
+    >
+      {children}
+    </Button>
+  );
+}
+
+function ActionRow({
+  label,
+  onClick,
+  icon,
+  destructive,
+}: {
+  label: string;
+  onClick: () => void;
+  icon?: ReactNode;
+  destructive?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        "flex w-full items-center justify-between gap-3.5 rounded-2xl px-3 py-3.5 text-left transition-colors",
+        destructive
+          ? "text-[15px] text-[#B4472E] hover:bg-[#B4472E]/[0.08]"
+          : "text-[15px] text-[#33565E] hover:bg-[#F1F6F7]"
+      )}
+    >
+      <span>{label}</span>
+      {icon ?? <ChevronRight className="size-[15px] text-[#6E8A91]" strokeWidth={2} />}
+    </button>
   );
 }

@@ -2,15 +2,33 @@ import { describe, expect, test } from "vitest";
 import { screen, within } from "@testing-library/react";
 import { renderKoboApp } from "./test-utils";
 
+/** Open Settings and wait for the real profile to have loaded (member-since only renders then). */
 async function openSettings() {
   const { user } = await renderKoboApp();
   await user.click(screen.getByRole("button", { name: "Settings" }));
   await screen.findByRole("heading", { name: "Settings" });
+  await screen.findByText("June 2026");
   return { user };
 }
 
-describe("Settings — account details", () => {
-  test("shows the real profile: email, country, member-since, linked address", async () => {
+function profileCard() {
+  return screen
+    .getByText("Identity verified · Tier 3 limits")
+    .closest("[data-slot=card]") as HTMLElement;
+}
+
+async function openEditProfile(user: Awaited<ReturnType<typeof openSettings>>["user"]) {
+  await user.click(screen.getByRole("button", { name: /edit profile/i }));
+  return screen.findByRole("dialog", { name: /edit profile/i });
+}
+
+async function openChangePasscode(user: Awaited<ReturnType<typeof openSettings>>["user"]) {
+  await user.click(screen.getByRole("button", { name: /change passcode/i }));
+  return screen.findByRole("dialog", { name: /change passcode/i });
+}
+
+describe("Settings — profile card", () => {
+  test("shows the real profile: email, member-since, linked address", async () => {
     await openSettings();
 
     // mock profile (lib/kobo/api.ts) — email + created_at come from GET /auth/me
@@ -21,35 +39,37 @@ describe("Settings — account details", () => {
     ).toBeInTheDocument();
   });
 
-  test("no Log out section in mock mode (no real session to end)", async () => {
+  test("no Log out row in mock mode (no real session to end)", async () => {
     await openSettings();
     expect(screen.queryByRole("button", { name: /^log out$/i })).not.toBeInTheDocument();
   });
 });
 
-describe("Settings — profile edit", () => {
-  test("saving a new name updates the account details and toasts", async () => {
+describe("Settings — edit profile dialog", () => {
+  test("saving a new name updates the profile card and toasts", async () => {
     const { user } = await openSettings();
 
+    await openEditProfile(user);
     const nameInput = screen.getByLabelText("Name");
     await user.clear(nameInput);
     await user.type(nameInput, "Tomiwa Martins");
     await user.click(screen.getByRole("button", { name: /save changes/i }));
 
     expect(await screen.findByText(/profile updated/i)).toBeInTheDocument();
-    const details = screen.getByText("Account details").closest("[data-slot=card]")!;
-    expect(within(details as HTMLElement).getByText("Tomiwa Martins")).toBeInTheDocument();
+    expect(within(profileCard()).getByText("Tomiwa Martins")).toBeInTheDocument();
   });
 
   test("Save changes is disabled until something actually changes", async () => {
-    await openSettings();
+    const { user } = await openSettings();
+    await openEditProfile(user);
     expect(screen.getByRole("button", { name: /save changes/i })).toBeDisabled();
   });
 });
 
-describe("Settings — password change", () => {
+describe("Settings — change passcode dialog", () => {
   test("rejects a mismatched confirmation", async () => {
     const { user } = await openSettings();
+    await openChangePasscode(user);
 
     await user.type(screen.getByLabelText("Current password"), "password123");
     await user.type(screen.getByLabelText("New password"), "newpass999");
@@ -61,6 +81,7 @@ describe("Settings — password change", () => {
 
   test("rejects a wrong current password against the backend", async () => {
     const { user } = await openSettings();
+    await openChangePasscode(user);
 
     await user.type(screen.getByLabelText("Current password"), "not-my-password");
     await user.type(screen.getByLabelText("New password"), "newpass999");
@@ -72,6 +93,7 @@ describe("Settings — password change", () => {
 
   test("accepts a valid change", async () => {
     const { user } = await openSettings();
+    await openChangePasscode(user);
 
     await user.type(screen.getByLabelText("Current password"), "password123");
     await user.type(screen.getByLabelText("New password"), "brandnew123");
@@ -79,5 +101,27 @@ describe("Settings — password change", () => {
     await user.click(screen.getByRole("button", { name: /update password/i }));
 
     expect(await screen.findByText(/password updated/i)).toBeInTheDocument();
+  });
+});
+
+describe("Settings — preferences", () => {
+  test("toggles flip when clicked", async () => {
+    const { user } = await openSettings();
+    const rateAlerts = screen.getByRole("switch", { name: "Rate alerts" });
+    expect(rateAlerts).toHaveAttribute("aria-checked", "true");
+
+    await user.click(rateAlerts);
+    expect(rateAlerts).toHaveAttribute("aria-checked", "false");
+  });
+
+  test("default currency can be changed and drives the send screen", async () => {
+    const { user } = await openSettings();
+
+    await user.click(screen.getByRole("button", { name: "GBP", pressed: false }));
+    expect(screen.getByRole("button", { name: "GBP" })).toHaveAttribute("aria-pressed", "true");
+
+    await user.click(screen.getByRole("button", { name: "Send money" }));
+    expect(await screen.findByRole("heading", { name: /send money home/i })).toBeInTheDocument();
+    expect(screen.getByLabelText("Send currency")).toHaveTextContent("GBP");
   });
 });
