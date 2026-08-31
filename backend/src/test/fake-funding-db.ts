@@ -44,6 +44,13 @@ export class FakeFundingDb implements FundingRequestDb {
     return this.rows.has(id) ? this.clone(this.rows.get(id)!) : null;
   }
 
+  async getBySessionId(sessionId: string): Promise<FundingRequestRow | null> {
+    for (const r of this.rows.values()) {
+      if (r.onramp_session_id === sessionId) return this.clone(r);
+    }
+    return null;
+  }
+
   async updateSession(id: string, sessionId: string | null): Promise<FundingRequestRow | null> {
     const r = this.rows.get(id);
     if (!r) return null;

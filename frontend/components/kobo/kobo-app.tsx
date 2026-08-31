@@ -28,6 +28,7 @@ import { ActivityScreen } from "@/components/kobo/activity-screen";
 import { HelpScreen } from "@/components/kobo/help-screen";
 import { RedirectHandoff } from "@/components/kobo/onramp/redirect-handoff";
 import { EmbeddedWidgetModal } from "@/components/kobo/onramp/embedded-widget-modal";
+import { CrossmintCheckoutModal } from "@/components/kobo/onramp/crossmint-checkout-modal";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Card } from "@/components/ui/card";
 import {
@@ -75,6 +76,7 @@ import {
 import type {
   CreateUserResponse,
   CurrencyCode,
+  FundingRail,
   FundingStatus,
   OnrampSession,
   Recipient,
@@ -166,7 +168,7 @@ export function KoboApp({
   const [fundingId, setFundingId] = useState("");
   const [fundingStatus, setFundingStatus] = useState<FundingStatus>("pending");
   const [fundingOnrampSession, setFundingOnrampSession] = useState<OnrampSession | null>(null);
-  const [fundingOnrampMode, setFundingOnrampMode] = useState<"redirect" | "embedded" | null>(null);
+  const [fundingOnrampMode, setFundingOnrampMode] = useState<"redirect" | "embedded" | "crossmint" | null>(null);
   // Set once when a MoonPay redirect lands back here; drives the resume poll.
   const [fundingResumeId, setFundingResumeId] = useState<string | null>(null);
 
@@ -457,7 +459,7 @@ export function KoboApp({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [step, undoSecs]);
 
-  async function handleAddFundsSubmit(amountEur: number) {
+  async function handleAddFundsSubmit(amountEur: number, rail: FundingRail) {
     setFundingStep("onramp");
     setFundingOnrampSession(null);
     setFundingAmount(String(amountEur));
@@ -465,13 +467,28 @@ export function KoboApp({
     try {
       // Ask MoonPay what IP it sees from this browser, so the backend can lock
       // the widget URL to it only when its own view agrees (see lib/kobo/onramp.ts).
-      // Best-effort — null on failure, backend then uses req.ip.
-      const clientObservedIp = await getMoonPayObservedIp();
+      // Best-effort — null on failure, backend then uses req.ip. Irrelevant for
+      // the crossmint rail; the backend ignores it for that rail regardless.
+      const clientObservedIp = rail === "moonpay" ? await getMoonPayObservedIp() : null;
       const res = await createFunding({
         sender_id: authUser.id,
         amount_eur: amountEur,
+        rail,
         client_observed_ip: clientObservedIp,
       });
+
+      if (rail === "crossmint") {
+        if (!res.onramp.checkoutClientSecret || !res.orderId) {
+          toast.error("Couldn't start checkout. Please try again.");
+          setFundingStep("closed");
+          return;
+        }
+        setFundingId(res.id);
+        setFundingOnrampMode("crossmint");
+        setFundingOnrampSession(res.onramp);
+        return;
+      }
+
       if (!res.onramp.widgetUrl) {
         toast.error("Couldn't start checkout. Please try again.");
         setFundingStep("closed");
@@ -825,6 +842,23 @@ export function KoboApp({
         />
       )}
 
+      {fundingStep === "onramp" && fundingOnrampSession && fundingOnrampMode === "crossmint" && (
+        <CrossmintCheckoutModal
+          orderId={fundingOnrampSession.sessionId!}
+          clientSecret={fundingOnrampSession.checkoutClientSecret!}
+          onClose={() => {
+            // Row stays pending — no credit ever happens client-side (see
+            // onramp-crossmint.test.tsx). A stale-pending sweep is a logged
+            // open item, out of scope here.
+            setFundingOnrampSession(null);
+            setFundingOnrampMode(null);
+            setFundingStep("closed");
+            toast("Add funds cancelled. Nothing was charged.");
+          }}
+          onProcessing={() => finishFundingCheckout("confirmed")}
+        />
+      )}
+
       <ProcessingOverlay
         open={fundingStep === "onramp" && !fundingOnrampSession}
         label="Preparing checkout"
@@ -837,6 +871,7 @@ export function KoboApp({
         label={FUNDING_STATUS_LABEL[fundingStatus]}
         sentStr={`€${fundingAmount}`}
         firstName="your balance"
+        onDismiss={() => setFundingStep("closed")}
       />
     </div>
   );

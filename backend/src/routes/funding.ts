@@ -187,6 +187,11 @@ fundingRouter.post("/", requireAuth, async (req, res) => {
 
   return res.status(201).json({
     ...updated,
+    // Convenience top-level aliases for the frontend (KOBO — CROSSMINT
+    // FRONTEND INTEGRATION Step 2) — additive, MoonPay/Transak unaffected
+    // (orderId is simply null for them, same as onramp.sessionId always was).
+    fundingRequestId: updated.id,
+    orderId: onramp.sessionId,
     onramp: {
       sessionId: onramp.sessionId,
       widgetUrl: onramp.widgetUrl,

@@ -48,6 +48,15 @@ export interface FundingRequestDb {
     rail: FundingRail;
   }): Promise<FundingRequestRow>;
   getById(id: string): Promise<FundingRequestRow | null>;
+  /**
+   * Looks up by `onramp_session_id` rather than `id`. MoonPay/Transak echo
+   * our own `funding_requests.id` back on their webhook payload (see
+   * routes/webhooks.ts), so they never need this — Crossmint's order-create
+   * body has no free-text external-reference field, so its webhook can only
+   * be correlated back via the `orderId` we stored as `onramp_session_id`
+   * at creation time (routes/funding.ts's `updateSession` call).
+   */
+  getBySessionId(sessionId: string): Promise<FundingRequestRow | null>;
   updateSession(id: string, sessionId: string | null): Promise<FundingRequestRow | null>;
   /** Atomically claim a pending request — only one caller may win. */
   claim(
@@ -81,6 +90,16 @@ const supabaseDb: FundingRequestDb = {
       .from("funding_requests")
       .select("*")
       .eq("id", id)
+      .maybeSingle();
+    if (error) throw error;
+    return (data as FundingRequestRow | null) ?? null;
+  },
+
+  async getBySessionId(sessionId) {
+    const { data, error } = await supabase
+      .from("funding_requests")
+      .select("*")
+      .eq("onramp_session_id", sessionId)
       .maybeSingle();
     if (error) throw error;
     return (data as FundingRequestRow | null) ?? null;

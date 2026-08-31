@@ -1,6 +1,17 @@
 import "@testing-library/jest-dom/vitest";
 import { cleanup } from "@testing-library/react";
 import { afterEach, vi } from "vitest";
+import type { ReactNode } from "react";
+
+// vitest.config.ts doesn't inject NEXT_PUBLIC_* vars the way a real Next.js
+// build does. Most of them already degrade gracefully when unset (e.g.
+// getMoonPayObservedIp() just returns null). CrossmintCheckoutModal
+// deliberately does NOT degrade gracefully — a missing client key renders a
+// loud "not configured" error UI in production, which would otherwise mask
+// every Crossmint-flow test behind that fallback instead of the real modal.
+if (!process.env.NEXT_PUBLIC_CROSSMINT_CLIENT_KEY) {
+  process.env.NEXT_PUBLIC_CROSSMINT_CLIENT_KEY = "ck_test_fake_not_a_real_key";
+}
 
 afterEach(() => {
   cleanup();
@@ -56,6 +67,23 @@ if (!window.IntersectionObserver) {
 if (!Element.prototype.scrollIntoView) {
   Element.prototype.scrollIntoView = () => {};
 }
+
+// The real @crossmint/client-sdk-react-ui pulls in a very large dependency
+// graph (wallet-connect/metamask SDKs etc — real cost, not a bug) that
+// visibly slowed down the WHOLE suite once kobo-app.tsx started importing
+// it transitively, even for test files that never touch the Crossmint flow
+// (measured: full-suite import time went from ~10s to 200s+). A real
+// embedded-checkout SDK shouldn't be loaded live in a unit test anyway
+// (same principle as MoonPay/Transak, whose real widgets are never
+// rendered either) — inert here by default; onramp-crossmint.test.tsx
+// overrides this locally with a controllable fake to test the actual
+// wiring (onClose/onProcessing).
+vi.mock("@crossmint/client-sdk-react-ui", () => ({
+  CrossmintProvider: ({ children }: { children: ReactNode }) => children,
+  CrossmintCheckoutProvider: ({ children }: { children: ReactNode }) => children,
+  CrossmintEmbeddedCheckout: () => null,
+  useCrossmintCheckout: () => ({ order: undefined, orderClientSecret: undefined }),
+}));
 
 if (!Element.prototype.hasPointerCapture) {
   Element.prototype.hasPointerCapture = () => false;

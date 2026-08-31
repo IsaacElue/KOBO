@@ -303,3 +303,103 @@ export function verifyCrossmintWebhookSignature(
     throw new Error("Webhook signature verification failed");
   }
 }
+
+/* ═══════════════════════════════════════════════════════════════════════
+ * WEBHOOK ENVELOPE PARSING — KOBO — CROSSMINT FRONTEND INTEGRATION, Step 1.
+ *
+ * The envelope shape `{type, actionId, timestamp, data{orderId, payment,
+ * lineItems, phase, quote}}` is KNOWN from real captured deliveries (one
+ * canned Checkout test-event, one genuine orders.quote.created, two genuine
+ * orders.payment.failed — all for real Onramp orders except the test-event).
+ * Beyond that shape, nothing is assumed: every field read below is checked
+ * for presence/type before use, and a real success event
+ * (orders.payment.succeeded / orders.delivery.completed) has NEVER been
+ * observed — see extractSettledUsdcAmount's doc comment.
+ * ═══════════════════════════════════════════════════════════════════════ */
+
+export interface CrossmintWebhookEnvelope {
+  type: string;
+  data: {
+    orderId: string;
+    payment?: {
+      status?: string;
+      currency?: string;
+      method?: string;
+      failureReason?: { category?: string; code?: string; message?: string; retryPolicy?: string };
+    };
+    lineItems?: Array<{
+      chain?: string;
+      delivery?: {
+        status?: string;
+        recipient?: { walletAddress?: string; locator?: string };
+        [key: string]: unknown;
+      };
+      executionParams?: { amount?: string; effectiveAmount?: number; mintHash?: string };
+      [key: string]: unknown;
+    }>;
+    phase?: string;
+    [key: string]: unknown;
+  };
+}
+
+/**
+ * Validates the minimum shape needed to route a webhook safely: `type` is a
+ * non-empty string, `data` is an object, `data.orderId` is a non-empty
+ * string. Returns null (never throws, never fabricates a shape) if any of
+ * that is missing — the caller responds 400 rather than guessing at intent.
+ */
+export function parseCrossmintWebhookEnvelope(raw: unknown): CrossmintWebhookEnvelope | null {
+  if (!raw || typeof raw !== "object") return null;
+  const r = raw as Record<string, unknown>;
+  if (typeof r.type !== "string" || !r.type) return null;
+  if (!r.data || typeof r.data !== "object") return null;
+  const data = r.data as Record<string, unknown>;
+  if (typeof data.orderId !== "string" || !data.orderId) return null;
+  return raw as CrossmintWebhookEnvelope;
+}
+
+/**
+ * Best-effort extraction of the ACTUAL settled/delivered USDC amount from a
+ * success event's `data`.
+ *
+ * ⚠️ UNVERIFIED — no real orders.payment.succeeded / orders.delivery.completed
+ * payload has ever been observed (see the Crossmint frontend integration
+ * report's Step 1(c)). Every field path below is a plausible guess based on
+ * the general Order object shape seen in real deliveries so far (quote-
+ * created, payment-failed, and one canned Checkout example whose
+ * `payment.received` field is the model for the second candidate here) —
+ * NOT a confirmed contract. Deliberately does NOT fall back to the
+ * pre-payment quote/executionParams target amount (`lineItems[].
+ * executionParams.amount`) — that number exists on every order regardless
+ * of outcome and using it here would be inventing a settled amount, exactly
+ * what this function must not do. Returns null, never a guessed number,
+ * when nothing here confidently represents post-settlement delivery — the
+ * caller then routes to manual_review instead of crediting.
+ */
+export function extractSettledUsdcAmount(data: CrossmintWebhookEnvelope["data"]): number | null {
+  const lineItem = data.lineItems?.[0] as Record<string, unknown> | undefined;
+  const delivery = lineItem?.delivery as Record<string, unknown> | undefined;
+  const payment = data.payment as Record<string, unknown> | undefined;
+  const received = payment?.received as Record<string, unknown> | undefined;
+
+  const candidates: unknown[] = [
+    delivery?.deliveredAmount,
+    delivery?.amount,
+    received?.amount,
+  ];
+
+  for (const c of candidates) {
+    const n = typeof c === "string" ? Number(c) : typeof c === "number" ? c : NaN;
+    if (Number.isFinite(n) && n > 0) return n;
+  }
+  return null;
+}
+
+/** The pooled-wallet address a success event's delivery.recipient must match. */
+export function extractRecipientWallet(data: CrossmintWebhookEnvelope["data"]): string | null {
+  const lineItem = data.lineItems?.[0] as Record<string, unknown> | undefined;
+  const delivery = lineItem?.delivery as Record<string, unknown> | undefined;
+  const recipient = delivery?.recipient as Record<string, unknown> | undefined;
+  const wallet = recipient?.walletAddress;
+  return typeof wallet === "string" && wallet ? wallet : null;
+}

@@ -133,6 +133,14 @@ export interface TransferRecord {
 export interface OnrampSession {
   sessionId: string | null;
   widgetUrl: string;
+  /** Crossmint-only — undefined for MoonPay/Transak. Needed client-side to
+   * mount CrossmintEmbeddedCheckout. Never logged, never persisted client-side
+   * beyond the in-memory session. */
+  checkoutClientSecret?: string;
+  /** Crossmint-only — "requires-kyc" | "awaiting-payment" | ... */
+  paymentStatus?: string;
+  /** Crossmint-only, present only when paymentStatus is "requires-kyc". */
+  kycInquiryId?: string;
 }
 
 /** `GET /balances/:userId` response — real for both senders and recipients now. */
@@ -157,12 +165,13 @@ export type FundingStatus =
   | "manual_review"
   | "payout_pending";
 
-/** A funding rail identifier. Only "moonpay"/"transak" are implemented — the
- * others are real, reserved names the backend recognizes but rejects with a
- * 501 (see lib/onramp.ts's IMPLEMENTED_RAILS, backend-side). Provider names
- * are never meant to reach end users directly — a future funding-method
- * picker ("Card"/"Bank transfer") would map to one of these internally. */
-export type FundingRail = "moonpay" | "transak" | "coinbase" | "sepa" | "stripe";
+/** A funding rail identifier. Only "moonpay"/"transak"/"crossmint" are
+ * implemented — the others are real, reserved names the backend recognizes
+ * but rejects with a 501 (see lib/onramp.ts's IMPLEMENTED_RAILS,
+ * backend-side). "crossmint" is a staging POC (KOBO — CROSSMINT FRONTEND
+ * INTEGRATION) — the Add Funds method picker (add-funds-dialog.tsx) sends
+ * it explicitly, never via the ONRAMP_PROVIDER default. */
+export type FundingRail = "moonpay" | "transak" | "crossmint" | "coinbase" | "sepa" | "stripe";
 
 export interface CreateFundingRequest {
   sender_id: string;
@@ -174,10 +183,9 @@ export interface CreateFundingRequest {
    */
   client_observed_ip?: string | null;
   /**
-   * Optional explicit rail — omitted falls back to the backend's
-   * ONRAMP_PROVIDER default, exactly today's behavior. Not sent by any
-   * current UI; exists for API-contract coherence with the Phase 1 backend
-   * change, not because the frontend uses it yet.
+   * Explicit rail. The Add Funds method picker always sends this now (both
+   * options — Crossmint and MoonPay) rather than relying on the backend's
+   * ONRAMP_PROVIDER default.
    */
   rail?: FundingRail;
 }
@@ -195,6 +203,15 @@ export interface FundingRecord {
   onramp_reference: string | null;
   failure_reason: string | null;
   created_at: string;
+}
+
+/** `POST /funding` response's convenience top-level aliases (KOBO — CROSSMINT
+ * FRONTEND INTEGRATION Step 2) — `fundingRequestId` mirrors `id`, `orderId`
+ * mirrors `onramp.sessionId`. Additive; MoonPay/Transak just get `orderId: null`. */
+export interface CreateFundingResponse extends FundingRecord {
+  fundingRequestId: string;
+  orderId: string | null;
+  onramp: OnrampSession;
 }
 
 /** The `users` row for the authenticated sender — the `user` field on every `POST /auth/*` response. */

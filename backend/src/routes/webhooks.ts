@@ -6,12 +6,16 @@ import { verifyWebhook as verifyMoonPayWebhook } from "../lib/moonpay";
 import {
   verifyCrossmintWebhookSignature,
   CrossmintWebhookUnconfiguredError,
+  parseCrossmintWebhookEnvelope,
+  extractSettledUsdcAmount,
+  extractRecipientWallet,
   type CrossmintWebhookHeaders,
 } from "../lib/crossmint-onramp";
 import { creditBalance } from "../lib/balances";
 import { fundingDb, type FundingRequestDb } from "../lib/funding-repo";
 import type { FundingRail } from "../lib/onramp";
 import { settleTransfer } from "../lib/settlement";
+import { backendWallet } from "../lib/solana";
 
 export const webhooksRouter = Router();
 
@@ -279,41 +283,53 @@ webhooksRouter.post("/moonpay", async (req, res) => {
   return res.status(result.status).json(result.body);
 });
 
+// One single-line, compact (no pretty-print newlines) console.log call per
+// received event — Railway's log ingestion splits on newlines into separate
+// log records regardless of how many console.log calls produced them, so a
+// pretty-printed multi-line JSON.stringify becomes many separate records
+// that can interleave with another concurrent delivery's records and
+// corrupt on reconstruction (observed empirically during the earlier
+// observation-only phase). Compact JSON has zero embedded newlines, so it
+// is always exactly one record, immune to interleaving.
+function logCrossmintWebhook(payload: unknown, svixId: string | undefined): void {
+  console.log(`CROSSMINT WEBHOOK [svix-id=${svixId ?? "none"}]: ${JSON.stringify(payload)}`);
+}
+
+const CROSSMINT_FAILURE_TYPES = new Set(["orders.payment.failed", "orders.delivery.failed"]);
+const CROSSMINT_SUCCESS_TYPES = new Set(["orders.payment.succeeded", "orders.delivery.completed"]);
+
 /**
- * STAGING OBSERVATION ONLY (KOBO — CROSSMINT WEBHOOK OBSERVATION / STEP 4).
+ * Real Crossmint Onramp webhook handler (KOBO — CROSSMINT FRONTEND
+ * INTEGRATION, Step 1). Verifies the Svix signature (the one piece of the
+ * contract confirmed from docs), validates the envelope shape (known from
+ * real captured deliveries — see lib/crossmint-onramp.ts), then:
  *
- * Crossmint's Onramp-specific webhook event names and payload shape are
- * NOT confirmed anywhere in current docs — the only concrete event names
- * found (orders.payment.succeeded, orders.delivery.completed) are
- * documented exclusively under Checkout V2/V3, not confirmed to apply to
- * Onramp orders (see the Crossmint feasibility spike + Step 1 report).
- * Per explicit instruction, this does NOT guess at that contract.
+ *   - orders.payment.failed / orders.delivery.failed → atomically claim
+ *     pending -> failed, store the real failureReason, never credit.
+ *   - orders.payment.succeeded / orders.delivery.completed → defensive,
+ *     gated. Recipient wallet must match Kobo's pooled wallet. A settled
+ *     amount is extracted (see extractSettledUsdcAmount — best-effort,
+ *     unverified) and crediting only happens when BOTH a sane amount was
+ *     found AND CROSSMINT_ENABLE_CREDIT=true. Otherwise: pending ->
+ *     manual_review, zero credit, never invents a number.
+ *   - anything else (orders.quote.created, etc.) → 200 ack, no state change.
  *
- * What this route DOES do: verify the one piece of the contract that IS
- * confirmed (Crossmint's generic Svix signature scheme — see
- * lib/crossmint-onramp.ts), then safely log the real payload so the actual
- * contract can be read off a genuine staging delivery instead of assumed.
- *
- * What this route deliberately does NOT do: parse the payload into a typed
- * shape, correlate it to a funding_requests row, call
- * handleFundingWebhook, credit any balance, or transition any row to
- * 'confirmed'. Zero ledger side effects — safe to receive real or malformed
- * traffic. Temporary: once a real event has been observed and the contract
- * is confirmed, this becomes a real handler following the MoonPay pattern
- * (verify -> correlate -> claim -> credit, exactly-once).
+ * Any type in the failure/success sets that can't be correlated to a
+ * pending 'crossmint'-rail row 404s/409s exactly like handleFundingWebhook,
+ * whose claim-once semantics this reuses directly for the credit path.
  */
-export function observeCrossmintWebhook(
+export async function handleCrossmintWebhook(
   rawBody: string,
-  headers: CrossmintWebhookHeaders
-): { status: number; body: unknown } {
+  headers: CrossmintWebhookHeaders,
+  db: FundingRequestDb = fundingDb
+): Promise<{ status: number; body: unknown }> {
   try {
     verifyCrossmintWebhookSignature(rawBody, headers);
   } catch (err) {
     if (err instanceof CrossmintWebhookUnconfiguredError) {
       console.error(
         "Crossmint webhook received but CROSSMINT_WEBHOOK_SECRET is not set yet " +
-          "— cannot verify, rejecting. Register the staging endpoint in Crossmint's " +
-          "console and set the resulting whsec_ secret to enable verification."
+          "— cannot verify, rejecting."
       );
       return { status: 503, body: { error: "Webhook receiver not yet configured" } };
     }
@@ -321,56 +337,101 @@ export function observeCrossmintWebhook(
     return { status: 401, body: { error: "Invalid webhook signature" } };
   }
 
-  let payload: unknown;
+  let raw: unknown;
   try {
-    payload = JSON.parse(rawBody);
+    raw = JSON.parse(rawBody);
   } catch {
-    console.error("Crossmint webhook signature valid but body is not valid JSON — logging raw body length only");
-    console.error(`Malformed payload, ${rawBody.length} bytes`);
+    console.error(`Crossmint webhook signature valid but body is not valid JSON, ${rawBody.length} bytes`);
     return { status: 400, body: { error: "Malformed JSON payload" } };
   }
 
-  logCrossmintWebhookObservation(payload, headers.svixId);
-  return { status: 200, body: { received: true, observed: true } };
-}
+  logCrossmintWebhook(raw, headers.svixId);
 
-// Best-effort extraction across a few plausible shapes, purely for a
-// quick-glance summary line — NEVER relied on for behavior (no crediting,
-// no state transition reads this). The full raw payload is logged
-// regardless, which is the actual ground truth this route exists to
-// capture; the summary is a convenience, not a source of truth.
-function logCrossmintWebhookObservation(payload: unknown, svixId: string | undefined): void {
-  const p = payload as Record<string, any>;
-  const topLevelKeys = p && typeof p === "object" ? Object.keys(p) : [];
-  const bestEffort = {
-    type: p?.type ?? p?.event ?? p?.data?.type ?? null,
-    orderId: p?.data?.orderId ?? p?.order?.orderId ?? p?.orderId ?? p?.data?.order?.orderId ?? null,
-    paymentStatus: p?.data?.payment?.status ?? p?.order?.payment?.status ?? p?.payment?.status ?? null,
-    deliveryStatus:
-      p?.data?.lineItems?.[0]?.delivery?.status ??
-      p?.order?.lineItems?.[0]?.delivery?.status ??
-      p?.lineItems?.[0]?.delivery?.status ??
-      null,
-  };
-  // One single-line, compact (no pretty-print newlines) console.log call per
-  // field — Railway's log ingestion splits on newlines into separate log
-  // records regardless of how many console.log calls produced them, so a
-  // pretty-printed multi-line JSON.stringify becomes many separate records
-  // that can interleave with another concurrent delivery's records and
-  // corrupt on reconstruction (observed empirically: two near-simultaneous
-  // deliveries interleaved mid-object). Compact JSON has zero embedded
-  // newlines, so it is always exactly one record, immune to interleaving.
-  console.log(
-    `=== CROSSMINT WEBHOOK OBSERVED (staging, observation-only — not credited, no state change) === ` +
-      `svix-id: ${svixId ?? "(none)"} | top-level keys: ${topLevelKeys.join(", ") || "(none)"} | ` +
-      `best-effort: ${JSON.stringify(bestEffort)}`
+  const envelope = parseCrossmintWebhookEnvelope(raw);
+  if (!envelope) {
+    console.error("Crossmint webhook: signature valid but payload doesn't match the known envelope shape (missing type or data.orderId)");
+    return { status: 400, body: { error: "Payload missing required fields (type, data.orderId)" } };
+  }
+
+  const { type, data } = envelope;
+  const orderId = data.orderId;
+
+  if (!CROSSMINT_FAILURE_TYPES.has(type) && !CROSSMINT_SUCCESS_TYPES.has(type)) {
+    return { status: 200, body: { received: true, type, handled: false } };
+  }
+
+  let fundingRequest;
+  try {
+    fundingRequest = await db.getBySessionId(orderId);
+  } catch (err) {
+    return { status: 500, body: { error: (err as Error).message } };
+  }
+  if (!fundingRequest) {
+    return { status: 404, body: { error: "No funding request matches this webhook's orderId" } };
+  }
+  if (fundingRequest.rail !== "crossmint") {
+    return {
+      status: 409,
+      body: { error: `Funding request rail is '${fundingRequest.rail}', but this webhook is Crossmint's` },
+    };
+  }
+  if (fundingRequest.status !== "pending") {
+    return { status: 409, body: { error: `Funding request already processed (status '${fundingRequest.status}')` } };
+  }
+
+  if (CROSSMINT_FAILURE_TYPES.has(type)) {
+    const fr = data.payment?.failureReason;
+    const reason = fr
+      ? `Crossmint ${fr.category ?? "unknown-category"}/${fr.code ?? "unknown-code"}: ${fr.message ?? "no message"}`
+      : `Crossmint reported ${type} with no failureReason detail`;
+    const claimed = await db.claim(fundingRequest.id, { status: "failed", failure_reason: reason });
+    if (!claimed) {
+      return { status: 409, body: { error: "Funding request already processed (concurrent webhook)" } };
+    }
+    return { status: 200, body: claimed };
+  }
+
+  // SUCCESS path — defensive, gated (see module + function doc comments).
+  const recipientWallet = extractRecipientWallet(data);
+  const pooledWallet = backendWallet.publicKey.toBase58();
+  if (recipientWallet !== pooledWallet) {
+    console.error(
+      `Crossmint success webhook for order ${orderId}: recipient wallet ` +
+        `${recipientWallet ?? "(missing)"} does not match pooled wallet ${pooledWallet}`
+    );
+    return { status: 409, body: { error: "Recipient wallet on the webhook payload does not match Kobo's pooled wallet" } };
+  }
+
+  const settledUsdc = extractSettledUsdcAmount(data);
+  const creditEnabled = process.env.CROSSMINT_ENABLE_CREDIT === "true";
+
+  if (!settledUsdc || !creditEnabled) {
+    const reasonNote = !settledUsdc
+      ? "no confidently-identified settled amount in the payload"
+      : "CROSSMINT_ENABLE_CREDIT is false";
+    console.warn(`Crossmint success webhook for order ${orderId}: NOT crediting (${reasonNote}) — routing to manual_review.`);
+    const claimed = await db.claim(fundingRequest.id, {
+      status: "manual_review",
+      failure_reason: `Crossmint reported ${type} but ${reasonNote} — needs manual review, not auto-credited.`,
+    });
+    if (!claimed) {
+      return { status: 409, body: { error: "Funding request already processed (concurrent webhook)" } };
+    }
+    return { status: 200, body: claimed };
+  }
+
+  // Flag on + a sane settled amount — reuse the exact MoonPay claim/credit
+  // pattern (atomic claim-once, then credit; claim failure still 409s).
+  return handleFundingWebhook(
+    fundingRequest.id,
+    { reference: orderId, creditedUsdc: settledUsdc, expectedRail: "crossmint" },
+    db
   );
-  console.log(`CROSSMINT FULL PAYLOAD [svix-id=${svixId ?? "none"}]: ${JSON.stringify(payload)}`);
 }
 
 webhooksRouter.post("/crossmint", async (req, res) => {
   const rawBody = (req as Request & { rawBody?: string }).rawBody ?? "";
-  const result = observeCrossmintWebhook(rawBody, {
+  const result = await handleCrossmintWebhook(rawBody, {
     svixId: req.header("svix-id") ?? undefined,
     svixTimestamp: req.header("svix-timestamp") ?? undefined,
     svixSignature: req.header("svix-signature") ?? undefined,

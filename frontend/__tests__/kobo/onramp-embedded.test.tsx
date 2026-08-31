@@ -9,7 +9,11 @@ import { renderKoboApp, simulateTransakEvent } from "./test-utils";
 async function reachFundingCheckout(user: ReturnType<typeof import("@testing-library/user-event").default.setup>) {
   await user.click(screen.getByRole("button", { name: /add funds/i }));
   const dialog = await screen.findByRole("dialog", { name: /add funds/i });
-  await user.click(within(dialog).getByRole("button", { name: /^add funds$/i }));
+  // "Card" (moonpay rail) — the mock widgetUrl it gets back isn't a real
+  // moonpay.com host, so at desktop width the existing isMoonPayWidget ||
+  // preferRedirectOnramp() resolution still lands on "embedded", exercising
+  // the same widget mechanics this file has always tested.
+  await user.click(within(dialog).getByRole("button", { name: "Card" }));
   return screen.findByRole("dialog", { name: /transak checkout/i }, { timeout: 2000 });
 }
 

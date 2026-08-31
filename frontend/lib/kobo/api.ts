@@ -2,6 +2,7 @@ import type {
   ActivityTransfer,
   BalanceResponse,
   CreateFundingRequest,
+  CreateFundingResponse,
   CreateTransferRequest,
   CreateUserRequest,
   CreateUserResponse,
@@ -371,7 +372,7 @@ export async function getBalance(userId: string): Promise<number> {
  */
 export async function createFunding(
   req: CreateFundingRequest
-): Promise<FundingRecord & { onramp: OnrampSession }> {
+): Promise<CreateFundingResponse> {
   if (!isMockMode()) {
     const res = await fetch(`${API_URL}/funding`, {
       method: "POST",
@@ -396,7 +397,7 @@ const mockFundingRequests = new Map<string, FundingRecord>();
 
 async function mockCreateFunding(
   req: CreateFundingRequest
-): Promise<FundingRecord & { onramp: OnrampSession }> {
+): Promise<CreateFundingResponse> {
   await new Promise((r) => setTimeout(r, 250));
 
   const rate = randomRate("EUR");
@@ -419,6 +420,18 @@ async function mockCreateFunding(
   };
   mockFundingRequests.set(id, record);
 
+  if (record.rail === "crossmint") {
+    // Mock mode has no real Crossmint order — a fake clientSecret is enough
+    // for the embedded-checkout mock harness (see CrossmintCheckoutModal's
+    // own mock-mode branch) to render its own simulated UI.
+    return {
+      ...record,
+      fundingRequestId: id,
+      orderId: id,
+      onramp: { sessionId: id, widgetUrl: "", checkoutClientSecret: `mock_secret_${id}`, paymentStatus: "awaiting-payment" },
+    };
+  }
+
   const params = new URLSearchParams({
     transferId: id,
     amount: req.amount_eur.toFixed(2),
@@ -429,7 +442,7 @@ async function mockCreateFunding(
       ? `${window.location.origin}/transfers/mock-widget?${params.toString()}`
       : `/transfers/mock-widget?${params.toString()}`;
 
-  return { ...record, onramp: { sessionId: id, widgetUrl } };
+  return { ...record, fundingRequestId: id, orderId: null, onramp: { sessionId: id, widgetUrl } };
 }
 
 /**

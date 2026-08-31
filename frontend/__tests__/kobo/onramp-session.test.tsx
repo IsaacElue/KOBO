@@ -15,10 +15,12 @@ vi.mock("@/lib/kobo/api", async (importOriginal) => {
   return { ...actual, createFunding };
 });
 
+// "Card" (moonpay) — the picker's redirect-path option, same rail this
+// file's redirect-handoff coverage always exercised.
 async function openAddFunds(user: ReturnType<typeof import("@testing-library/user-event").default.setup>) {
   await user.click(screen.getByRole("button", { name: /add funds/i }));
   const dialog = await screen.findByRole("dialog", { name: /add funds/i });
-  await user.click(within(dialog).getByRole("button", { name: /^add funds$/i }));
+  await user.click(within(dialog).getByRole("button", { name: "Card" }));
 }
 
 beforeEach(() => {
@@ -94,7 +96,7 @@ describe("funding redirect on-ramp path", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /add funds/i }));
     const dialog = screen.getByRole("dialog", { name: /add funds/i });
-    fireEvent.click(within(dialog).getByRole("button", { name: /^add funds$/i }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Card" }));
 
     await act(async () => {
       await vi.advanceTimersByTimeAsync(500);
