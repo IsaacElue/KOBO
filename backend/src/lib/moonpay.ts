@@ -35,7 +35,21 @@ const WIDGET_BASE_URL =
 // NOT support usdc_sol (supportsTestMode:false), so local/sandbox testing must
 // set this to a test-mode Solana stablecoin — "pyusd_sol" is the closest
 // stand-in (stablecoin, same SPL address format). One env flip to go live.
-const CRYPTO_CURRENCY_CODE = process.env.MOONPAY_CRYPTO_CURRENCY_CODE || "usdc_sol";
+// ⚠️⚠️⚠️ TEMPORARY DIAGNOSTIC OVERRIDE — REMOVE AFTER THE SOL SANDBOX TEST ⚠️⚠️⚠️
+// Lets one real POST /funding call use a different currencyCode than the
+// configured MOONPAY_CRYPTO_CURRENCY_CODE, so the SAME proven-correct
+// hashAllowedIp/signWidgetUrl code below runs unmodified — no reimplemented
+// signing logic in a throwaway script. Unset in Railway and delete this block
+// the moment the diagnostic is done; never left wired into any real flow.
+const TEST_CURRENCY_OVERRIDE = process.env.MOONPAY_TEST_CURRENCY_OVERRIDE || "";
+if (TEST_CURRENCY_OVERRIDE) {
+  console.warn(
+    `⚠️  MOONPAY_TEST_CURRENCY_OVERRIDE active: currencyCode forced to "${TEST_CURRENCY_OVERRIDE}" ` +
+      "instead of the configured MOONPAY_CRYPTO_CURRENCY_CODE. TEMPORARY DIAGNOSTIC — remove immediately after use."
+  );
+}
+const CRYPTO_CURRENCY_CODE =
+  TEST_CURRENCY_OVERRIDE || process.env.MOONPAY_CRYPTO_CURRENCY_CODE || "usdc_sol";
 
 // Base fiat. EUR confirmed supported (GET /v3/currencies, code "eur",
 // minBuyAmount 20) with SEPA available for Ireland (GET /v4/ip_address →
