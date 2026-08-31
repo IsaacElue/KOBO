@@ -7,7 +7,19 @@ is **actually implemented** on each side as of this sync, not what was planned.
 Update this file in place when either side's contract changes — don't append a new
 dated section, overwrite the stale one.
 
-**Latest addition (Funding Rail Abstraction — Phase 1):** `POST /funding` now
+**Latest addition (roadmap reprioritized — MoonPay repair is now Phase 2):** the
+founder reordered the funding roadmap: MoonPay (fix + end-to-end proof) → SEPA →
+Conversion Engine → Stripe POC → funding UX → hardening → observability →
+production readiness. **Coinbase is archived** — Phase 2A's research stands
+(see COINBASE_FEASIBILITY.md, now banner-marked archived) but nothing is being
+built against it; its reserved `FundingRail` value and DB slot stay, unused.
+MoonPay's `verify_widget_signature 400` failure — previously attributed to an
+IP-lock and treated as an external/unsolvable account issue — is now **under
+active investigation with evidence**, not assumed. Findings land in this file
+once Step 2 of that investigation completes; see KOBO_BUILD_PLAN.md section 8
+for the current roadmap status.
+
+**Prior addition (Funding Rail Abstraction — Phase 1):** `POST /funding` now
 accepts an explicit `rail` field (`"moonpay"` | `"transak"`, others reserved —
 see below) instead of being governed solely by the server-wide
 `ONRAMP_PROVIDER` env var; the response and `GET /funding/:id` now also

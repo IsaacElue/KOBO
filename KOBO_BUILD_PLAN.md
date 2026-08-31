@@ -245,12 +245,23 @@ Real closed pilot, repeat-usage/hold-time tracking, KYC decision revisited with 
 
 Everything above (sections 0–7) is the original mock-to-real / Demo Day plan.
 This section tracks a **distinct, founder-directed initiative**: making
-sender-side funding reliable and provider-independent, ahead of a Coinbase
-Onramp / SEPA / Stripe Treasury rollout. MoonPay's known IP-lock issue (an
-external MoonPay account-setting problem, not a Kobo bug — see
-API_CONTRACT.md's `POST /funding` section) is the immediate trigger; the
-underlying goal is that Kobo should not be structurally dependent on any one
-funding provider.
+sender-side funding reliable and provider-independent. MoonPay's widget
+signature/IP-verification failure (`verify_widget_signature 400`) is the
+immediate trigger — **under active investigation as of Phase 2, not accepted
+as an unsolvable external issue.** Whether it's a code bug, an env/config
+mismatch, or genuinely account/dashboard-side is being verified with evidence,
+not assumed — see the Phase 2 entry below and API_CONTRACT.md for the findings
+once they land.
+
+**Roadmap order, as of this sync (superseded the earlier Coinbase-first
+sequencing — see the Phase 2A note below):** MoonPay (fix + E2E proof) → SEPA
+→ Conversion Engine → Stripe POC → funding UX → money-safety hardening →
+observability → production readiness. **Coinbase is ARCHIVED** — technically
+viable per Phase 2A's research (see below), but not being built. Its reserved
+`FundingRail` type value and DB `check` constraint slot are deliberately kept
+(costs nothing, no reason to rip out working groundwork) — just nothing is
+wired to it. Do not implement it, do not route any live flow through it, until
+explicitly re-prioritized.
 
 **Founder decisions, stated once here so they aren't re-litigated:**
 - Provider names (MoonPay, Transak, Coinbase, ...) are never a user-facing
@@ -283,7 +294,27 @@ what's still a gap: **API_CONTRACT.md, "Resolved this sync" #20.** Don't
 duplicate that detail here — this section is the product-level pointer, that
 one is the engineering record.
 
-**Phases 2–8 (Coinbase, SEPA, Stripe, money-safety hardening, funding UX,
-observability, production readiness)** — not started. Each will get its own
-entry here once it lands, same pattern as above: a short pointer to the full
-detail in API_CONTRACT.md, not a restatement.
+**Phase 2A (Coinbase Onramp feasibility) — COMPLETE / PASS WITH RISK.
+ARCHIVED as of this sync, findings kept as-is, not invalidated.** Research
+only, no code/DB touched. Verdict stands: Coinbase is technically a clean fit
+for Kobo's settlement shape but not viable as the *primary* Irish funding rail
+as documented — no guest checkout for Ireland (hosted widget or its
+Headless-API replacement, confirmed US-only), sandbox can't exercise the real
+account+KYC Irish journey. **The founder has since reprioritized** — MoonPay
+repair now leads, Coinbase is shelved, not because the research changed but
+because the roadmap did. Full detail: **COINBASE_FEASIBILITY.md** (repo root,
+now carries an ARCHIVED banner pointing here).
+
+**Phase 2 (MoonPay repair + end-to-end funding proof) — IN PROGRESS.** New
+top priority. Goal: root-cause the `verify_widget_signature 400` failure with
+evidence (not assumption), fix the smallest thing that's actually broken, then
+prove the complete funding loop — session → widget → purchase → webhook →
+balance credit, exactly once — end to end, covering the failure-mode matrix
+(duplicate/out-of-order/delayed webhooks, expired sessions, cancel/fail
+outcomes). Investigation findings, fix, and E2E results: **API_CONTRACT.md**
+once each step lands; this entry gets a one-line status update, not a
+restatement.
+
+**Phases 3–8 (SEPA, Conversion Engine, Stripe POC, funding UX, money-safety
+hardening, observability, production readiness)** — not started, in that
+order. Each gets its own entry here once it lands.
