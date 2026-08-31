@@ -352,11 +352,20 @@ function logCrossmintWebhookObservation(payload: unknown, svixId: string | undef
       p?.lineItems?.[0]?.delivery?.status ??
       null,
   };
-  console.log("=== CROSSMINT WEBHOOK OBSERVED (staging, observation-only — not credited, no state change) ===");
-  console.log(`svix-id: ${svixId ?? "(none)"}`);
-  console.log(`top-level keys: ${topLevelKeys.join(", ") || "(none — not an object)"}`);
-  console.log(`best-effort field guess: ${JSON.stringify(bestEffort)}`);
-  console.log(`FULL PAYLOAD:\n${JSON.stringify(payload, null, 2)}`);
+  // One single-line, compact (no pretty-print newlines) console.log call per
+  // field — Railway's log ingestion splits on newlines into separate log
+  // records regardless of how many console.log calls produced them, so a
+  // pretty-printed multi-line JSON.stringify becomes many separate records
+  // that can interleave with another concurrent delivery's records and
+  // corrupt on reconstruction (observed empirically: two near-simultaneous
+  // deliveries interleaved mid-object). Compact JSON has zero embedded
+  // newlines, so it is always exactly one record, immune to interleaving.
+  console.log(
+    `=== CROSSMINT WEBHOOK OBSERVED (staging, observation-only — not credited, no state change) === ` +
+      `svix-id: ${svixId ?? "(none)"} | top-level keys: ${topLevelKeys.join(", ") || "(none)"} | ` +
+      `best-effort: ${JSON.stringify(bestEffort)}`
+  );
+  console.log(`CROSSMINT FULL PAYLOAD [svix-id=${svixId ?? "none"}]: ${JSON.stringify(payload)}`);
 }
 
 webhooksRouter.post("/crossmint", async (req, res) => {
