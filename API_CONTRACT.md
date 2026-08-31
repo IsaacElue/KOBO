@@ -1837,6 +1837,51 @@ File refs are all under `frontend/`:
       "Card" / "Bank transfer" instead of provider names) has **zero frontend
       work done** — `rail` is accepted by the API but nothing sends it yet.
       Deliberately deferred per item 13 ("no frontend redesign this phase").
+21. **MoonPay IP-verification failure — root cause, fix, and closeout proof
+    (Phase 2, closed for now).** Root cause: `allowedIpAddress` was sent as
+    the raw customer IP (`lib/moonpay.ts:184`, pre-fix); MoonPay's current
+    docs (dev.moonpay.com — IP matching) require
+    `HMAC-SHA256(secretKey, normalizedIp)`, base64. Fixed in `hashAllowedIp`/
+    `normalizeIpForHashing` (`lib/moonpay.ts`) and `resolveClientIp`
+    (`routes/funding.ts`, precedence: X-Forwarded-For first hop →
+    CF-Connecting-IP → req.ip). No API contract change, no DB change.
+
+    **Decisive proof, against the real deployed backend
+    (`api.kobopayments.com`), not localhost:**
+    - **Hash correctness:** independently recomputed
+      `HMAC-SHA256(realSecret, myRealPublicIP)` from a throwaway script using
+      the actual `MOONPAY_SECRET_KEY` (never logged) and this machine's real
+      public IP (`95.83.222.154`, confirmed via `api.ipify.org`) —
+      `uXpzZWMv5cVbUZSx1WX7BPxbBuhv/ujVz5JM0hB82Pk=`. A fresh live
+      `POST /funding` to the deployed backend returned the identical value.
+      Exact match, not a shape check.
+    - **Webhook → credit pipeline, exactly once:** constructed a webhook
+      payload and signed it with the real `MOONPAY_WEBHOOK_KEY` (never
+      logged), POSTed to the real deployed `POST /webhooks/moonpay`. First
+      delivery: `200`, funding request `pending` → `confirmed`, balance
+      credited `1.158` USDC — the payload's `quoteCurrencyAmount`, correctly
+      preferred over the row's pre-quote estimate (`1.159958`), confirming
+      that preference logic too. Identical payload replayed a second time:
+      `409` (`"Funding request is in status 'confirmed', expected
+      'pending'"`), balance unchanged (`updated_at` identical to the first
+      delivery) — no double credit.
+    - **Scope of this proof, stated precisely:** this proves Kobo's own
+      signature verification, claim-once, and credit-exactly-once logic
+      work correctly end to end against the real production database. It
+      does **not** prove MoonPay's own systems can originate and deliver
+      such a webhook themselves — that requires either their dashboard's
+      test-event feature (no MoonPay dashboard access this session) or a
+      real completed purchase.
+    - **Not independently confirmed:** whether the widget actually loads
+      without "Unverified Connection" in a real browser — no Chrome
+      extension access this session. The founder attempted a live sandbox
+      purchase separately; outcome not yet folded back into this entry.
+    - **Base64 digest encoding** remains pinned-not-independently-verified
+      (see `hashAllowedIp`'s doc comment) — the decisive hash match above
+      confirms the *mechanism* is correct; it doesn't by itself rule out
+      that MoonPay's real IP-match check could still want a different
+      encoding, since that check happens widget-side, not provable from a
+      server-to-server test.
 
 ## Still open
 

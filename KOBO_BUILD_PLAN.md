@@ -305,15 +305,12 @@ repair now leads, Coinbase is shelved, not because the research changed but
 because the roadmap did. Full detail: **COINBASE_FEASIBILITY.md** (repo root,
 now carries an ARCHIVED banner pointing here).
 
-**Phase 2 (MoonPay repair + end-to-end funding proof) — IN PROGRESS.** New
-top priority. Goal: root-cause the `verify_widget_signature 400` failure with
-evidence (not assumption), fix the smallest thing that's actually broken, then
-prove the complete funding loop — session → widget → purchase → webhook →
-balance credit, exactly once — end to end, covering the failure-mode matrix
-(duplicate/out-of-order/delayed webhooks, expired sessions, cancel/fail
-outcomes). Investigation findings, fix, and E2E results: **API_CONTRACT.md**
-once each step lands; this entry gets a one-line status update, not a
-restatement.
+**Phase 2 (MoonPay repair + end-to-end funding proof) — FIX DEPLOYED +
+CRYPTOGRAPHICALLY VERIFIED; webhook→credit pipeline proven exactly-once on
+the real deployed backend; live widget purchase completion not independently
+confirmed (no browser access this session) — closed out for now, not
+reopened as a live blocker.** Root cause (raw IP instead of an HMAC hash) found
+and fixed; full detail, every quote/URL, and the decisive proof: **API_CONTRACT.md**.
 
 **Phases 3–8 (SEPA, Conversion Engine, Stripe POC, funding UX, money-safety
 hardening, observability, production readiness)** — not started, in that
