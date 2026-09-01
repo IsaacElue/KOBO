@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -9,7 +9,7 @@ import { cn } from "@/lib/utils";
 import { getMyTransfers } from "@/lib/kobo/api";
 import { formatAmount } from "@/lib/kobo/format";
 import type { ActivityTransfer, Recipient } from "@/lib/kobo/types";
-import { ArrowRight } from "lucide-react";
+import { ArrowRight, ArrowUpRight, Plus, Receipt } from "lucide-react";
 
 /**
  * Overview — the dashboard from the "Kobo Web App" design export: a greeting,
@@ -34,6 +34,8 @@ export function OverviewScreen({
   recipients,
   onStartSend,
   onSendAgain,
+  onAddFunds,
+  onViewActivity,
 }: {
   userName: string;
   /** Already currency-formatted by KoboApp, e.g. "€1,840.50". */
@@ -43,6 +45,9 @@ export function OverviewScreen({
   recipients: Recipient[];
   onStartSend: () => void;
   onSendAgain: (recipientId: string) => void;
+  /** Opens the shared Add Funds dialog — the only mobile entry point to it. */
+  onAddFunds: () => void;
+  onViewActivity: () => void;
 }) {
   const firstName = userName.split(" ")[0] || "there";
 
@@ -121,6 +126,20 @@ export function OverviewScreen({
         </h1>
         <p className="text-[15.5px] text-[#5E7A81]">Here&apos;s where your money stands today.</p>
       </header>
+
+      {/* Mobile quick actions. Desktop reaches all three from the sidebar / nav,
+          so this is < lg only. Every action is a real destination — no invented
+          entries. "Add funds" opens the shared Add Funds dialog, otherwise
+          unreachable on mobile. */}
+      <div
+        role="group"
+        aria-label="Quick actions"
+        className="mb-6 grid grid-cols-3 gap-3 lg:hidden"
+      >
+        <QuickAction icon={<Plus strokeWidth={2.2} />} label="Add funds" onClick={onAddFunds} primary />
+        <QuickAction icon={<ArrowUpRight strokeWidth={2.2} />} label="Send" onClick={onStartSend} />
+        <QuickAction icon={<Receipt strokeWidth={2} />} label="Activity" onClick={onViewActivity} />
+      </div>
 
       {/* Stat tiles */}
       <div className="mb-6 grid grid-cols-1 gap-4.5 sm:grid-cols-2 xl:grid-cols-4">
@@ -253,6 +272,34 @@ export function OverviewScreen({
         </div>
       </div>
     </div>
+  );
+}
+
+function QuickAction({
+  icon,
+  label,
+  onClick,
+  primary,
+}: {
+  icon: ReactNode;
+  label: string;
+  onClick: () => void;
+  primary?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        "flex min-h-[76px] flex-col items-center justify-center gap-1.5 rounded-2xl border px-2 py-3 text-[13px] font-medium transition-all active:scale-[0.97] [&_svg]:size-[18px]",
+        primary
+          ? "border-transparent bg-gradient-to-br from-kobo-teal-500 to-kobo-teal-800 text-kobo-mint-light shadow-lg shadow-kobo-teal-900/30"
+          : "border-kobo-ink/[0.08] bg-white text-[#33565E] hover:border-kobo-teal-600",
+      )}
+    >
+      {icon}
+      {label}
+    </button>
   );
 }
 

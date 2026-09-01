@@ -3,6 +3,12 @@ import { screen, within } from "@testing-library/react";
 import { renderKoboApp } from "./test-utils";
 
 async function openPasscode(user: ReturnType<typeof import("@testing-library/user-event").default.setup>) {
+  // The send form loads with an empty amount; set one so Confirm is enabled.
+  // Clear first — this helper is called twice in one test and the amount
+  // persists across a "back to form".
+  const amountInput = screen.getByRole("textbox", { name: /amount to send/i });
+  await user.clear(amountInput);
+  await user.type(amountInput, "250");
   await user.click(screen.getByRole("button", { name: /confirm & continue/i }));
   return screen.findByRole("dialog", { name: /enter your passcode/i });
 }

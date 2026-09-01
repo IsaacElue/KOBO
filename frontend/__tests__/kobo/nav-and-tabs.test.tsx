@@ -1,7 +1,14 @@
 import { describe, expect, test } from "vitest";
-import { screen } from "@testing-library/react";
+import { screen, within } from "@testing-library/react";
 import { renderKoboApp, sidebarNavButton } from "./test-utils";
 import { NAV_ITEMS } from "@/lib/kobo/nav";
+
+async function gotoOverview(user: Awaited<ReturnType<typeof renderKoboApp>>["user"]) {
+  await user.click(sidebarNavButton("Overview"));
+  await screen.findByRole("heading", { name: /welcome back/i });
+}
+
+const quickActions = () => within(screen.getByRole("group", { name: /quick actions/i }));
 
 describe("Request tab", () => {
   test("renders its placeholder without breaking the summary panel", async () => {
@@ -71,6 +78,61 @@ describe("Overview nav item", () => {
     await screen.findByRole("heading", { name: /welcome back/i });
     await user.click(screen.getByRole("button", { name: /send money now/i }));
     expect(screen.getByRole("button", { name: /confirm & continue/i })).toBeInTheDocument();
+  });
+});
+
+describe("Overview mobile quick actions", () => {
+  test("offers exactly Add funds / Send / Activity — no invented entries", async () => {
+    const { user } = await renderKoboApp();
+    await gotoOverview(user);
+
+    const labels = quickActions()
+      .getAllByRole("button")
+      .map((b) => b.textContent?.trim());
+    expect(labels).toEqual(["Add funds", "Send", "Activity"]);
+  });
+
+  test("'Add funds' opens the shared Add Funds dialog", async () => {
+    const { user } = await renderKoboApp();
+    await gotoOverview(user);
+
+    await user.click(quickActions().getByRole("button", { name: "Add funds" }));
+    expect(
+      await screen.findByRole("dialog", { name: /add funds/i })
+    ).toBeInTheDocument();
+  });
+
+  test("'Send' goes to the Send screen", async () => {
+    const { user } = await renderKoboApp();
+    await gotoOverview(user);
+
+    await user.click(quickActions().getByRole("button", { name: "Send" }));
+    expect(
+      await screen.findByRole("heading", { name: /send money home/i })
+    ).toBeInTheDocument();
+  });
+
+  test("'Activity' goes to the Activity screen", async () => {
+    const { user } = await renderKoboApp();
+    await gotoOverview(user);
+
+    await user.click(quickActions().getByRole("button", { name: "Activity" }));
+    expect(
+      await screen.findByRole("heading", { name: "Activity" })
+    ).toBeInTheDocument();
+  });
+});
+
+describe("Recent transfers — View all", () => {
+  test("navigates to the Activity screen", async () => {
+    const { user } = await renderKoboApp();
+
+    // RecentTransfers lives on the Send screen (the default landing screen).
+    await user.click(screen.getByRole("button", { name: /view all/i }));
+
+    expect(
+      await screen.findByRole("heading", { name: "Activity" })
+    ).toBeInTheDocument();
   });
 });
 

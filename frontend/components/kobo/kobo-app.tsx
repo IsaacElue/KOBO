@@ -148,7 +148,12 @@ export function KoboApp({
   const [currency, setCurrency] = useState<CurrencyCode>(
     () => loadOnrampDraft()?.currency ?? loadDefaultCurrency() ?? "EUR"
   );
-  const [amount, setAmount] = useState(() => loadOnrampDraft()?.amount ?? "250");
+  // Empty by default — not a preset. Seeding a non-zero amount (previously
+  // "250") meant that on every load the over-balance check (amount > balance)
+  // ran against balance's initial 0 before refreshBalance() resolved, flashing
+  // "That's more than your available balance" — permanently so when the real
+  // balance was 0. Empty -> amt 0 -> Confirm stays disabled, no false error.
+  const [amount, setAmount] = useState(() => loadOnrampDraft()?.amount ?? "");
   const [recipientId, setRecipientId] = useState(() => loadOnrampDraft()?.recipientId ?? RECIPIENTS[0].id);
   const [rate, setRate] = useState(randomRate("EUR"));
   const [secsUntilLock, setSecsUntilLock] = useState(RATE_LOCK_SECONDS);
@@ -669,6 +674,8 @@ export function KoboApp({
               setTab("send");
             }}
             onSendAgain={handleSendToRecipient}
+            onAddFunds={openAddFunds}
+            onViewActivity={() => setNavIndex(ACTIVITY_INDEX)}
           />
         ) : navIndex === ACTIVITY_INDEX ? (
           <ActivityScreen />
@@ -731,6 +738,7 @@ export function KoboApp({
                       history={TRANSFER_HISTORY}
                       recipients={recipients}
                       onSelect={(item) => setDetailTransferId(item.id)}
+                      onViewAll={() => setNavIndex(ACTIVITY_INDEX)}
                     />
                   </div>
 

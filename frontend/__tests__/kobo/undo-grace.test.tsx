@@ -5,6 +5,9 @@ import { renderKoboApp } from "./test-utils";
 type User = Awaited<ReturnType<typeof renderKoboApp>>["user"];
 
 async function reachUndoWindow(user: User) {
+  const amountInput = screen.getByRole("textbox", { name: /amount to send/i });
+  await user.clear(amountInput);
+  await user.type(amountInput, "250");
   await user.click(screen.getByRole("button", { name: /confirm & continue/i }));
   const passcode = await screen.findByRole("dialog", { name: /enter your passcode/i });
   for (const d of ["1", "2", "3", "4"]) {

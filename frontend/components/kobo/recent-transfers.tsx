@@ -9,10 +9,13 @@ export function RecentTransfers({
   history,
   recipients,
   onSelect,
+  onViewAll,
 }: {
   history: TransferHistoryItem[];
   recipients: Recipient[];
   onSelect: (item: TransferHistoryItem) => void;
+  /** Opens the full history — the Activity screen. */
+  onViewAll: () => void;
 }) {
   const byId = new Map(recipients.map((r) => [r.id, r]));
 
@@ -22,7 +25,13 @@ export function RecentTransfers({
         <span className="text-base font-semibold tracking-tight text-kobo-ink">
           Recent transfers
         </span>
-        <span className="cursor-pointer text-[13.5px] text-kobo-teal-600">View all</span>
+        <button
+          type="button"
+          onClick={onViewAll}
+          className="-mr-2 rounded-lg px-2 py-1.5 text-[13.5px] font-medium text-kobo-teal-600 transition-colors hover:text-kobo-teal-800 focus-visible:ring-3 focus-visible:ring-kobo-teal-600/40 focus-visible:outline-none"
+        >
+          View all
+        </button>
       </div>
       <div className="flex flex-col">
         {history.map((h) => {
@@ -32,7 +41,7 @@ export function RecentTransfers({
             <button
               key={h.id}
               onClick={() => onSelect(h)}
-              className="flex items-center gap-4 rounded-2xl border-b border-kobo-ink/[0.06] p-2 text-left transition-all hover:translate-x-1 hover:bg-white/90"
+              className="flex items-center gap-3 rounded-2xl border-b border-kobo-ink/[0.06] p-2 text-left transition-all hover:translate-x-1 hover:bg-white/90 sm:gap-4"
             >
               <Avatar>
                 <AvatarFallback className="bg-gradient-to-br from-[#DDF2E6] to-[#C6EAD6] font-semibold text-kobo-mint-dark">
@@ -45,19 +54,24 @@ export function RecentTransfers({
                 </div>
                 <div className="font-mono text-xs text-[#9BB2B8]">{h.reference}</div>
               </div>
-              <span className="hidden text-[13px] text-[#8AA3A9] sm:inline">{h.date}</span>
-              <span className="min-w-24 text-right font-mono text-sm text-kobo-ink">
-                €{h.amountEur.toFixed(2)}
-              </span>
-              <Badge
-                className={
-                  h.status === "Delivered"
-                    ? "bg-[#DDF2E6] text-kobo-mint-dark"
-                    : "bg-kobo-sand text-kobo-sand-dark"
-                }
-              >
-                {h.status}
-              </Badge>
+              {/* Trailing meta: stacks vertically on phones so the fixed-width
+                  amount + badge don't starve the flex-1 name column down to
+                  "A…". Reverts to an inline row at >=640px. */}
+              <div className="flex shrink-0 flex-col items-end gap-1 sm:flex-row sm:items-center sm:gap-4">
+                <span className="hidden text-[13px] text-[#8AA3A9] sm:inline">{h.date}</span>
+                <span className="text-right font-mono text-sm text-kobo-ink sm:min-w-24">
+                  €{h.amountEur.toFixed(2)}
+                </span>
+                <Badge
+                  className={
+                    h.status === "Delivered"
+                      ? "bg-[#DDF2E6] text-kobo-mint-dark"
+                      : "bg-kobo-sand text-kobo-sand-dark"
+                  }
+                >
+                  {h.status}
+                </Badge>
+              </div>
             </button>
           );
         })}

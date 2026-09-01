@@ -63,10 +63,11 @@ export function SendAmountCard({
           value={amount}
           onChange={(e) => onAmountChange(e.target.value.replace(/[^\d.]/g, ""))}
           inputMode="decimal"
+          placeholder="0"
           aria-label="Amount to send"
           aria-invalid={overBalance}
           className={cn(
-            "w-full min-w-0 border-none bg-transparent p-0 text-5xl font-semibold tabular-nums tracking-tight outline-none sm:text-[66px]",
+            "w-full min-w-0 border-none bg-transparent p-0 text-5xl font-semibold tabular-nums tracking-tight outline-none placeholder:text-[#C3D2D5] sm:text-[66px]",
             overBalance ? "text-destructive" : "text-kobo-ink"
           )}
         />
