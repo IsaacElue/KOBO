@@ -30,6 +30,12 @@
  * backend wallet (`lib/solana.ts`) — this module only ever resolves a
  * recipient's `wallet_address`. Nothing about how funds move (settlement,
  * `sendUsdcTransfer`) changes.
+ *
+ * Routes consume this via the thin `lib/wallet-provider.ts` abstraction
+ * (`RecipientWalletProvider` / `crossmintRecipientWalletProvider`), which
+ * delegates straight back to `resolveRecipientWallet` below without
+ * re-normalizing the email - callers normalize first with
+ * `normalizeRecipientEmail`.
  */
 
 const API_KEY = process.env.CROSSMINT_API_KEY;
