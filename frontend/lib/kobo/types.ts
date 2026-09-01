@@ -51,6 +51,22 @@ export interface CreateUserResponse {
   created_at: string;
 }
 
+/** The `user` on `GET /users?email=` — the full recipient `users` row, email column included (unlike `CreateUserResponse`, whose 201 shape deliberately omits it). */
+export interface RecipientLookupUser {
+  id: string;
+  name: string;
+  role: string;
+  country: string;
+  wallet_address: string;
+  email: string | null;
+  created_at: string;
+}
+
+/** `GET /users?email=` response — `{ user: RecipientLookupUser }`. */
+export interface RecipientLookupResult {
+  user: RecipientLookupUser;
+}
+
 export interface TransferHistoryItem {
   id: string;
   recipientId: string;
