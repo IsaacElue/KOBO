@@ -18,9 +18,11 @@
  *        effectivePosition = basePosition - (confirmedReferrals * SPOTS_PER_REFERRAL)
  *    Recompute live; do not mutate a stored rank.
  *
- *  - A referral counts only once the referred email confirms/joins carrying this
- *    user's code (attributed at THEIR join, from `?ref=<referralCode>`). Dedupe
- *    by referred-email, reject self-referral, rate-limit joins per IP.
+ *  - Because rank is fully derived from live queue order, when a referrer moves
+ *    from effective position P_old up to P_new, EVERYONE between P_new and P_old
+ *    shifts down by exactly one rank automatically — it is a side effect of the
+ *    recompute-on-read model, NOT a separate batch update. No one else's row is
+ *    touched; their next `GET /status` just counts one more person ahead.
  *
  *  - `spotsGained = basePosition - currentEffectivePosition`, clamped at >= 0.
  *
@@ -30,6 +32,18 @@
  *
  *  - At EARLY_ACCESS_AT (5) confirmed referrals, set an `earlyAccess` flag
  *    server-side (separate from rank).
+ *
+ *  Referral crediting: a referral counts only once the referred email
+ *  confirms/joins carrying this user's code (attributed at THEIR join, from
+ *  `?ref=<referralCode>`).
+ *
+ *  Abuse prevention — v1 REQUIRED:
+ *    * dedupe referral credits by referred-email (one credit per unique person)
+ *    * rate-limit joins per IP
+ *    * ignore `?ref=` codes that don't resolve to a real entry
+ *  Abuse prevention — OPTIONAL / future (Isaac's call, not a blocker): device-
+ *  or IP-level self-referral detection. Meaningfully harder than the above;
+ *  email-based dedup already covers the common case.
  *
  *  The mock in ./api.ts cannot see a real queue from one browser, so it returns
  *  a STABLE placeholder (derived from the email, not random) and the UI labels
