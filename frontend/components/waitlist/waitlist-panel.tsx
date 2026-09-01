@@ -145,6 +145,10 @@ function JoinedState({
         #{signupNumber.toLocaleString()}
       </div>
 
+      <p className="mt-4 text-[13.5px] text-landing-label">
+        You&apos;re in. We&apos;ll email you the moment early access opens. No spam, just the launch, Thank you!
+      </p>
+
       <button
         onClick={onStartOver}
         className="mt-6 text-[13px] font-medium text-landing-label underline underline-offset-4 transition-colors hover:text-landing-muted"
