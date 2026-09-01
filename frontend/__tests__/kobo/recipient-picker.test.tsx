@@ -52,6 +52,7 @@ describe("recipient picker", () => {
     await user.type(within(panel).getByPlaceholderText(/search saved recipients/i), "zzz-no-one");
 
     expect(within(panel).getByText(/no one by that name/i)).toBeInTheDocument();
+    expect(within(panel).getByText(/add someone by name or email, or use a wallet address/i)).toBeInTheDocument();
     expect(within(panel).getByRole("button", { name: /add new recipient/i })).toBeInTheDocument();
   });
 
@@ -63,7 +64,9 @@ describe("recipient picker", () => {
     await user.click(within(panel).getByRole("button", { name: /add new recipient/i }));
 
     const dialog = await screen.findByRole("dialog", { name: /add new recipient/i });
-    // Email is the default/primary mode — no toggle click needed.
+    // Email is the default/primary mode — no toggle click needed, and the
+    // description promises we provision the wallet for the user.
+    expect(within(dialog).getByText(/We'll handle the wallet for you\./i)).toBeInTheDocument();
     await user.click(within(dialog).getByRole("button", { name: /add recipient/i }));
     expect(within(dialog).getByRole("alert")).toHaveTextContent(/enter the recipient's email address/i);
 
@@ -86,7 +89,7 @@ describe("recipient picker", () => {
     expect(await screen.findByText(/folake adeyemi added as a recipient/i)).toBeInTheDocument();
   });
 
-  test("add new recipient by pasted address — via the 'paste it instead' toggle", async () => {
+  test("add new recipient by pasted address — via the 'already have their wallet address' toggle", async () => {
     const { user } = await renderKoboApp();
     await openPicker(user);
     const panel = screen.getByRole("region", { name: /saved recipients/i });
@@ -94,7 +97,7 @@ describe("recipient picker", () => {
     await user.click(within(panel).getByRole("button", { name: /add new recipient/i }));
 
     const dialog = await screen.findByRole("dialog", { name: /add new recipient/i });
-    await user.click(within(dialog).getByRole("button", { name: /paste it instead/i }));
+    await user.click(within(dialog).getByRole("button", { name: /already have their wallet address/i }));
 
     await user.click(within(dialog).getByRole("button", { name: /add recipient/i }));
     expect(within(dialog).getByRole("alert")).toHaveTextContent(/enter a solana wallet address/i);
