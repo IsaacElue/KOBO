@@ -1,4 +1,5 @@
 import type { CurrencyCode, CurrencyMeta, Recipient, TransferHistoryItem } from "./types";
+import { isMockMode } from "./config";
 
 /**
  * Mock mode's only demo sender — `AuthGate` (components/kobo/auth-gate.tsx)
@@ -77,6 +78,19 @@ export const RECIPIENTS: Recipient[] = [
     lastSent: "Sent €310 on 19 Jun",
   },
 ];
+
+/**
+ * Recipients safe to pre-seed into the picker. In real mode only the default
+ * recipient ("Adaeze Okonkwo") is a real `users` row — the other three
+ * fixtures (Chidi / Ngozi / Emeka) have fabricated ids that 400 at
+ * `POST /transfers` ("Recipient not found"). They're dropped in real mode;
+ * the user adds real recipients via "Add recipient" (real `POST /users`).
+ * Mock mode keeps all four for a fuller demo. Consumers that render the
+ * pre-seeded picker should use this, not the raw `RECIPIENTS` fixture.
+ */
+export const SEED_RECIPIENTS: Recipient[] = isMockMode()
+  ? RECIPIENTS
+  : RECIPIENTS.filter((r) => r.id === DEFAULT_RECIPIENT_ID);
 
 export const TRANSFER_HISTORY: TransferHistoryItem[] = [
   { id: "txn_1", recipientId: DEFAULT_RECIPIENT_ID, reference: "KB-9182-EU", date: "12 Aug", amountEur: 200, status: "Delivered" },

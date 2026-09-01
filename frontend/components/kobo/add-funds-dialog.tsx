@@ -13,12 +13,21 @@ import { AMOUNT_PRESETS } from "@/lib/kobo/mock-data";
 import { getRate } from "@/lib/kobo/api";
 import type { FundingRail } from "@/lib/kobo/types";
 
+const HIDE_CROSSMINT =
+  process.env.NEXT_PUBLIC_KOBO_HIDE_CROSSMINT_FUNDING === "true";
+
 /**
  * Funding-method picker (KOBO — CROSSMINT FRONTEND INTEGRATION, Step 3a).
- * Two options, both send `rail` explicitly — never the backend's
- * ONRAMP_PROVIDER default. Transak has no picker entry (still reachable
- * only via ONRAMP_PROVIDER=transak server default for whatever legacy path
- * still calls the rail-less API shape; not this dialog).
+ * Both options send `rail` explicitly — never the backend's ONRAMP_PROVIDER
+ * default. Transak has no picker entry (still reachable only via
+ * ONRAMP_PROVIDER=transak server default; not this dialog).
+ *
+ * Demo-stabilisation note (pre-Demo-Day): MoonPay is the primary/default
+ * option. The Crossmint ("Card / Apple Pay") path opens a real embedded
+ * checkout but its fiat->USDC settlement is provider-gated (KYC + risk
+ * controls) and auto-credit is intentionally disabled server-side, so it is
+ * shown as the secondary choice. Set NEXT_PUBLIC_KOBO_HIDE_CROSSMINT_FUNDING=true
+ * to drop it from the picker entirely for a live demo.
  */
 export function AddFundsDialog({
   open,
@@ -123,28 +132,30 @@ export function AddFundsDialog({
           <p className="text-xs font-medium text-kobo-ink/50">Choose how to pay</p>
           <button
             type="button"
-            onClick={() => pick("crossmint")}
-            disabled={numericAmount <= 0}
-            aria-label="Card / Apple Pay"
-            className="w-full rounded-2xl bg-gradient-to-br from-kobo-teal-500 to-kobo-teal-800 px-4 py-3 text-left text-sm font-semibold text-kobo-mint-light transition-opacity disabled:opacity-40"
-          >
-            Card / Apple Pay
-            <span className="mt-0.5 block text-xs font-normal text-kobo-mint-light/70">
-              Fast, in-app checkout
-            </span>
-          </button>
-          <button
-            type="button"
             onClick={() => pick("moonpay")}
             disabled={numericAmount <= 0}
-            aria-label="Card"
-            className="w-full rounded-2xl border border-kobo-ink/[0.12] bg-white px-4 py-3 text-left text-sm font-semibold text-kobo-ink transition-opacity hover:border-kobo-teal-600 disabled:opacity-40"
+            aria-label="Card or bank transfer"
+            className="w-full rounded-2xl bg-gradient-to-br from-kobo-teal-500 to-kobo-teal-800 px-4 py-3 text-left text-sm font-semibold text-kobo-mint-light transition-opacity disabled:opacity-40"
           >
-            Card
-            <span className="mt-0.5 block text-xs font-normal text-kobo-ink/50">
-              Redirects to our payment partner
+            Card or bank transfer
+            <span className="mt-0.5 block text-xs font-normal text-kobo-mint-light/70">
+              Opens our payment partner&apos;s secure checkout
             </span>
           </button>
+          {!HIDE_CROSSMINT && (
+            <button
+              type="button"
+              onClick={() => pick("crossmint")}
+              disabled={numericAmount <= 0}
+              aria-label="Card / Apple Pay"
+              className="w-full rounded-2xl border border-kobo-ink/[0.12] bg-white px-4 py-3 text-left text-sm font-semibold text-kobo-ink transition-opacity hover:border-kobo-teal-600 disabled:opacity-40"
+            >
+              Card / Apple Pay
+              <span className="mt-0.5 block text-xs font-normal text-kobo-ink/50">
+                In-app checkout
+              </span>
+            </button>
+          )}
         </div>
       </DialogContent>
     </Dialog>

@@ -87,8 +87,11 @@ Same — needs your Vercel login + GitHub grant.
 | `TRANSAK_API_SECRET` | *(from local `.env`)* | **secret**, same reason |
 | `TRANSAK_ENV` | `staging` | |
 | `TRANSAK_REFERRER_DOMAIN` | *(optional)* `kobopayments.com` | has a default; only matters if you swap `ONRAMP_PROVIDER=transak` |
+| `CROSSMINT_API_KEY` | `sk_staging_…` | ⚠️ **secret, and REQUIRED — the backend crashes at boot without it.** `lib/crossmint.ts` *and* `lib/crossmint-onramp.ts` both `throw` at import; the latter also rejects anything that isn't an `sk_staging_` key. |
+| `CROSSMINT_WEBHOOK_SECRET` | *(optional)* `whsec_…` | **secret.** Only needed once the Crossmint webhook endpoint is registered — until then `POST /webhooks/crossmint` returns `503` (not a crash). |
+| `CROSSMINT_ENABLE_CREDIT` | **UNSET** | Leave false/unset for the demo — a Crossmint success webhook routes to `manual_review`, never auto-credits. |
 | `FRONTEND_ORIGIN` | `https://kobopayments.com,https://www.kobopayments.com,http://localhost:3000` | multi-origin (new — see §6). Keep localhost so you can run the frontend locally against prod. |
-| `TRUST_PROXY` | `1` | Railway = one proxy hop. (Code defaults to `1` anyway; set it explicitly.) |
+| `TRUST_PROXY` | **UNSET** | Leave unset. The code default (`loopback, uniquelocal, 100.64.0.0/10`) already covers Railway's proxy range and resolves `req.ip` to the first public IP. A fixed `1` was wrong on Railway (landed on the internal `100.64.x.x` hop). |
 | `PORT` | **UNSET** | Railway injects it. Code falls back to `4000` locally. |
 | `DEV_SKIP_AUTH` | **UNSET** | ⚠️ **never in a deployed env.** Bypasses auth entirely. |
 
@@ -97,8 +100,10 @@ Same — needs your Vercel login + GitHub grant.
 | Variable | Value for the deploy | Notes |
 |---|---|---|
 | `NEXT_PUBLIC_KOBO_API_URL` | `https://api.kobopayments.com` | unset ⇒ mock mode; setting it turns on real backend mode |
-| `NEXT_PUBLIC_KOBO_DEFAULT_RECIPIENT_ID` | `a8b7ac31-01c7-4541-9d56-f9aa52d6b10e` | same real `users.id` as local |
+| `NEXT_PUBLIC_KOBO_DEFAULT_RECIPIENT_ID` | `a8b7ac31-01c7-4541-9d56-f9aa52d6b10e` | same real `users.id` as local — **must be a real `users` row in the deployed Supabase project** (see §8) |
 | `NEXT_PUBLIC_KOBO_DEFAULT_RECIPIENT_WALLET` | `Guur9ickFMJHxhutjvsMYZh76175eFu4kUUqGTTX8M8h` | same as local |
+| `NEXT_PUBLIC_MOONPAY_PUBLISHABLE_KEY` | `pk_test_…` | must match backend `MOONPAY_PUBLISHABLE_KEY`. Used by the browser IP self-check before Add Funds. Publishable — safe in the bundle. |
+| `NEXT_PUBLIC_CROSSMINT_CLIENT_KEY` | `ck_staging_…` | client-side key for the "Card / Apple Pay" embedded checkout. Its allowed origins (Crossmint console) must include the real frontend origin. Without it that option renders a "not configured" card. |
 | `NEXT_PUBLIC_DEV_SKIP_AUTH` | **UNSET** | ⚠️ **never on Vercel.** With it unset the real Supabase auth gate is live (login/signup/PIN). The GoTrue timeout fix means a degraded Supabase now returns a visible 503 instead of hanging — but the login screen *is* the real one. |
 
 > All `NEXT_PUBLIC_*` values are compiled into the browser bundle and are
@@ -210,6 +215,42 @@ curl -s -D - -o /dev/null -H "Origin: https://kobopayments.com" $BASE/health \
 Frontend: load `https://kobopayments.com`, confirm it's the real login screen
 (not the amber dev-bypass banner), and that the network tab shows calls to
 `https://api.kobopayments.com`.
+
+---
+
+## 8. Known-good demo account (devnet)
+
+Do this once the backend is live and the pooled wallet is funded (§4).
+
+1. **Default recipient must be a real row.** `NEXT_PUBLIC_KOBO_DEFAULT_RECIPIENT_ID`
+   / `_WALLET` (§3) must point at a real `role: "recipient"` row in the
+   **deployed** Supabase project. Create it if it isn't there:
+   ```
+   curl -s -X POST $BASE/users -H 'Content-Type: application/json' \
+     -d '{"name":"Adaeze Okonkwo","role":"recipient","country":"NG","wallet_address":"<a real devnet address>"}'
+   ```
+   In real mode the app only pre-seeds this one recipient (the other three
+   fixtures are mock-only); add more live via "Add recipient".
+
+2. **Create the demo sender through the real flow** — sign up in the UI
+   (`https://kobopayments.com`, real email + password), then set the PIN.
+   Note the `users.id` (Supabase dashboard → `users`, or the signup response).
+
+3. **Seed its balance** with the dev/demo utility (internal ledger only — no
+   funding request, no provider settlement, no Solana tx; uses the same atomic
+   `creditBalance()` the real webhook uses):
+   ```
+   cd backend
+   # env: SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, SOLANA_RPC_URL (devnet)
+   npx tsx scripts/seed-demo-balance.ts <demo_sender_users.id> 500
+   ```
+   Refuses to run if `SOLANA_RPC_URL` looks like mainnet. Prints the
+   before/after balance and the affected user.
+
+4. **Verify the happy path once, for real:** log in → PIN → send a small
+   amount to the default recipient → confirm the recipient balance / Activity
+   updates and record the `solana_tx_signature` (from `GET /transfers/:id` or
+   `explorer.solana.com/?cluster=devnet`).
 
 ---
 

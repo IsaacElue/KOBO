@@ -109,7 +109,7 @@ describe("Add Funds — funding-method picker (KOBO — CROSSMINT FRONTEND INTEG
   test("shows both options: Card / Apple Pay (Crossmint) and Card (MoonPay)", async () => {
     const { dialog } = await openAddFunds();
     expect(within(dialog).getByRole("button", { name: "Card / Apple Pay" })).toBeInTheDocument();
-    expect(within(dialog).getByRole("button", { name: "Card" })).toBeInTheDocument();
+    expect(within(dialog).getByRole("button", { name: "Card or bank transfer" })).toBeInTheDocument();
   });
 
   test("picking Card / Apple Pay always sends rail: 'crossmint' explicitly", async () => {
@@ -129,7 +129,7 @@ describe("Add Funds — funding-method picker (KOBO — CROSSMINT FRONTEND INTEG
       onramp: { sessionId: null, widgetUrl: "https://buy.moonpay.com/checkout/abc" },
     });
     const { user, dialog } = await openAddFunds();
-    await user.click(within(dialog).getByRole("button", { name: "Card" }));
+    await user.click(within(dialog).getByRole("button", { name: "Card or bank transfer" }));
 
     expect(createFunding).toHaveBeenCalledTimes(1);
     expect(createFunding).toHaveBeenCalledWith(expect.objectContaining({ rail: "moonpay" }));

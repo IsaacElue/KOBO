@@ -13,7 +13,7 @@ async function reachFundingCheckout(user: ReturnType<typeof import("@testing-lib
   // moonpay.com host, so at desktop width the existing isMoonPayWidget ||
   // preferRedirectOnramp() resolution still lands on "embedded", exercising
   // the same widget mechanics this file has always tested.
-  await user.click(within(dialog).getByRole("button", { name: "Card" }));
+  await user.click(within(dialog).getByRole("button", { name: "Card or bank transfer" }));
   return screen.findByRole("dialog", { name: /transak checkout/i }, { timeout: 2000 });
 }
 

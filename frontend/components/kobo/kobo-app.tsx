@@ -35,7 +35,7 @@ import {
   CONVERSION_FEE_RATE,
   CURRENCIES,
   CURRENT_USER,
-  RECIPIENTS,
+  SEED_RECIPIENTS,
   SUPPORT_EMAIL,
   randomRate,
 } from "@/lib/kobo/mock-data";
@@ -138,10 +138,10 @@ export function KoboApp({
 
   const [recipients, setRecipients] = useState<Recipient[]>(() => {
     const draft = loadOnrampDraft();
-    if (draft && !draft.completed && !RECIPIENTS.some((r) => r.id === draft.recipientId)) {
-      return [draftRecipient(draft.recipientId, draft.recipient), ...RECIPIENTS];
+    if (draft && !draft.completed && !SEED_RECIPIENTS.some((r) => r.id === draft.recipientId)) {
+      return [draftRecipient(draft.recipientId, draft.recipient), ...SEED_RECIPIENTS];
     }
-    return RECIPIENTS;
+    return SEED_RECIPIENTS;
   });
   const [currency, setCurrency] = useState<CurrencyCode>(
     () => loadOnrampDraft()?.currency ?? loadDefaultCurrency() ?? "EUR"
@@ -152,7 +152,7 @@ export function KoboApp({
   // "That's more than your available balance" — permanently so when the real
   // balance was 0. Empty -> amt 0 -> Confirm stays disabled, no false error.
   const [amount, setAmount] = useState(() => loadOnrampDraft()?.amount ?? "");
-  const [recipientId, setRecipientId] = useState(() => loadOnrampDraft()?.recipientId ?? RECIPIENTS[0].id);
+  const [recipientId, setRecipientId] = useState(() => loadOnrampDraft()?.recipientId ?? SEED_RECIPIENTS[0].id);
   const [rate, setRate] = useState(randomRate("EUR"));
   const [secsUntilLock, setSecsUntilLock] = useState(RATE_LOCK_SECONDS);
   const [balance, setBalance] = useState(0);
