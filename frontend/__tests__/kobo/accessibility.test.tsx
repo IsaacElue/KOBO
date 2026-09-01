@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 import { screen, within } from "@testing-library/react";
-import { renderKoboApp, confirmSend } from "./test-utils";
+import { renderKoboApp, confirmSend, openTransferDetail } from "./test-utils";
 
 // The send form now loads with an empty amount, so "Confirm & Continue" starts
 // disabled — enter an amount before the tests that reach the passcode dialog
@@ -47,15 +47,12 @@ describe("overlay dismissal + focus management", () => {
 
   test("Escape closes the transfer detail dialog and returns focus to the trigger", async () => {
     const { user } = await renderKoboApp();
-    const trigger = screen.getByText("Chidi Balogun").closest("button")!;
-
-    await user.click(trigger);
-    expect(screen.getByRole("dialog", { name: /transfer details/i })).toBeInTheDocument();
+    const { row } = await openTransferDetail(user, "Chidi Balogun");
 
     await user.keyboard("{Escape}");
 
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-    expect(trigger).toHaveFocus();
+    expect(row).toHaveFocus();
   });
 
   test("Escape closes the success dialog and resets to the form", async () => {
@@ -108,8 +105,7 @@ describe("passcode keypad keyboard operability", () => {
 describe("toast announcements", () => {
   test("toasts render inside an aria-live region", async () => {
     const { user } = await renderKoboApp();
-    await user.click(screen.getByText("Chidi Balogun").closest("button")!);
-    const dialog = screen.getByRole("dialog", { name: /transfer details/i });
+    const { dialog } = await openTransferDetail(user, "Chidi Balogun");
 
     await user.click(within(dialog).getByRole("button", { name: /send again/i }));
 

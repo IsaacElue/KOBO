@@ -123,18 +123,9 @@ describe("Overview mobile quick actions", () => {
   });
 });
 
-describe("Recent transfers — View all", () => {
-  test("navigates to the Activity screen", async () => {
-    const { user } = await renderKoboApp();
-
-    // RecentTransfers lives on the Send screen (the default landing screen).
-    await user.click(screen.getByRole("button", { name: /view all/i }));
-
-    expect(
-      await screen.findByRole("heading", { name: "Activity" })
-    ).toBeInTheDocument();
-  });
-});
+// "Recent transfers — View all" moved to transfer-history-ia.test.tsx: the
+// preview (and its "View all" button) now lives on Overview, not the Send
+// screen, so that suite exercises it from the right place.
 
 describe("Activity nav item", () => {
   test("renders the real Activity screen with market + history sections", async () => {

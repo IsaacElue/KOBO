@@ -9,6 +9,7 @@ import { cn } from "@/lib/utils";
 import { getMarketOverview, getMyTransfers } from "@/lib/kobo/api";
 import { getSolSpot } from "@/lib/kobo/jupiter";
 import { formatAmount, nameToInitials } from "@/lib/kobo/format";
+import { transferShortDate, transferStatusMeta } from "@/lib/kobo/transfer-display";
 import type { ActivityTransfer, JupiterSpot, MarketOverview } from "@/lib/kobo/types";
 import { ArrowDownRight, ArrowUpRight, TrendingUp } from "lucide-react";
 
@@ -23,7 +24,12 @@ const MARKET_POLL_MS = 120_000;
  * — no points, badges or leaderboards. Same shell, palette and card chrome
  * as every other screen. Every data source degrades to a clean fallback.
  */
-export function ActivityScreen() {
+export function ActivityScreen({
+  onOpenDetail,
+}: {
+  /** Opens the shared TransferDetailDialog for a tapped history row. */
+  onOpenDetail: (transfer: ActivityTransfer) => void;
+}) {
   // One fetch of the real transfer history, shared by the stats strip and the
   // history list. undefined = loading, null = failed, [] = none yet.
   const [transfers, setTransfers] = useState<ActivityTransfer[] | null | undefined>(undefined);
@@ -55,7 +61,11 @@ export function ActivityScreen() {
         <SolTicker />
         <MarketCard />
         <SendingStats transfers={transfers ?? null} loading={transfers === undefined} />
-        <TransferHistory transfers={transfers} onRetry={loadTransfers} />
+        <TransferHistory
+          transfers={transfers}
+          onRetry={loadTransfers}
+          onOpenDetail={onOpenDetail}
+        />
       </div>
     </div>
   );
@@ -294,18 +304,14 @@ function StatTile({ label, value }: { label: string; value: string }) {
 
 /* ─────────────────────────  Real transfer history  ───────────────────────── */
 
-const HISTORY_STATUS: Record<string, { label: string; className: string }> = {
-  confirmed: { label: "Delivered", className: "bg-[#DDF2E6] text-kobo-mint-dark" },
-  failed: { label: "Failed", className: "bg-destructive/10 text-destructive" },
-};
-const IN_PROGRESS = { label: "In progress", className: "bg-[#EFF5F6] text-[#5E7A81]" };
-
 function TransferHistory({
   transfers,
   onRetry,
+  onOpenDetail,
 }: {
   transfers: ActivityTransfer[] | null | undefined;
   onRetry: () => void;
+  onOpenDetail: (transfer: ActivityTransfer) => void;
 }) {
   return (
     <section>
@@ -334,12 +340,13 @@ function TransferHistory({
         ) : (
           <div className="flex flex-col">
             {transfers.map((t) => {
-              const meta = HISTORY_STATUS[t.status] ?? IN_PROGRESS;
+              const meta = transferStatusMeta(t.status);
               const name = t.recipient_name ?? "Recipient";
               return (
-                <div
+                <button
                   key={t.id}
-                  className="flex items-center gap-4 rounded-2xl border-b border-kobo-ink/[0.06] p-2 last:border-b-0"
+                  onClick={() => onOpenDetail(t)}
+                  className="flex items-center gap-3 rounded-2xl border-b border-kobo-ink/[0.06] p-2 text-left transition-all last:border-b-0 hover:translate-x-1 hover:bg-white/90 focus-visible:ring-3 focus-visible:ring-kobo-teal-600/30 focus-visible:outline-none sm:gap-4"
                 >
                   <Avatar>
                     <AvatarFallback className="bg-gradient-to-br from-[#DDF2E6] to-[#C6EAD6] font-semibold text-kobo-mint-dark">
@@ -348,13 +355,19 @@ function TransferHistory({
                   </Avatar>
                   <div className="min-w-0 flex-1">
                     <div className="truncate text-[15.5px] font-medium text-kobo-ink">{name}</div>
-                    <div className="font-mono text-xs text-[#9BB2B8]">{shortDate(t.created_at)}</div>
+                    <div className="font-mono text-xs text-[#9BB2B8]">
+                      {transferShortDate(t.created_at)}
+                    </div>
                   </div>
-                  <span className="min-w-20 text-right font-mono text-sm text-kobo-ink">
-                    €{formatAmount(t.amount_eur)}
-                  </span>
-                  <Badge className={meta.className}>{meta.label}</Badge>
-                </div>
+                  {/* Trailing meta stacks on phones so the fixed amount + badge
+                      don't crush the flex-1 name; inline row at >=640. */}
+                  <div className="flex shrink-0 flex-col items-end gap-1 sm:flex-row sm:items-center sm:gap-4">
+                    <span className="text-right font-mono text-sm text-kobo-ink sm:min-w-20">
+                      €{formatAmount(t.amount_eur)}
+                    </span>
+                    <Badge className={meta.className}>{meta.label}</Badge>
+                  </div>
+                </button>
               );
             })}
           </div>
@@ -372,14 +385,4 @@ function Eyebrow({ children }: { children: ReactNode }) {
       {children}
     </div>
   );
-}
-
-function shortDate(iso: string): string {
-  const d = new Date(iso);
-  const now = new Date();
-  const days = Math.floor((now.getTime() - d.getTime()) / 86_400_000);
-  if (days <= 0) return "Today";
-  if (days === 1) return "Yesterday";
-  if (days < 7) return `${days} days ago`;
-  return d.toLocaleDateString("en-IE", { day: "numeric", month: "short" });
 }

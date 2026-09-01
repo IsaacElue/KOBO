@@ -59,6 +59,22 @@ export async function confirmSend(
 }
 
 /**
+ * Navigate to Activity, wait for the history list, and open the shared
+ * TransferDetailDialog for the given recipient's row. Returns the row button
+ * (the focus-return target) and the dialog.
+ */
+export async function openTransferDetail(
+  user: ReturnType<typeof import("@testing-library/user-event").default.setup>,
+  recipientName: string
+) {
+  await user.click(sidebarNavButton("Activity"));
+  const row = (await screen.findByText(recipientName)).closest("button") as HTMLButtonElement;
+  await user.click(row);
+  const dialog = await screen.findByRole("dialog", { name: /transfer details/i });
+  return { row, dialog };
+}
+
+/**
  * Dispatches a same-origin postMessage as the mock Transak widget would, so tests can
  * drive the embedded on-ramp step (order-created / order-successful / order-failed /
  * widget-closed) without needing the iframe's document to actually load under jsdom.
