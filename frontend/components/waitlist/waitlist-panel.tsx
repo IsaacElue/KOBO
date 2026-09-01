@@ -85,7 +85,7 @@ export function WaitlistPanel() {
     <div className="mx-auto max-w-[480px]">
       {invitedBy && (
         <p className="mb-4 text-[14px] text-landing-muted">
-          A friend sent you here — join below and you&apos;ll both move up.
+          A friend sent you here. Join below and you&apos;ll both move up.
         </p>
       )}
       <form onSubmit={handleSubmit} className="flex flex-col gap-3 sm:flex-row">
@@ -158,7 +158,7 @@ function JoinedState({ joined, onStartOver }: { joined: Joined; onStartOver: () 
       </div>
       {isWaitlistMockMode() && (
         <p className="mt-2 text-[12.5px] text-landing-label">
-          Estimated — your exact spot is confirmed by email once the list is live.
+          Estimated. Your exact spot is confirmed by email once the list is live.
         </p>
       )}
       <p className="mt-3 text-[15.5px] text-landing-body">
@@ -202,7 +202,7 @@ function JoinedState({ joined, onStartOver }: { joined: Joined; onStartOver: () 
                 {referralCount >= tier.referrals ? "✓" : tier.referrals}
               </span>
               <span>
-                Refer {tier.referrals} — {tier.reward}
+                Refer {tier.referrals}, {tier.reward}
                 {tier.unlocksEarlyAccess ? "" : ` (${SPOTS_PER_REFERRAL} per friend)`}
               </span>
             </li>
@@ -231,7 +231,7 @@ function CopyRow({ value }: { value: string }) {
     try {
       await navigator.clipboard.writeText(value);
     } catch {
-      /* clipboard blocked — the field is still selectable */
+      /* clipboard blocked; the field is still selectable */
     }
     setCopied(true);
     if (timer.current) clearTimeout(timer.current);

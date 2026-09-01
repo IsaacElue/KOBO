@@ -17,7 +17,7 @@ afterEach(() => {
   resetWaitlist();
 });
 
-describe("waitlist mock — pure helpers", () => {
+describe("waitlist mock: pure helpers", () => {
   test("isValidEmail", () => {
     expect(isValidEmail("a@b.co")).toBe(true);
     expect(isValidEmail("  spaced@example.com  ")).toBe(true);
@@ -48,8 +48,8 @@ describe("waitlist mock — pure helpers", () => {
   });
 });
 
-describe("waitlist mock — join + status flow", () => {
-  test("joinWaitlist returns a placeholder rank in 300–2000 and a 6-char code, then persists it", async () => {
+describe("waitlist mock: join + status flow", () => {
+  test("joinWaitlist returns a placeholder rank in 300-2000 and a 6-char code, then persists it", async () => {
     const res = await joinWaitlist("Demo@Kobo.com");
     expect(res.rank).toBeGreaterThanOrEqual(300);
     expect(res.rank).toBeLessThanOrEqual(2000);
@@ -57,7 +57,7 @@ describe("waitlist mock — join + status flow", () => {
     expect(getStoredReferralCode()).toBe(res.referralCode);
   });
 
-  test("the placeholder rank is deterministic per email — never a fresh random each call", async () => {
+  test("the placeholder rank is deterministic per email, never a fresh random each call", async () => {
     const first = await joinWaitlist("stable@example.com");
     resetWaitlist();
     const again = await joinWaitlist("stable@example.com");

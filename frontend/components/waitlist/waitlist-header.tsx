@@ -1,5 +1,5 @@
 /**
- * Minimal brand-only header for the standalone /waitlist route. No nav — the
+ * Minimal brand-only header for the standalone /waitlist route. No nav; the
  * page isn't linked from anywhere and has nothing to navigate to. The mark
  * links to /landing so a curious visitor can still see the product.
  */

@@ -1,12 +1,12 @@
 /**
- * Short "why we hold instead of convert" section — the one idea that makes Kobo
+ * Short "why we hold instead of convert" section: the one idea that makes Kobo
  * different, kept brief for a campaign page. Styling follows the /landing
  * export's cream section + forest ink.
  */
 const POINTS = [
   {
     heading: "It lands as USDC, not naira",
-    body: "Money arrives on Solana in seconds and stays as digital dollars in your family's wallet — not auto-sold at whatever the rate happens to be that minute.",
+    body: "Money arrives on Solana in seconds and stays as digital dollars in your family's wallet, not auto-sold at whatever the rate happens to be that minute.",
   },
   {
     heading: "They convert on their terms",
@@ -14,7 +14,7 @@ const POINTS = [
   },
   {
     heading: "Held safely in between",
-    body: "Funds sit in the recipient's own wallet with a licensed EMI partner and monthly audits — yours to move, not ours to touch.",
+    body: "Funds sit in the recipient's own wallet with a licensed EMI partner and monthly audits. Yours to move, not ours to touch.",
   },
 ];
 
@@ -30,7 +30,7 @@ export function WhyWeHold() {
         </h2>
         <p className="mt-4 max-w-[560px] text-[17px] leading-[1.55] text-landing-body">
           Every other transfer app races to turn your euros into local currency.
-          Kobo doesn&apos;t — and that&apos;s the point.
+          Kobo doesn&apos;t, and that&apos;s the point.
         </p>
 
         <div className="mt-12 grid gap-x-10 gap-y-10 sm:grid-cols-3">

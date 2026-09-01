@@ -1,12 +1,12 @@
 /**
  * ────────────────────────────────────────────────────────────────────────────
- *  MOCK WAITLIST API — there is no real backend for this yet.
+ *  MOCK WAITLIST API. There is no real backend for this yet.
  * ────────────────────────────────────────────────────────────────────────────
  *
  * `rank` here is a STABLE PLACEHOLDER, not a fabricated real position: a mock in
  * one browser has no queue to count against, so it derives a fixed number from
  * the email (same email -> same number, every reload) rather than a random one.
- * The real backend returns `count(entries ahead) + 1`, recomputed live — see the
+ * The real backend returns `count(entries ahead) + 1`, recomputed live; see the
  * BACKEND NOTES in ./types.ts. The UI labels this number "estimated" while
  * `isWaitlistMockMode()` is true. The referral count is genuinely 0 (one browser
  * can't see other people's signups); `simulateReferrals()` exists only so the
@@ -78,7 +78,7 @@ function writeEntry(entry: StoredEntry) {
   try {
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify(entry));
   } catch {
-    /* private mode / storage disabled — the in-memory response still works for this session */
+    /* private mode / storage disabled; the in-memory response still works for this session */
   }
 }
 
@@ -101,14 +101,14 @@ function makeReferralCode(email: string): string {
 }
 
 /**
- * PLACEHOLDER position — deterministic from the email so it never changes on
+ * PLACEHOLDER position, deterministic from the email so it never changes on
  * reload and is obviously a function of identity, not a dice roll. NOT a real
  * queue position; the backend computes the true `count(ahead) + 1`.
  */
 function placeholderPosition(email: string): number {
   let h = 0;
   for (let i = 0; i < email.length; i++) h = (h * 131 + email.charCodeAt(i)) | 0;
-  return 300 + (Math.abs(h) % 1701); // stable 300–2000
+  return 300 + (Math.abs(h) % 1701); // stable 300-2000
 }
 
 // ── API ─────────────────────────────────────────────────────────────────────
@@ -116,8 +116,9 @@ function placeholderPosition(email: string): number {
 export class WaitlistError extends Error {}
 
 /**
- * POST /waitlist — join the list.
- * MOCK: returns a random rank + generated code and stashes it in localStorage.
+ * POST /waitlist: join the list.
+ * MOCK: returns a stable email-derived placeholder rank + generated code and
+ * stashes it in localStorage.
  */
 export async function joinWaitlist(email: string): Promise<JoinWaitlistResponse> {
   const trimmed = email.trim().toLowerCase();
@@ -154,13 +155,13 @@ export async function joinWaitlist(email: string): Promise<JoinWaitlistResponse>
   };
   writeEntry(entry);
   // Always the derived effective position (== basePosition here, since a fresh
-  // entry has 0 referrals) — mirrors how the real backend never returns a raw
+  // entry has 0 referrals); mirrors how the real backend never returns a raw
   // stored number.
   return { rank: effectiveRank(entry), referralCode: entry.referralCode };
 }
 
 /**
- * GET /waitlist/status — where the current visitor stands.
+ * GET /waitlist/status: where the current visitor stands.
  * MOCK: reads the localStorage entry written by joinWaitlist().
  */
 export async function getWaitlistStatus(): Promise<WaitlistStatusResponse | null> {
@@ -192,7 +193,7 @@ function effectiveRank(entry: StoredEntry): number {
 /**
  * The referral code for the current browser's signup, if any. Its own function
  * because `WaitlistStatusResponse` (the real contract) deliberately doesn't
- * carry it — the code comes back once from `joinWaitlist`, and a real client
+ * carry it; the code comes back once from `joinWaitlist`, and a real client
  * would keep it from that response rather than re-fetching.
  */
 export function getStoredReferralCode(): string | null {
