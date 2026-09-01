@@ -32,6 +32,10 @@ describe("currency switching", () => {
   test("EUR → GBP → USD updates symbol, presets, balance, rate readouts, fee/sent rows and subhead", async () => {
     const { user } = await renderKoboApp();
 
+    // The amount field now loads empty; enter 250 so the "Amount sent" row has a
+    // figure to convert as the currency switches.
+    await user.type(screen.getByRole("textbox", { name: /amount to send/i }), "250");
+
     expect(screen.getByText(/euros from your account/i)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "€50" })).toBeInTheDocument();
 

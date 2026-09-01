@@ -2,9 +2,21 @@ import { describe, expect, test } from "vitest";
 import { screen, within } from "@testing-library/react";
 import { renderKoboApp, confirmSend } from "./test-utils";
 
+// The send form now loads with an empty amount, so "Confirm & Continue" starts
+// disabled — enter an amount before the tests that reach the passcode dialog
+// straight through that button.
+async function enterSendAmount(
+  user: Awaited<ReturnType<typeof renderKoboApp>>["user"]
+) {
+  const amountInput = screen.getByRole("textbox", { name: /amount to send/i });
+  await user.clear(amountInput);
+  await user.type(amountInput, "250");
+}
+
 describe("overlay dismissal + focus management", () => {
   test("Escape closes the passcode dialog and returns focus to the trigger", async () => {
     const { user } = await renderKoboApp();
+    await enterSendAmount(user);
     const trigger = screen.getByRole("button", { name: /confirm & continue/i });
 
     await user.click(trigger);
@@ -59,6 +71,7 @@ describe("overlay dismissal + focus management", () => {
 
   test("the rest of the page is removed from the accessibility tree while the passcode dialog is open", async () => {
     const { user } = await renderKoboApp();
+    await enterSendAmount(user);
     await user.click(screen.getByRole("button", { name: /confirm & continue/i }));
     screen.getByRole("dialog", { name: /enter your passcode/i });
 
@@ -76,6 +89,7 @@ describe("overlay dismissal + focus management", () => {
 describe("passcode keypad keyboard operability", () => {
   test("digits can be entered via keyboard alone", async () => {
     const { user } = await renderKoboApp();
+    await enterSendAmount(user);
     await user.click(screen.getByRole("button", { name: /confirm & continue/i }));
     const dialog = screen.getByRole("dialog", { name: /enter your passcode/i });
 

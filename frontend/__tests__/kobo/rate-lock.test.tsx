@@ -55,6 +55,13 @@ describe("rate lock countdown", () => {
 
     const before = secondsLeft();
 
+    // The send form loads with an empty amount; enter one so Confirm is enabled.
+    await act(async () => {
+      fireEvent.change(screen.getByRole("textbox", { name: /amount to send/i }), {
+        target: { value: "250" },
+      });
+    });
+
     // Confirm & Continue now does a real (mock) balance check before opening the
     // passcode dialog — await the click so that microtask resolves first.
     await act(async () => {

@@ -20,7 +20,7 @@ describe("processing → success", () => {
   test("the receipt shows recipient, reference, rate and fee derived from real math", async () => {
     const { user } = await renderKoboApp();
 
-    // €250 is the default amount; capture the exact 4dp rate off the header
+    // `confirmSend` enters €250; capture the exact 4dp rate off the header
     // ticker before confirming (the summary panel's top line is a coarse 2dp
     // "about" figure now).
     const rateText = screen.getByText(/^1 EUR = /).textContent!;

@@ -37,13 +37,20 @@ export function sidebarNavButton(label: string) {
 }
 
 /**
- * Confirm & Continue -> passcode -> 4 digits. With the default `undoGraceSeconds:
- * 0` from `renderKoboApp`, entering the fourth digit advances straight to the
- * processing checklist (the real instant-send path, no Transak checkout).
+ * Enter an amount (the send form now loads with an empty amount field, not a
+ * pre-filled €250), then Confirm & Continue -> passcode -> 4 digits. With the
+ * default `undoGraceSeconds: 0` from `renderKoboApp`, entering the fourth digit
+ * advances straight to the processing checklist (the real instant-send path, no
+ * Transak checkout). `amount` defaults to "250" so existing fee/receive math in
+ * the flow tests is unchanged.
  */
 export async function confirmSend(
-  user: ReturnType<typeof import("@testing-library/user-event").default.setup>
+  user: ReturnType<typeof import("@testing-library/user-event").default.setup>,
+  amount = "250"
 ) {
+  const amountInput = screen.getByRole("textbox", { name: /amount to send/i });
+  await user.clear(amountInput);
+  await user.type(amountInput, amount);
   await user.click(screen.getByRole("button", { name: /confirm & continue/i }));
   const passcodeDialog = await screen.findByRole("dialog", { name: /enter your passcode/i });
   for (const d of ["1", "2", "3", "4"]) {
