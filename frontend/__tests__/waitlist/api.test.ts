@@ -49,18 +49,26 @@ describe("waitlist mock — pure helpers", () => {
 });
 
 describe("waitlist mock — join + status flow", () => {
-  test("joinWaitlist returns a rank in 200–2000 and a 6-char code, then persists it", async () => {
+  test("joinWaitlist returns a placeholder rank in 300–2000 and a 6-char code, then persists it", async () => {
     const res = await joinWaitlist("Demo@Kobo.com");
-    expect(res.rank).toBeGreaterThanOrEqual(200);
+    expect(res.rank).toBeGreaterThanOrEqual(300);
     expect(res.rank).toBeLessThanOrEqual(2000);
     expect(res.referralCode).toMatch(/^[0-9A-Z]{6}$/);
     expect(getStoredReferralCode()).toBe(res.referralCode);
   });
 
-  test("re-joining with the same email is idempotent", async () => {
+  test("the placeholder rank is deterministic per email — never a fresh random each call", async () => {
+    const first = await joinWaitlist("stable@example.com");
+    resetWaitlist();
+    const again = await joinWaitlist("stable@example.com");
+    expect(again.rank).toBe(first.rank);
+  });
+
+  test("re-joining with the same email is idempotent (same code + rank)", async () => {
     const first = await joinWaitlist("same@example.com");
     const second = await joinWaitlist("SAME@example.com"); // case-insensitive
     expect(second.referralCode).toBe(first.referralCode);
+    expect(second.rank).toBe(first.rank);
   });
 
   test("getWaitlistStatus is null before joining, populated after", async () => {

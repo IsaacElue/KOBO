@@ -10,6 +10,7 @@ import {
   getWaitlistStatus,
   hasEarlyAccess,
   isValidEmail,
+  isWaitlistMockMode,
   joinWaitlist,
   resetWaitlist,
 } from "@/lib/waitlist/api";
@@ -155,6 +156,11 @@ function JoinedState({ joined, onStartOver }: { joined: Joined; onStartOver: () 
       <div className="mt-3 font-mono text-[clamp(3rem,12vw,5rem)] leading-none font-bold tracking-[-0.03em] text-landing-ink tabular-nums">
         #{joined.rank.toLocaleString()}
       </div>
+      {isWaitlistMockMode() && (
+        <p className="mt-2 text-[12.5px] text-landing-label">
+          Estimated — your exact spot is confirmed by email once the list is live.
+        </p>
+      )}
       <p className="mt-3 text-[15.5px] text-landing-body">
         {spotsGained > 0 ? (
           <>
