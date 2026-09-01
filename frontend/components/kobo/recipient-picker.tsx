@@ -110,7 +110,7 @@ export function RecipientPicker({
                 No one by that name
               </div>
               <div className="mb-4 text-[13.5px] text-[#8AA3A9]">
-                Add a Solana wallet address to send to someone new.
+                Add someone by name or email, or use a wallet address.
               </div>
               <Button
                 variant="outline"

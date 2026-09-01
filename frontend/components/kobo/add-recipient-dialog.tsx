@@ -118,7 +118,7 @@ export function AddRecipientDialog({
             <DialogTitle>Add new recipient</DialogTitle>
             <DialogDescription>
               {mode === "email"
-                ? "They'll receive USDC even if they don't have a wallet yet. We'll set one up for them."
+                ? "We'll handle the wallet for you."
                 : "They'll receive USDC directly to this wallet."}
             </DialogDescription>
           </DialogHeader>
@@ -186,11 +186,16 @@ export function AddRecipientDialog({
             <button
               type="button"
               onClick={() => switchMode(mode === "email" ? "address" : "email")}
-              className="self-start text-sm text-kobo-ink/60 underline-offset-2 hover:underline"
+              className="self-start text-left text-sm leading-snug text-kobo-ink/60 underline decoration-kobo-ink/30 underline-offset-2 hover:text-kobo-ink hover:decoration-kobo-ink/60"
             >
-              {mode === "email"
-                ? "They already have a Solana address. Paste it instead"
-                : "Use their email instead"}
+              {mode === "email" ? (
+                <>
+                  <span className="block">Already have their wallet address?</span>
+                  <span className="block">Use an address instead</span>
+                </>
+              ) : (
+                "Use their email instead"
+              )}
             </button>
           </div>
 

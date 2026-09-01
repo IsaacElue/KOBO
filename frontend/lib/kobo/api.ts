@@ -11,6 +11,8 @@ import type {
   FundingStatus,
   MarketOverview,
   OnrampSession,
+  RecipientLookupResult,
+  RecipientLookupUser,
   RateResponse,
   TransferRecord,
   TransferStatus,
@@ -174,6 +176,30 @@ async function mockCreateUser(req: CreateUserRequest): Promise<CreateUserRespons
     wallet_address: req.wallet_address ?? generatePlaceholderWalletAddress(),
     created_at: new Date().toISOString(),
   };
+}
+
+/**
+ * `GET /users?email=` (no auth — recipients are payees, not logged-in accounts).
+ * Looks up a saved recipient by email; returns the full `users` row (email
+ * column included) or `null` when no row has that email (`404`). This is a
+ * lookup only — it never provisions a wallet. Mock mode has no persisted
+ * recipient rows to search, so it always returns `null` (matching a real
+ * never-before-seen email). Shape confirmed against the real backend — see
+ * API_CONTRACT.md.
+ */
+export async function findRecipientByEmail(email: string): Promise<RecipientLookupUser | null> {
+  if (!isMockMode()) {
+    const res = await fetch(`${API_URL}/users?email=${encodeURIComponent(email)}`);
+    if (res.status === 404) return null;
+    if (!res.ok) throw new Error(`GET /users?email= failed: ${res.status}`);
+    const body: RecipientLookupResult = await res.json();
+    return body.user;
+  }
+
+  // Mock mode has no recipient rows to search — return "not found" without
+  // provisioning anything (lookup must never create a wallet).
+  await new Promise((r) => setTimeout(r, 150));
+  return null;
 }
 
 /**
