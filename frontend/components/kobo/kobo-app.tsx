@@ -9,7 +9,6 @@ import { AppHeader } from "@/components/kobo/app-header";
 import { DashboardSkeleton } from "@/components/kobo/dashboard-skeleton";
 import { SendAmountCard } from "@/components/kobo/send-amount-card";
 import { RecipientPicker } from "@/components/kobo/recipient-picker";
-import { RecentTransfers } from "@/components/kobo/recent-transfers";
 import { TransferSummaryPanel } from "@/components/kobo/transfer-summary-panel";
 import { PasscodeDialog } from "@/components/kobo/passcode-dialog";
 import { UndoGraceDialog } from "@/components/kobo/undo-grace-dialog";
@@ -38,7 +37,6 @@ import {
   CURRENT_USER,
   RECIPIENTS,
   SUPPORT_EMAIL,
-  TRANSFER_HISTORY,
   randomRate,
 } from "@/lib/kobo/mock-data";
 import {
@@ -74,13 +72,13 @@ import {
   saveFundingRedirect,
 } from "@/lib/kobo/onramp";
 import type {
+  ActivityTransfer,
   CreateUserResponse,
   CurrencyCode,
   FundingRail,
   FundingStatus,
   OnrampSession,
   Recipient,
-  TransferHistoryItem,
   TransferStatus,
 } from "@/lib/kobo/types";
 
@@ -166,7 +164,9 @@ export function KoboApp({
   const [failureReason, setFailureReason] = useState<string | null>(null);
 
   const [addRecipientOpen, setAddRecipientOpen] = useState(false);
-  const [detailTransferId, setDetailTransferId] = useState<string | null>(null);
+  // The transfer whose detail dialog is open (the full ActivityTransfer from
+  // getMyTransfers(), handed up by the Overview preview or the Activity list).
+  const [detailTransfer, setDetailTransfer] = useState<ActivityTransfer | null>(null);
 
   const [fundingStep, setFundingStep] = useState<FundingStep>("closed");
   const [fundingAmount, setFundingAmount] = useState("100");
@@ -178,7 +178,7 @@ export function KoboApp({
   const [fundingResumeId, setFundingResumeId] = useState<string | null>(null);
 
   const anyOverlayOpen =
-    step !== "form" || addRecipientOpen || detailTransferId !== null || fundingStep !== "closed";
+    step !== "form" || addRecipientOpen || detailTransfer !== null || fundingStep !== "closed";
 
   /**
    * Fetches the live rate (real `GET /rate` -> Transak's public quote in real
@@ -607,17 +607,18 @@ export function KoboApp({
     setNavIndex(SEND_MONEY_INDEX);
   }
 
-  function handleSendAgain(transfer: TransferHistoryItem) {
+  function handleSendAgain(transfer: ActivityTransfer) {
     setCurrency("EUR");
-    setAmount(String(transfer.amountEur));
-    setRecipientId(transfer.recipientId);
-    setDetailTransferId(null);
+    setAmount(String(transfer.amount_eur));
+    setRecipientId(transfer.recipient_id);
+    setDetailTransfer(null);
+    setTab("send");
+    setNavIndex(SEND_MONEY_INDEX);
     toast.success("Details filled in. Review and confirm.");
   }
 
-  const detailTransfer = TRANSFER_HISTORY.find((h) => h.id === detailTransferId) ?? null;
   const detailRecipient = detailTransfer
-    ? (recipients.find((r) => r.id === detailTransfer.recipientId) ?? null)
+    ? (recipients.find((r) => r.id === detailTransfer.recipient_id) ?? null)
     : null;
 
   return (
@@ -676,9 +677,10 @@ export function KoboApp({
             onSendAgain={handleSendToRecipient}
             onAddFunds={openAddFunds}
             onViewActivity={() => setNavIndex(ACTIVITY_INDEX)}
+            onOpenDetail={setDetailTransfer}
           />
         ) : navIndex === ACTIVITY_INDEX ? (
-          <ActivityScreen />
+          <ActivityScreen onOpenDetail={setDetailTransfer} />
         ) : navIndex === HELP_INDEX ? (
           <HelpScreen />
         ) : navIndex !== SEND_MONEY_INDEX ? (
@@ -734,12 +736,6 @@ export function KoboApp({
                       onSelect={setRecipientId}
                       onAddNew={() => setAddRecipientOpen(true)}
                     />
-                    <RecentTransfers
-                      history={TRANSFER_HISTORY}
-                      recipients={recipients}
-                      onSelect={(item) => setDetailTransferId(item.id)}
-                      onViewAll={() => setNavIndex(ACTIVITY_INDEX)}
-                    />
                   </div>
 
                   <TransferSummaryPanel
@@ -777,8 +773,8 @@ export function KoboApp({
       />
 
       <TransferDetailDialog
-        open={detailTransferId !== null}
-        onOpenChange={(open) => !open && setDetailTransferId(null)}
+        open={detailTransfer !== null}
+        onOpenChange={(open) => !open && setDetailTransfer(null)}
         transfer={detailTransfer}
         recipient={detailRecipient}
         onSendAgain={handleSendAgain}

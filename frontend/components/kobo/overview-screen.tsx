@@ -8,6 +8,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 import { getMyTransfers } from "@/lib/kobo/api";
 import { formatAmount } from "@/lib/kobo/format";
+import { RecentTransfers } from "@/components/kobo/recent-transfers";
 import type { ActivityTransfer, Recipient } from "@/lib/kobo/types";
 import { ArrowRight, ArrowUpRight, Plus, Receipt } from "lucide-react";
 
@@ -36,6 +37,7 @@ export function OverviewScreen({
   onSendAgain,
   onAddFunds,
   onViewActivity,
+  onOpenDetail,
 }: {
   userName: string;
   /** Already currency-formatted by KoboApp, e.g. "€1,840.50". */
@@ -47,7 +49,10 @@ export function OverviewScreen({
   onSendAgain: (recipientId: string) => void;
   /** Opens the shared Add Funds dialog — the only mobile entry point to it. */
   onAddFunds: () => void;
+  /** "View all" on the Recent transfers preview -> Activity screen. */
   onViewActivity: () => void;
+  /** A preview row tapped -> shared TransferDetailDialog. */
+  onOpenDetail: (transfer: ActivityTransfer) => void;
 }) {
   const firstName = userName.split(" ")[0] || "there";
 
@@ -270,6 +275,16 @@ export function OverviewScreen({
             </Button>
           </Card>
         </div>
+      </div>
+
+      {/* Recent activity preview — a short window onto the same history the
+          Activity tab shows in full. The Send screen has no history section. */}
+      <div className="mt-6">
+        <RecentTransfers
+          transfers={transfers}
+          onViewAll={onViewActivity}
+          onOpenDetail={onOpenDetail}
+        />
       </div>
     </div>
   );
