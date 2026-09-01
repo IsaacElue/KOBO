@@ -8,9 +8,10 @@ import { SiteFooter } from "@/components/landing/site-footer";
  * /waitlist: standalone post-Demo-Day campaign page. Not linked from the app,
  * the landing page, or AuthGate; driven entirely by external campaign links.
  *
- * Hero email capture and the post-signup rank / referral state are the same
- * region: `WaitlistPanel` swaps between them (and restores the signed-up state
- * for a returning visitor). No real backend; see lib/waitlist/api.ts (MOCK).
+ * Hero email capture and the post-signup "#N" state are the same region:
+ * `WaitlistPanel` swaps between them (and restores the signed-up state for a
+ * returning visitor). The number comes from `POST /waitlist/signup` — see
+ * lib/waitlist/api.ts.
  */
 export default function WaitlistPage() {
   return (

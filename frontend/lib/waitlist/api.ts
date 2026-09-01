@@ -1,16 +1,17 @@
 /**
- * Waitlist client. Talks to the real backend
- * (`POST /waitlist/signup`, `GET /waitlist/count`) when `NEXT_PUBLIC_KOBO_API_URL`
- * is set; otherwise runs a local mock so the campaign page still works with no
- * backend.
+ * Waitlist client — talks to the real backend only.
  *
- * `signup_number` is the exact position the DB assigned — this client never
- * invents or estimates it. The mock derives a *stable* number from the email
- * (same email → same number) so a no-backend preview isn't obviously random,
- * and stores it locally like the real path does.
+ *   joinWaitlist(email)   ->  POST {API}/waitlist/signup   { email } -> { signup_number }
+ *   getWaitlistCount()    ->  GET  {API}/waitlist/count               -> { total }
+ *
+ * `signup_number` ALWAYS comes from the backend response. This module never
+ * generates, estimates, or falls back to a locally-computed number — if the
+ * request fails, `joinWaitlist` throws and the UI shows an error. The only
+ * thing stored locally is the real number the server returned, so a returning
+ * visitor doesn't have to re-submit.
  */
 
-import { API_URL, isMockMode } from "@/lib/kobo/config";
+import { API_URL } from "@/lib/kobo/config";
 import type {
   RememberedSignup,
   WaitlistCountResponse,
@@ -19,15 +20,11 @@ import type {
 
 export class WaitlistError extends Error {}
 
+// `[^\s@]` on both sides rejects internal whitespace and requires a dotted domain.
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export function isValidEmail(email: string): boolean {
   return EMAIL_RE.test(email.trim());
-}
-
-/** True while there's no waitlist backend configured (shares the app's one flag). */
-export function isWaitlistMockMode(): boolean {
-  return isMockMode();
 }
 
 const STORAGE_KEY = "kobo_waitlist_v2";
@@ -69,67 +66,62 @@ export function resetWaitlist(): void {
   }
 }
 
-const MOCK_LATENCY_MS = 450;
-const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
-
-/** Stable, email-derived number for the no-backend mock (never random per call). */
-function mockSignupNumber(email: string): number {
-  let h = 0;
-  for (let i = 0; i < email.length; i++) h = (h * 131 + email.charCodeAt(i)) | 0;
-  return 1 + (Math.abs(h) % 4000);
+/** Normalise exactly the way the backend does, so the client and server agree. */
+function normalizeEmail(email: string): string {
+  return email.trim().toLowerCase();
 }
 
 /**
- * POST /waitlist/signup — join (or re-confirm) the list. Idempotent: the same
- * email always resolves to the same `signup_number`. Persists it locally so a
- * reload shows the joined state without another request.
+ * POST /waitlist/signup — join (or re-confirm) the list. Idempotent server-side:
+ * the same email always resolves to the same `signup_number` (`201` for a new
+ * row, `200` if it was already on the list). Persists the returned number
+ * locally so a reload shows the joined state without another request.
  */
 export async function joinWaitlist(email: string): Promise<WaitlistSignupResponse> {
-  const trimmed = email.trim().toLowerCase();
-  if (!isValidEmail(trimmed)) {
+  const normalized = normalizeEmail(email);
+  if (!isValidEmail(normalized)) {
     throw new WaitlistError("That doesn't look like an email address.");
   }
-
-  if (!isMockMode()) {
-    let res: Response;
-    try {
-      res = await fetch(`${API_URL}/waitlist/signup`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: trimmed }),
-      });
-    } catch {
-      throw new WaitlistError("Couldn't reach the waitlist. Check your connection and try again.");
-    }
-    if (res.status === 429) {
-      throw new WaitlistError("Too many attempts. Please wait a minute and try again.");
-    }
-    const body = (await res.json().catch(() => null)) as
-      | (Partial<WaitlistSignupResponse> & { error?: string })
-      | null;
-    if (!res.ok || typeof body?.signup_number !== "number") {
-      throw new WaitlistError(body?.error ?? "Something went wrong. Please try again.");
-    }
-    const signup = { signup_number: body.signup_number };
-    writeRemembered({ email: trimmed, ...signup });
-    return signup;
+  if (!API_URL) {
+    // No backend configured — do NOT invent a number.
+    throw new WaitlistError("The waitlist isn't available right now. Please try again later.");
   }
 
-  await wait(MOCK_LATENCY_MS);
-  const existing = readRemembered();
-  const signup_number =
-    existing && existing.email === trimmed ? existing.signup_number : mockSignupNumber(trimmed);
-  writeRemembered({ email: trimmed, signup_number });
-  return { signup_number };
+  let res: Response;
+  try {
+    res = await fetch(`${API_URL}/waitlist/signup`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email: normalized }),
+    });
+  } catch {
+    throw new WaitlistError("Couldn't reach the waitlist. Check your connection and try again.");
+  }
+
+  if (res.status === 429) {
+    throw new WaitlistError("Too many attempts. Please wait a minute and try again.");
+  }
+
+  const body = (await res.json().catch(() => null)) as
+    | (Partial<WaitlistSignupResponse> & { error?: string })
+    | null;
+
+  if (!res.ok || typeof body?.signup_number !== "number") {
+    throw new WaitlistError(body?.error ?? "Something went wrong. Please try again.");
+  }
+
+  const signup = { signup_number: body.signup_number };
+  writeRemembered({ email: normalized, ...signup });
+  return signup;
 }
 
 /**
  * GET /waitlist/count — total signups so far. Returns `null` when there's no
- * backend to ask (the page doesn't currently render this, but the client
- * mirrors the full contract).
+ * backend to ask or the request fails (the page doesn't currently render this,
+ * but the client mirrors the full contract).
  */
 export async function getWaitlistCount(): Promise<number | null> {
-  if (isMockMode()) return null;
+  if (!API_URL) return null;
   try {
     const res = await fetch(`${API_URL}/waitlist/count`);
     if (!res.ok) return null;
