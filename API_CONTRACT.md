@@ -68,6 +68,28 @@ a real address still works unchanged; email is additive, not a replacement.
 below before describing this anywhere user-facing. New env var:
 `CROSSMINT_API_KEY`. Full detail in "Resolved this sync" #19.
 
+**Prior addition (Recipient Foundation — Sprint 1A):** the email-keyed recipient
+flow was hardened and extended under the hood — the wallet lookup is now a
+normalized-email **get-or-create** (find-by-email first, create only when no row
+exists), the Crossmint call is behind a `crossmintRecipientWalletProvider`
+(`backend/src/lib/wallet-provider.ts`), `users` got **`email` TEXT** plus a
+partial unique index on non-null emails (new migration —
+`20260901000000_add_recipient_email.sql`; existing rows preserved — the column is
+nullable and no backfill/re-write touches them), `POST /users` gained an
+email-keyed **lookup path** (a repeat add with the same email returns the
+already-created row instead of inserting a duplicate), and a new
+`GET /users?email=<raw>` lookup endpoint exists (no auth — recipients are
+payees, same as `POST /users`). An email-keyed recipient created before the
+migration has `email = null`, so email-lookup won't find it — address-lookup
+still can (the user row itself is untouched). For the frontend: mock `createUser()`
+now takes `email` when that form used email (no wallet to echo), and the real
+mode resolves email-keyed recipients via Crossmint at `POST /users` time.
+Full detail in the `POST /users` / `GET /users` sections and "Resolved this
+sync" #21. **Contract owners:** `RecipientWalletProvider` and
+`RecipientUserRepository` are plain object types — see the dependency-injection
+note in the `POST /users` section (the router is now
+`createUsersRouter(deps?)`-constructed, defaulting to the real provider/repo).
+
 **Prior addition (on-ramp provider → MoonPay):** `POST /funding` now builds a
 **MoonPay** widget URL instead of Transak — the response shape is unchanged
 (`onramp: { sessionId, widgetUrl }`) but `widgetUrl` is now a
@@ -362,7 +384,7 @@ dead afterward, `401`).
 
 ---
 
-## `POST /users` — **recipient-only, now accepts email as an alternative to wallet_address — see "Resolved this sync" #19**
+## `POST /users` — **recipient-only; `wallet_address` or `email`; email-keyed get-or-create — see "Resolved this sync" #19 & #21**
 
 Creates a **recipient**. Real sender creation moved to `POST /auth/signup`
 above — this endpoint no longer accepts `role: "sender"` at all, since it has
@@ -381,21 +403,27 @@ history.
 }
 ```
 - `name`, `role`, `country` required, as before.
-- **New this sync:** `wallet_address` is no longer required on its own —
-  exactly one of `wallet_address` or `email` must be provided.
-  - `wallet_address` present → unchanged behavior, checked with
-    `new PublicKey(...)` (base58 charset + correct 32-byte length), used
-    as-is.
-  - `wallet_address` absent, `email` present → checked against a basic
-    `name@domain.tld` regex, then resolved to a real Solana address via
-    `resolveRecipientWallet(email)` (`backend/src/lib/crossmint.ts`), which
-    get-or-creates a Crossmint MPC wallet keyed off that email
-    (idempotent — the same email always resolves to the same address, see
-    that file's doc comment). The resolved address is stored in
-    `wallet_address` exactly as if it had been pasted directly — nothing
-    downstream (`POST /transfers`, `settleTransfer`) knows or cares which
-    path produced it.
-  - Neither present → `400`.
+- **`wallet_address` present → wins** (unchanged behavior): checked with
+  `new PublicKey(...)` (base58 charset + correct 32-byte length), used
+  as-is, `email` (if also sent) is ignored — the address flow is
+  byte-for-byte what `POST /users` has always been.
+- **`wallet_address` absent, `email` present → email-keyed get-or-create:**
+  1. Email is **normalized** (`normalizeRecipientEmail`, backend/src/lib/wallet-provider.ts — trim + toLowerCase).
+  2. `findByEmail(normalized)` is checked **first**; if a row exists **with a
+     `wallet_address`**, that existing row is returned (`201`) — a repeat add
+     with the same email never inserts a duplicate. (A pre-`email`-column row
+     has `email = null`, so it will not be found here.)
+  3. No row → the normalized email is resolved to a real Solana address via
+     `crossmintRecipientWalletProvider.resolveOrCreateByEmail(normalizedEmail)`
+     (`backend/src/lib/wallet-provider.ts`, delegating to
+     `resolveRecipientWallet` — get-or-creates a Crossmint MPC wallet keyed off
+     that email, idempotent per Crossmint's `owner: "email:<email>"` locator).
+     The provider is invoked with the already-normalized email — normalization
+     happens once, at the route, never inside the provider.
+  4. The resolved address is stored in `wallet_address` exactly as if it had
+     been pasted directly — same row shape, and nothing downstream
+     (`POST /transfers`, `settleTransfer`) knows or cares which path produced
+     it. The `users` row's `email` column is set to the normalized email.
   - **Custody note, stated plainly because it's easy to overclaim:** a
     wallet provisioned this way is **not non-custodial in practice**.
     Crossmint holds the signing key on the server side until/unless the
@@ -404,6 +432,10 @@ history.
     does that today (recipients have no login). The real, accurate claim is
     narrower: the recipient no longer needs to already own a wallet to be
     added.
+- Neither form identifier present → `400`.
+- **No overload at import time:** the wallet provider's module must not do
+  network I/O when imported — `users.ts` imports it so it can DI it, and any
+  Crossmint call happens only at first use inside a request.
 - `role` must be exactly `"recipient"` — `"sender"` is now a `400` with a
   pointer to `POST /auth/signup` (see below), not a working path.
 
@@ -421,7 +453,9 @@ sync, both always `null` for a recipient anyway):
 }
 ```
 Identical shape regardless of whether `wallet_address` was pasted or resolved
-from `email` — the response never echoes back which path was used.
+from `email` — the response never echoes back which path was used. (A `201`
+from the find-by-email hit comes back in this exact same shape, so the caller
+can't tell it was an existing row either.)
 
 **Error responses:**
 - `400` — `{ "error": "name is required" }`
@@ -430,13 +464,60 @@ from `email` — the response never echoes back which path was used.
 - `400` — `{ "error": "country is required" }`
 - `400` — `{ "error": "wallet_address does not look like a valid Solana address" }` — only when `wallet_address` was provided.
 - `400` — `{ "error": "email does not look like a valid email address" }` — only when `email` was provided instead.
-- `400` — `{ "error": "wallet_address or email is required" }` — new this sync, neither provided.
-- `502` — `{ "error": "Failed to provision a wallet for this email: <detail>" }` — new this sync, the Crossmint call failed (network, bad `CROSSMINT_API_KEY`, unexpected response shape). No `users` row is created on this path.
+- `400` — `{ "error": "wallet_address or email is required" }` — neither provided.
+- `502` — `{ "error": "Failed to provision a wallet for this email: <detail>" }` — `wallet_address` absent and the Crossmint provider call failed (network, bad `CROSSMINT_API_KEY`, unexpected response shape). No `users` row is created on this path.
 - `500` — `{ "error": "<supabase error message>" }`
 
-No `GET /users` / listing / lookup endpoint exists — out of scope for now. Still
-no auth on this one, deliberately — recipients are payees, not logged-in
-accounts, and have no session to require.
+**Dependency injection (contract owners):** `createUsersRouter(deps?: {
+recipients?: RecipientUserRepository; provider?: RecipientWalletProvider }):
+Router` is the exported factory — `backend/src/lib/recipients-repo.ts` exports
+`RecipientUserRepository` (a plain object type: `create(input: { name, country,
+wallet_address, email }): Promise<RecipientUser>` + `findByEmail(email):
+Promise<RecipientUser | null>`, with `RecipientUser = { id, name, role, country,
+wallet_address, email: string | null, created_at }`) and `supabaseRecipients`
+(inserts `{ name, role: "recipient", country, wallet_address, email }`,
+`.select("id, name, role, country, wallet_address, email, created_at").single()`;
+`findByEmail` is `.eq("email", email).maybeSingle()`, `null` when none).
+`backend/src/lib/wallet-provider.ts` exports `RecipientWalletProvider` (also a
+plain object type: `resolveOrCreateByEmail(email: string): Promise<string>`)
+and `crossmintRecipientWalletProvider`, plus `normalizeRecipientEmail(email)`
+(trim + toLowerCase). Default `deps.recipients` = `supabaseRecipients`, default
+`deps.provider` = `crossmintRecipientWalletProvider`. Both types are plain
+objects (no classes) so tests can `vi.mock` the modules wholesale and inject
+fakes. Neither module does work at import time (no webhook/network calls on
+load) — the provider only calls Crossmint at first use.
+
+---
+
+## `GET /users?email=<raw>` — **NEW this sync, email-keyed recipient lookup — see "Resolved this sync" #21**
+
+Looks up a recipient by their (case-insensitive, whitespace-trimmed) email.
+Intended for the frontend to resolve a recipient id from an email address; no
+listing is exposed — this returns at most one user, and only by exact email
+(after normalization). **Auth is NOT required** — recipients are payees, not
+logged-in accounts, and have no session to require (same as `POST /users`).
+
+**Query params:** `email` (required) — the raw email, normalized server-side
+via `normalizeRecipientEmail` (trim + toLowerCase) before lookup against
+`users.email`.
+
+**Response — `200`:** `{ "user": { "id": "uuid", "name": "string",
+"role": "recipient", "country": "string", "wallet_address": "string", "email":
+"string", "created_at": "…" } }` — the full recipient row including `email`.
+
+**Error responses:**
+- `400` — `{ "error": "email is required" }` — missing or blank `email` param.
+- `404` — `{ "error": "Recipient not found" }` — no row with that normalized
+  email (including rows created before the `email` column existed, which have
+  `email = null` and are therefore not found by email lookup).
+- `500` — `{ "error": "<supabase error message>" }`
+
+**Data-model note (migration `20260901000000_add_recipient_email.sql`):**
+`users.email TEXT` is **nullable**, with a **partial unique index on non-null
+emails** (`CREATE UNIQUE INDEX … ON users (email) WHERE email IS NOT NULL`,
+approximately) — existing rows are preserved untouched (no backfill, no
+re-write), and a null-`email` row can never collide with a real email. `GET
+/users?email=` only ever matches non-null, normalized-exact emails.
 
 ---
 
@@ -1024,6 +1105,7 @@ users
   role            text  check in ('sender', 'recipient')
   country         text
   wallet_address  text  -- Solana base58 pubkey, e.g. via Keypair.publicKey.toBase58()
+  email           text | null, partial unique index on non-null values  -- NEW this sync (Recipient Foundation)
   created_at      timestamptz
   auth_user_id    uuid | null, unique, FK -> auth.users.id, on delete cascade  -- NEW this sync
   pin_hash        text | null                                                 -- NEW this sync
@@ -1036,6 +1118,12 @@ users
   -- selected by any route with an implicit select() (checked this sync: only
   -- POST /users' insert used one, on this exact table, now given an explicit
   -- column list instead so it can never accidentally return this column).
+  -- email is nullable on purpose (migration 20260901000000_add_recipient_email.sql):
+  -- existing rows are preserved untouched, and only rows created through the
+  -- email path (or address-mode rows that later learn an email) carry one. The
+  -- partial unique index means a NULL never collides with a real email, and
+  -- repeat POST /users with the same email returns the existing row rather
+  -- than inserting a duplicate.
 
 transfers
   id                 uuid PK
@@ -1162,24 +1250,32 @@ File refs are all under `frontend/`:
   success.
 - `components/kobo/add-recipient-dialog.tsx`: "Add new recipient" now calls the real
   `POST /users` (via `createUser()` in `lib/kobo/api.ts`, mock-mode-gated same as
-  `createTransfer`) instead of just invoking a local callback. It sends
-  `{ name, role: "recipient", country, wallet_address }`, mapped from the form's
-  existing `name` and wallet/phone fields — `wallet_address` is the wallet field
-  trimmed, and `country` is hardcoded to `"NG"` (see "Resolved this sync" below; no
-  country input exists in this form, and none was added). Before submitting, the
-  wallet field is checked client-side with `isPlausibleSolanaAddress()`
-  (`lib/kobo/solana.ts`, a dependency-free base58-decode-to-32-bytes check mirroring
-  the backend's `new PublicKey(...)`); a failing check shows through the dialog's
-  existing inline field-error UI, not a toast. The wallet input's placeholder
-  (`"0x… or +234…"`) is unchanged — still misleading now that the check requires a
-  Solana address — see "Still open" #3, left open on purpose (copy changes were out
-  of scope for this pass). On success, `onAdd()` now receives the real created row
+  `createTransfer`; in mock mode `mockCreateUser` fabricates a random valid-format
+  wallet when the form used the email field, so the mock's `CreateUserResponse`
+  always has a `wallet_address`). The dialog is **email-primary** (Sprint 1A):
+  its default mode sends `{ name, role: "recipient", country: "NG", email }` (a
+  basic client-side `name@domain.tld` regex check first), and only the toggled
+  "paste a Solana address instead" mode sends `wallet_address` — both call the
+  same `createUser()`, which sends whichever field the form collected;
+  `CreateUserRequest.wallet_address` is optional now (see `lib/kobo/types.ts`).
+  `country` is hardcoded to `"NG"` (see "Resolved this sync" below; no country
+  input exists in this form, and none was added — Kobo's Phase 1 is the
+  Ireland→Nigeria corridor). Before submitting, the wallet field is checked
+  client-side with `isPlausibleSolanaAddress()` (`lib/kobo/solana.ts`, a
+  dependency-free base58-decode-to-32-bytes check mirroring the backend's
+  `new PublicKey(...)`); a failing check shows through the dialog's existing
+  inline field-error UI, not a toast. The email field's validation is the
+  dialog's own (native `type="email"` constraint is disabled with `noValidate`
+  so the inline `role="alert"` message is what shows, not the browser's
+  native bubble). On success, `onAdd()` now receives the real created row
   (real `uuid`, `CreateUserResponse` in `lib/kobo/types.ts`) and
   `kobo-app.tsx`'s `handleAddRecipient` builds the `Recipient` from that instead of
   fabricating an id — same `Recipient` shape as before. A `POST /users` failure
   (network error or an unexpected `4xx`/`5xx`) shows
-  `toast.error("Couldn't add recipient — please try again.")`, matching the generic
-  toast style already used for `POST /transfers` failures.
+  `toast.error("Couldn't set up a wallet for that email. Please try again.")`
+  in email mode, or `"Couldn't add recipient. Please try again."` in
+  address mode — matching the generic toast style already used for
+  `POST /transfers` failures.
 - Mock recipients (`lib/kobo/mock-data.ts`) — **`RECIPIENTS[0]` ("Adaeze Okonkwo",
   the default/pre-selected recipient) is the one exception, now real** (real `uuid`
   and real Solana `wallet_address`, via `NEXT_PUBLIC_KOBO_DEFAULT_RECIPIENT_ID`/
@@ -1882,6 +1978,56 @@ File refs are all under `frontend/`:
       that MoonPay's real IP-match check could still want a different
       encoding, since that check happens widget-side, not provable from a
       server-to-server test.
+
+21. **Recipient Foundation — Sprint 1A (backend plumbing, DI, schema, new
+    lookup).** The email-keyed recipient flow from #19 is now a proper named
+    foundation, not inline route logic.
+    **Backend, what actually changed:**
+    - `backend/src/lib/wallet-provider.ts` (new) — `normalizeRecipientEmail()`
+      (trim + toLowerCase, the one canonical normalization), the
+      `RecipientWalletProvider` interface (`resolveOrCreateByEmail(email):
+      Promise<string>`) and `crossmintRecipientWalletProvider`, delegating to
+      `resolveRecipientWallet` in `backend/src/lib/crossmint.ts`. The provider
+      **does not re-normalize** — callers normalize first; and it performs no
+      network I/O at import time (any Crossmint call happens at first use).
+    - `backend/src/lib/recipients-repo.ts` (new) — `RecipientUser` /
+      `RecipientUserRepository` / `supabaseRecipients`: `create()` inserts
+      `{ name, role: "recipient", country, wallet_address, email }` and selects
+      exactly `id, name, role, country, wallet_address, email, created_at`;
+      `findByEmail()` does `.eq("email", email).maybeSingle()` (null when none).
+    - `backend/src/routes/users.ts` — now `createUsersRouter(deps?)` +
+      `usersRouter` export; dependencies default to the real provider/repo, and
+      are injectable as **plain object types** (no classes) so tests can
+      `vi.mock` the modules wholesale. Email-mode `POST /users` is now a true
+      get-or-create: `findByEmail(normalized)` first (existing row WITH a
+      wallet_address → `201` with that row, no duplicate insert), then provider
+      resolve, then create. Address-mode (`wallet_address` present) is
+      byte-for-byte unchanged and wins if both are sent.
+    - `backend/supabase/migrations/20260901000000_add_recipient_email.sql`
+      (new) — `users.email TEXT` (nullable) + a **partial unique index on
+      non-null emails**; existing rows preserved untouched (no backfill /
+      re-write). Rows created before the migration have `email = null`, so
+      email lookup won't find them — address lookup still can.
+    - New **`GET /users?email=<raw>`** (same router) — normalize, `findByEmail`,
+      `404 { error: "Recipient not found" }` when none, else
+      `{ user: { id, name, role, country, wallet_address, email, created_at } }`.
+      No auth required — recipients are payees, not logged-in accounts.
+    **Frontend:** `createUser()` unchanged on the wire (same request/response
+    shapes); `mockCreateUser` now generates a placeholder wallet when the form
+    submitted an email, so mock `CreateUserResponse` always has a
+    `wallet_address`. In real mode, email-keyed recipients resolve via
+    Crossmint at `POST /users` time — see the `frontend/.env.example` default-
+    recipient note.
+    **Deliberately untouched (functional invariants guarded):** `settleTransfer()`,
+    Solana transfer logic, the pooled sender wallet, balance debit/credit, auth/PIN,
+    Crossmint KYC/risk controls, the on-ramp (MoonPay/Transak), webhook
+    verification, and mock mode. No behavior of the existing
+    address-only `POST /users` flow changes.
+    **Tests:** backend `backend/src/test/users-recipients.test.ts` (another
+    agent's file) imports `normalizeRecipientEmail` + the real provider, mocks
+    `../lib/wallet-provider` & `../lib/recipients-repo`, and builds the router
+    via `createUsersRouter({ recipients: fakeRepo, provider: fakeProvider })` —
+    the DI contract above is what makes that possible.
 
 ## Still open
 
