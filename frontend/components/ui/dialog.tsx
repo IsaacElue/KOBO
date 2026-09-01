@@ -73,7 +73,9 @@ function DialogContent({
             render={
               <Button
                 variant="ghost"
-                className="absolute top-2 right-2"
+                // `before` pseudo-element expands the 28px icon button to a 44px
+                // hit target without enlarging the visible control in the corner.
+                className="absolute top-2 right-2 before:absolute before:left-1/2 before:top-1/2 before:h-11 before:w-11 before:-translate-x-1/2 before:-translate-y-1/2 before:content-['']"
                 size="icon-sm"
               />
             }

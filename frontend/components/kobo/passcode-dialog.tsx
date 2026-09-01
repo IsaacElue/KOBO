@@ -45,7 +45,7 @@ export function PasscodeDialog({
             variant="outline"
             size="icon"
             aria-label="Back to form"
-            className="shrink-0 rounded-full border-white/18 bg-white/[0.06] text-kobo-mint-light hover:bg-white/16"
+            className="size-11 shrink-0 rounded-full border-white/18 bg-white/[0.06] text-kobo-mint-light hover:bg-white/16"
           >
             <X className="size-[15px]" strokeWidth={2.2} />
           </Button>

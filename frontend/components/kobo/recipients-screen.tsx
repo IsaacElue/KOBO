@@ -114,7 +114,9 @@ export function RecipientsScreen({
                   }
                   disabled={recipients.length <= 1}
                   onClick={() => setPendingRemoveId(r.id)}
-                  className="size-9 shrink-0 rounded-full text-[#8AA3A9] hover:bg-destructive/10 hover:text-destructive"
+                  // 36px circle stays (visual balance next to the Send pill); the
+                  // `before` pseudo-element carries the 44px hit target.
+                  className="relative size-9 shrink-0 rounded-full text-[#8AA3A9] before:absolute before:left-1/2 before:top-1/2 before:h-11 before:w-11 before:-translate-x-1/2 before:-translate-y-1/2 before:content-[''] hover:bg-destructive/10 hover:text-destructive"
                 >
                   <Trash2 className="size-[15px]" strokeWidth={1.9} />
                 </Button>
