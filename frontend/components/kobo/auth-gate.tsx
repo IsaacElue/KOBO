@@ -8,7 +8,7 @@ import { LoginDialog } from "@/components/kobo/login-dialog";
 import { PinSetupDialog } from "@/components/kobo/pin-setup-dialog";
 import { PinUnlockDialog } from "@/components/kobo/pin-unlock-dialog";
 import { Skeleton } from "@/components/ui/skeleton";
-import { isMockMode } from "@/lib/kobo/config";
+import { isMockMode, ROOT_REDIRECT_TARGET } from "@/lib/kobo/config";
 import { getStoredAuth, logout, onAuthChange, type StoredAuth } from "@/lib/kobo/auth";
 
 type Phase = "loading" | "signup" | "login" | "pin-setup" | "pin-unlock" | "unlocked";
@@ -42,11 +42,14 @@ const DEV_BYPASS_USER = { id: "ee2e6c34-a6e5-48a7-bc41-48231bfa2f77", name: "Isa
  * authenticate against, and the existing test suite renders `KoboApp`
  * directly with no gate around it at all, so this has to stay a no-op there.
  *
- * Real-auth, no session: a bare hit on "/" is sent to the marketing landing
- * page ("/landing") rather than straight to a login box. The landing CTAs come
- * back with an `?auth=login` / `?auth=signup` intent, which opens the matching
- * form here instead of redirecting. A valid session is unchanged (→ pin-unlock
- * → KoboApp); mock mode and the dev bypass are untouched.
+ * Real-auth, no session: a bare hit on "/" is sent to `ROOT_REDIRECT_TARGET`
+ * (lib/kobo/config.ts — currently "/waitlist", was "/landing"; flip that one
+ * constant to revert) rather than straight to a login box. A CTA that links
+ * back with an explicit `?auth=login` / `?auth=signup` intent opens the
+ * matching form here instead of redirecting, regardless of which page sent
+ * it. A valid session is unchanged (→ pin-unlock → KoboApp); mock mode and
+ * the dev bypass are untouched. /landing and /waitlist are both still real,
+ * independently-reachable routes — this only changes where "/" itself points.
  */
 export function AuthGate() {
   const mock = isMockMode();
@@ -67,11 +70,11 @@ export function AuthGate() {
       setPhase("pin-unlock");
       return;
     }
-    // No session. Honour an explicit auth intent from a landing CTA; otherwise
-    // bounce to the landing page. `phase` stays "loading" during the redirect.
+    // No session. Honour an explicit auth intent from a CTA; otherwise bounce
+    // to ROOT_REDIRECT_TARGET. `phase` stays "loading" during the redirect.
     if (authIntent === "signup") setPhase("signup");
     else if (authIntent === "login") setPhase("login");
-    else router.replace("/landing");
+    else router.replace(ROOT_REDIRECT_TARGET);
     /* eslint-enable react-hooks/set-state-in-effect */
   }, [mock, authIntent, router]);
 
