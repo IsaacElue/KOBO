@@ -25,7 +25,10 @@ export function ToggleSwitch({
       aria-label={label}
       onClick={() => onChange(!checked)}
       className={cn(
-        "relative h-[27px] w-[46px] shrink-0 rounded-full p-[3px] transition-colors duration-200 outline-none focus-visible:ring-3 focus-visible:ring-kobo-teal-600/40",
+        // 46x27 is the handoff's visual pill; the `before` pseudo-element gives
+        // it a centered 44x44 hit target (WCAG 2.5.5 / Apple HIG) without
+        // changing the pill's footprint in the row.
+        "relative h-[27px] w-[46px] shrink-0 rounded-full p-[3px] transition-colors duration-200 outline-none focus-visible:ring-3 focus-visible:ring-kobo-teal-600/40 before:absolute before:left-1/2 before:top-1/2 before:h-11 before:w-11 before:-translate-x-1/2 before:-translate-y-1/2 before:content-['']",
         checked ? "bg-[#1E9B76]" : "bg-kobo-ink/16"
       )}
     >
