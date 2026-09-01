@@ -1,12 +1,15 @@
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import { screen, within } from "@testing-library/react";
 import { renderKoboApp, sidebarNavButton } from "./test-utils";
-import type { ActivityTransfer } from "@/lib/kobo/types";
+import type { ActivityTransfer, TransferHistoryPage } from "@/lib/kobo/types";
 
-const { getMyTransfers } = vi.hoisted(() => ({ getMyTransfers: vi.fn() }));
+const { getMyTransfers, getTransferHistory } = vi.hoisted(() => ({
+  getMyTransfers: vi.fn(),
+  getTransferHistory: vi.fn(),
+}));
 vi.mock("@/lib/kobo/api", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/kobo/api")>();
-  return { ...actual, getMyTransfers };
+  return { ...actual, getMyTransfers, getTransferHistory };
 });
 
 function makeTransfers(n: number): ActivityTransfer[] {
@@ -23,8 +26,24 @@ function makeTransfers(n: number): ActivityTransfer[] {
   }));
 }
 
+/** getTransferHistory backed by the same fixture — honours offset/limit only. */
+function pageFrom(all: ActivityTransfer[]) {
+  return async ({ offset = 0, limit = 10 } = {}): Promise<TransferHistoryPage> => {
+    const slice = all.slice(offset, offset + limit);
+    return {
+      transfers: slice,
+      total: all.length,
+      limit,
+      offset,
+      has_more: offset + slice.length < all.length,
+    };
+  };
+}
+
 beforeEach(() => {
-  getMyTransfers.mockResolvedValue(makeTransfers(6));
+  const all = makeTransfers(6);
+  getMyTransfers.mockResolvedValue(all);
+  getTransferHistory.mockImplementation(pageFrom(all));
 });
 
 async function gotoOverview(user: Awaited<ReturnType<typeof renderKoboApp>>["user"]) {
@@ -36,6 +55,10 @@ function previewCard() {
   return within(
     screen.getByText("Recent transfers").closest("[data-slot='card']") as HTMLElement
   );
+}
+
+function historySection() {
+  return within(screen.getByText("Transfer history").closest("section") as HTMLElement);
 }
 
 describe("transfer-history IA", () => {
@@ -51,7 +74,6 @@ describe("transfer-history IA", () => {
     const { user } = await renderKoboApp();
     await gotoOverview(user);
 
-    // wait for the list to populate, then count the transfer rows
     await previewCard().findByText("Person 0");
     const transferRows = previewCard()
       .getAllByRole("button")
@@ -69,7 +91,7 @@ describe("transfer-history IA", () => {
     expect(await screen.findByRole("heading", { name: "Activity" })).toBeInTheDocument();
   });
 
-  test("Overview preview and Activity list are the same data source", async () => {
+  test("Overview preview is the first 4 of the Activity history", async () => {
     const { user } = await renderKoboApp();
 
     await gotoOverview(user);
@@ -81,16 +103,12 @@ describe("transfer-history IA", () => {
 
     await user.click(sidebarNavButton("Activity"));
     await screen.findByRole("heading", { name: "Activity" });
-    const historyCard = within(
-      screen.getByText("Transfer history").closest("section") as HTMLElement
-    );
-    await historyCard.findByText("Person 0");
-    const activityNames = historyCard
+    await historySection().findByText("Person 0");
+    const activityNames = historySection()
       .getAllByRole("button")
       .map((b) => b.textContent?.match(/Person \d+/)?.[0])
       .filter((n): n is string => !!n);
 
-    // Activity shows all 6; the preview is exactly its first 4.
     expect(activityNames).toHaveLength(6);
     expect(previewNames).toEqual(activityNames.slice(0, 4));
   });
@@ -100,7 +118,7 @@ describe("transfer-history IA", () => {
     await user.click(sidebarNavButton("Activity"));
     await screen.findByRole("heading", { name: "Activity" });
 
-    const row = (await screen.findByText("Person 0")).closest("button") as HTMLButtonElement;
+    const row = (await historySection().findByText("Person 0")).closest("button") as HTMLButtonElement;
     expect(row.tagName).toBe("BUTTON");
     row.focus();
     expect(row).toHaveFocus();

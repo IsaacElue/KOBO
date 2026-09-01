@@ -27,6 +27,15 @@ export interface Recipient {
   meta: string;
   wallet: string;
   lastSent: string;
+  /**
+   * Structured identity, when we have it (Sprint 1A persists recipient email;
+   * `GET /users?email=` returns email + country). The Send UI prefers these
+   * over the raw wallet address — a user is sending "to a person", not to a
+   * Solana account. `null`/absent for address-only recipients.
+   */
+  email?: string | null;
+  /** ISO-3166 alpha-2, e.g. "NG". */
+  country?: string | null;
 }
 
 export type UserRole = "sender" | "recipient";
@@ -73,7 +82,7 @@ export interface TransferHistoryItem {
   reference: string;
   date: string;
   amountEur: number;
-  status: "Delivered" | "Refunded";
+  status: "Delivered" | "Refunded" | "In progress";
 }
 
 export interface CreateTransferRequest {
@@ -98,6 +107,33 @@ export interface ActivityTransfer {
   solana_tx_signature: string | null;
   failure_reason: string | null;
   created_at: string;
+}
+
+/**
+ * A status group the Activity history filter offers. Maps to one or more raw
+ * `TransferStatus` values the backend already uses — no invented statuses:
+ *   all       → no filter
+ *   delivered → confirmed
+ *   pending   → pending | onramp_complete | sent
+ *   failed    → failed
+ */
+export type TransferStatusGroup = "all" | "delivered" | "pending" | "failed";
+
+/** Query for `getTransferHistory()` / `GET /transfers?q=&status=&limit=&offset=`. */
+export interface TransferHistoryQuery {
+  q?: string;
+  group?: TransferStatusGroup;
+  limit?: number;
+  offset?: number;
+}
+
+/** One page of `GET /transfers` — rows plus the pagination metadata the endpoint now returns. */
+export interface TransferHistoryPage {
+  transfers: ActivityTransfer[];
+  total: number;
+  limit: number;
+  offset: number;
+  has_more: boolean;
 }
 
 /** One coin in `GET /market/overview` — EUR price + change + a 7-day sparkline (trend shape). */

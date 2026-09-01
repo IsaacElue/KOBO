@@ -1,14 +1,103 @@
 import { Router } from "express";
+import type { Request } from "express";
 import { supabase } from "../lib/supabase";
 import { getMarketRate } from "../lib/transak";
 import { creditBalance, debitBalanceIfSufficient } from "../lib/balances";
 import { settleTransfer } from "../lib/settlement";
 import { requireAuth, resolveKoboUser } from "../lib/auth";
-
-export const transfersRouter = Router();
+import {
+  listSenderTransfers,
+  isTransferStatus,
+  TRANSFER_STATUSES,
+  type ListSenderTransfers,
+  type TransferStatus,
+} from "../lib/transfers-repo";
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** `GET /transfers` list-query defaults/ceilings. Param-less callers keep the
+ * pre-pagination behaviour (up to 50 rows, newest first); the Activity page
+ * opts into smaller pages explicitly via `?limit=`. */
+const DEFAULT_LIMIT = 50;
+const MAX_LIMIT = 100;
+const MAX_Q_LENGTH = 200;
+const MAX_STATUS_FILTERS = TRANSFER_STATUSES.length;
+
+interface ParsedListQuery {
+  q?: string;
+  statuses?: TransferStatus[];
+  limit: number;
+  offset: number;
+}
+
+/** Parses/validates `?q=&status=&limit=&offset=`. Returns `{ error }` for any
+ * malformed parameter so the route can 400 instead of passing junk to the DB. */
+export function parseTransferListQuery(
+  query: Request["query"]
+): ParsedListQuery | { error: string } {
+  const out: ParsedListQuery = { limit: DEFAULT_LIMIT, offset: 0 };
+
+  if (query.limit !== undefined) {
+    const n = Number(query.limit);
+    if (!Number.isInteger(n) || n < 1 || n > MAX_LIMIT) {
+      return { error: `limit must be an integer between 1 and ${MAX_LIMIT}` };
+    }
+    out.limit = n;
+  }
+
+  if (query.offset !== undefined) {
+    const n = Number(query.offset);
+    if (!Number.isInteger(n) || n < 0) {
+      return { error: "offset must be a non-negative integer" };
+    }
+    out.offset = n;
+  }
+
+  if (query.status !== undefined) {
+    if (typeof query.status !== "string") {
+      return { error: "status must be a string" };
+    }
+    const tokens = query.status
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean);
+    if (tokens.length === 0 || tokens.length > MAX_STATUS_FILTERS) {
+      return { error: `status must be 1–${MAX_STATUS_FILTERS} of: ${TRANSFER_STATUSES.join(", ")}` };
+    }
+    for (const token of tokens) {
+      if (!isTransferStatus(token)) {
+        return { error: `status must be one of: ${TRANSFER_STATUSES.join(", ")}` };
+      }
+    }
+    out.statuses = [...new Set(tokens as TransferStatus[])];
+  }
+
+  if (query.q !== undefined) {
+    if (typeof query.q !== "string") {
+      return { error: "q must be a string" };
+    }
+    const trimmed = query.q.trim();
+    if (trimmed.length > MAX_Q_LENGTH) {
+      return { error: `q must be ${MAX_Q_LENGTH} characters or fewer` };
+    }
+    if (trimmed) out.q = trimmed;
+  }
+
+  return out;
+}
+
+/**
+ * Transfers route factory. The read/list path (`GET /transfers`) goes through
+ * the injected `ListSenderTransfers` so tests can supply an in-memory fake
+ * (no live Supabase); the default wiring uses `listSenderTransfers`.
+ *
+ * `POST /transfers` and `GET /transfers/:id` are unchanged — the send /
+ * settlement / balance pipeline is not touched by this sprint.
+ */
+export function createTransfersRouter(deps: { listTransfers?: ListSenderTransfers } = {}): Router {
+  const listTransfers = deps.listTransfers ?? listSenderTransfers;
+  const transfersRouter = Router();
 
 // No parallel/legacy per-send Transak path is kept alongside this — every
 // send is now balance-checked and, if funded, instant. Insufficient balance
@@ -119,6 +208,16 @@ transfersRouter.post("/", requireAuth, async (req, res) => {
  * existing `transfers` columns plus the recipient's `name` (joined from
  * `users`, not a new column) so the frontend can render a row without a
  * second lookup. No new fields on the table.
+ *
+ * Optional filters (all additive; a param-less call is unchanged behaviour):
+ *   `q`      free-text — recipient name (substring), or an exact transfer
+ *            id / Solana signature
+ *   `status` one or more (comma-separated) raw `transfers.status` values
+ *   `limit`  page size, default 50, max 100
+ *   `offset` rows to skip, for "load more" pagination
+ *
+ * Response adds `total` / `limit` / `offset` / `has_more` alongside
+ * `transfers` for pagination. `transfers` itself is unchanged.
  */
 transfersRouter.get("/", requireAuth, async (req, res) => {
   const koboUser = await resolveKoboUser(req.authUser!.id);
@@ -126,25 +225,30 @@ transfersRouter.get("/", requireAuth, async (req, res) => {
     return res.status(403).json({ error: "No sender account linked to this session" });
   }
 
-  const { data, error } = await supabase
-    .from("transfers")
-    .select(
-      "id, recipient_id, amount_eur, amount_usdc, status, solana_tx_signature, failure_reason, created_at, recipient:users!transfers_recipient_id_fkey(name)"
-    )
-    .eq("sender_id", koboUser.id)
-    .order("created_at", { ascending: false })
-    .limit(50);
-
-  if (error) {
-    return res.status(500).json({ error: error.message });
+  const parsed = parseTransferListQuery(req.query);
+  if ("error" in parsed) {
+    return res.status(400).json({ error: parsed.error });
   }
 
-  const transfers = (data ?? []).map((row) => {
-    const { recipient, ...rest } = row as typeof row & { recipient: { name: string } | null };
-    return { ...rest, recipient_name: recipient?.name ?? null };
-  });
+  try {
+    const { transfers, total } = await listTransfers({
+      senderId: koboUser.id,
+      q: parsed.q,
+      statuses: parsed.statuses,
+      limit: parsed.limit,
+      offset: parsed.offset,
+    });
 
-  return res.json({ transfers });
+    return res.json({
+      transfers,
+      total,
+      limit: parsed.limit,
+      offset: parsed.offset,
+      has_more: parsed.offset + transfers.length < total,
+    });
+  } catch (err) {
+    return res.status(500).json({ error: (err as Error).message });
+  }
 });
 
 transfersRouter.get("/:id", requireAuth, async (req, res) => {
@@ -178,3 +282,8 @@ transfersRouter.get("/:id", requireAuth, async (req, res) => {
   const { sender_id, ...body } = data;
   return res.json(body);
 });
+
+  return transfersRouter;
+}
+
+export const transfersRouter = createTransfersRouter();

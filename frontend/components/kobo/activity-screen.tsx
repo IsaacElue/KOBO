@@ -2,14 +2,12 @@
 
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Card } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 import { getMarketOverview, getMyTransfers } from "@/lib/kobo/api";
 import { getSolSpot } from "@/lib/kobo/jupiter";
-import { formatAmount, nameToInitials } from "@/lib/kobo/format";
-import { transferShortDate, transferStatusMeta } from "@/lib/kobo/transfer-display";
+import { formatAmount } from "@/lib/kobo/format";
+import { TransferHistory } from "@/components/kobo/transfer-history";
 import type { ActivityTransfer, JupiterSpot, MarketOverview } from "@/lib/kobo/types";
 import { ArrowDownRight, ArrowUpRight, TrendingUp } from "lucide-react";
 
@@ -30,22 +28,19 @@ export function ActivityScreen({
   /** Opens the shared TransferDetailDialog for a tapped history row. */
   onOpenDetail: (transfer: ActivityTransfer) => void;
 }) {
-  // One fetch of the real transfer history, shared by the stats strip and the
-  // history list. undefined = loading, null = failed, [] = none yet.
+  // One fetch of the real transfer history for the understated stats strip.
+  // undefined = loading, null = failed, [] = none yet. The "Transfer history"
+  // block below does its own paginated/filtered fetching (getTransferHistory).
   const [transfers, setTransfers] = useState<ActivityTransfer[] | null | undefined>(undefined);
 
-  async function loadTransfers() {
-    setTransfers(undefined);
-    try {
-      setTransfers(await getMyTransfers());
-    } catch {
-      setTransfers(null);
-    }
-  }
-
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- one-time fetch-on-mount, same pattern as kobo-app.tsx / settings-screen.tsx
-    loadTransfers();
+    let alive = true;
+    getMyTransfers()
+      .then((t) => alive && setTransfers(t))
+      .catch(() => alive && setTransfers(null));
+    return () => {
+      alive = false;
+    };
   }, []);
 
   return (
@@ -61,11 +56,10 @@ export function ActivityScreen({
         <SolTicker />
         <MarketCard />
         <SendingStats transfers={transfers ?? null} loading={transfers === undefined} />
-        <TransferHistory
-          transfers={transfers}
-          onRetry={loadTransfers}
-          onOpenDetail={onOpenDetail}
-        />
+        <section>
+          <Eyebrow>Transfer history</Eyebrow>
+          <TransferHistory onOpenDetail={onOpenDetail} />
+        </section>
       </div>
     </div>
   );
@@ -143,20 +137,21 @@ function MarketCard() {
     <section>
       <Eyebrow>Market</Eyebrow>
       <Card className="gap-0 rounded-[28px] border border-white/90 bg-white p-6 shadow-[0_24px_50px_-42px_rgba(11,31,36,0.7)] ring-0">
+        <SubLabel>Crypto</SubLabel>
         {data === undefined ? (
-          <div className="flex flex-col gap-3">
+          <div className="mt-2 flex flex-col gap-3">
             <Skeleton className="h-6 w-40 rounded-lg" />
             <Skeleton className="h-14 w-full rounded-2xl" />
           </div>
         ) : data === null ? (
-          <div className="flex items-center gap-3 py-2">
+          <div className="mt-1 flex items-center gap-3 py-2">
             <TrendingUp className="size-[18px] text-[#9BB2B8]" strokeWidth={1.8} />
             <p className="text-[14px] text-[#7B959B]">
               Market data is unavailable right now. Try again in a minute.
             </p>
           </div>
         ) : (
-          <>
+          <div className="mt-2">
             <div className="flex items-center justify-between gap-5">
               <CoinRow
                 name="Solana"
@@ -183,10 +178,74 @@ function MarketCard() {
               Prices in EUR · 7-day trend from CoinGecko · updated{" "}
               {new Date(data.updated_at).toLocaleTimeString("en-IE", { hour: "2-digit", minute: "2-digit" })}
             </p>
-          </>
+          </div>
         )}
+
+        <div className="mt-5 border-t border-kobo-ink/[0.06] pt-4">
+          <SubLabel>FX</SubLabel>
+          <div className="mt-2 flex flex-col gap-3">
+            {MARKET_FX_PAIRS.map((p) => (
+              <FxPairRow key={`${p.base}/${p.quote}`} pair={p} />
+            ))}
+          </div>
+          <p className="mt-3 text-[12px] text-[#9BB2B8]">
+            Informational only — not a remittance quote. Pairs without a legitimate
+            feed are shown as unavailable, never estimated.
+          </p>
+        </div>
       </Card>
     </section>
+  );
+}
+
+function SubLabel({ children }: { children: ReactNode }) {
+  return (
+    <div className="text-[10.5px] font-semibold tracking-[0.14em] text-[#9BB2B8] uppercase">
+      {children}
+    </div>
+  );
+}
+
+/**
+ * Market FX pairs. `status: "unavailable"` renders an honest "no rate" row —
+ * a pair only gets a live figure once a real feed is wired for it. EUR/NGN is
+ * groundwork for the future remittance corridor; there is no legitimate source
+ * for it yet, so it stays unavailable rather than fabricated.
+ */
+type MarketFxPair = {
+  base: string;
+  quote: string;
+  label: string;
+  status: "unavailable";
+  note: string;
+};
+
+const MARKET_FX_PAIRS: MarketFxPair[] = [
+  {
+    base: "EUR",
+    quote: "NGN",
+    label: "Euro → Naira",
+    status: "unavailable",
+    note: "Remittance pricing isn't connected yet",
+  },
+];
+
+function FxPairRow({ pair }: { pair: MarketFxPair }) {
+  return (
+    <div className="flex items-center justify-between gap-4">
+      <div className="min-w-0">
+        <div className="flex items-baseline gap-2">
+          <span className="text-[15px] font-semibold tracking-tight text-kobo-ink">
+            {pair.base} → {pair.quote}
+          </span>
+          <span className="text-[12px] font-medium text-[#9BB2B8]">{pair.label}</span>
+        </div>
+        <div className="mt-1 text-[13px] text-[#8AA3A9]">Rate unavailable · {pair.note}</div>
+      </div>
+      <span className="shrink-0 rounded-full bg-[#EFF5F6] px-2.5 py-1 text-[11px] font-medium text-[#7B959B]">
+        Coming soon
+      </span>
+    </div>
   );
 }
 
@@ -299,81 +358,6 @@ function StatTile({ label, value }: { label: string; value: string }) {
         {value}
       </div>
     </Card>
-  );
-}
-
-/* ─────────────────────────  Real transfer history  ───────────────────────── */
-
-function TransferHistory({
-  transfers,
-  onRetry,
-  onOpenDetail,
-}: {
-  transfers: ActivityTransfer[] | null | undefined;
-  onRetry: () => void;
-  onOpenDetail: (transfer: ActivityTransfer) => void;
-}) {
-  return (
-    <section>
-      <Eyebrow>Transfer history</Eyebrow>
-      <Card className="gap-1 rounded-[28px] border border-white/90 bg-white/70 p-6.5 pb-4 shadow-[0_24px_48px_-40px_rgba(11,31,36,0.7)] backdrop-blur-lg ring-0">
-        {transfers === undefined ? (
-          <div className="flex flex-col gap-2 pb-2">
-            {[0, 1, 2].map((i) => (
-              <Skeleton key={i} className="h-12 w-full rounded-2xl" />
-            ))}
-          </div>
-        ) : transfers === null ? (
-          <div className="flex items-center justify-between gap-3 py-3">
-            <p className="text-[14px] text-[#7B959B]">Couldn&apos;t load your transfers.</p>
-            <button
-              onClick={onRetry}
-              className="rounded-full border border-kobo-ink/[0.14] px-4 py-1.5 text-[13px] text-[#33565E] hover:border-kobo-teal-600"
-            >
-              Try again
-            </button>
-          </div>
-        ) : transfers.length === 0 ? (
-          <p className="py-6 text-center text-[14px] text-[#8AA3A9]">
-            No transfers yet. Your history will show up here.
-          </p>
-        ) : (
-          <div className="flex flex-col">
-            {transfers.map((t) => {
-              const meta = transferStatusMeta(t.status);
-              const name = t.recipient_name ?? "Recipient";
-              return (
-                <button
-                  key={t.id}
-                  onClick={() => onOpenDetail(t)}
-                  className="flex items-center gap-3 rounded-2xl border-b border-kobo-ink/[0.06] p-2 text-left transition-all last:border-b-0 hover:translate-x-1 hover:bg-white/90 focus-visible:ring-3 focus-visible:ring-kobo-teal-600/30 focus-visible:outline-none sm:gap-4"
-                >
-                  <Avatar>
-                    <AvatarFallback className="bg-gradient-to-br from-[#DDF2E6] to-[#C6EAD6] font-semibold text-kobo-mint-dark">
-                      {nameToInitials(name)}
-                    </AvatarFallback>
-                  </Avatar>
-                  <div className="min-w-0 flex-1">
-                    <div className="truncate text-[15.5px] font-medium text-kobo-ink">{name}</div>
-                    <div className="font-mono text-xs text-[#9BB2B8]">
-                      {transferShortDate(t.created_at)}
-                    </div>
-                  </div>
-                  {/* Trailing meta stacks on phones so the fixed amount + badge
-                      don't crush the flex-1 name; inline row at >=640. */}
-                  <div className="flex shrink-0 flex-col items-end gap-1 sm:flex-row sm:items-center sm:gap-4">
-                    <span className="text-right font-mono text-sm text-kobo-ink sm:min-w-20">
-                      €{formatAmount(t.amount_eur)}
-                    </span>
-                    <Badge className={meta.className}>{meta.label}</Badge>
-                  </div>
-                </button>
-              );
-            })}
-          </div>
-        )}
-      </Card>
-    </section>
   );
 }
 

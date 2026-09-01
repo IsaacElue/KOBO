@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { cn } from "@/lib/utils";
+import { countryFlag, countryName } from "@/lib/kobo/currencies";
 import type { Recipient } from "@/lib/kobo/types";
 import { Search, Check, UserRoundSearch } from "lucide-react";
 
@@ -27,6 +28,7 @@ export function RecipientPicker({
   const results = recipients.filter((r) =>
     r.name.toLowerCase().includes(query.trim().toLowerCase())
   );
+  const selectedCountry = countryName(selected.country);
 
   return (
     <Card className="gap-0 overflow-hidden rounded-[28px] border border-white/90 bg-white p-0 shadow-[0_30px_60px_-46px_rgba(11,31,36,0.7)] ring-0">
@@ -46,11 +48,17 @@ export function RecipientPicker({
           <div className="truncate text-[19px] font-semibold tracking-tight text-kobo-ink">
             {selected.name}
           </div>
-          <div className="truncate text-[13.5px] text-[#7B959B]">{selected.meta}</div>
+          {/* A person, not a wallet: prefer email + country; the wallet address
+              lives in the transfer details / receipt, not here. */}
+          <div className="truncate text-[13.5px] text-[#7B959B]">
+            {selected.email ?? selected.meta}
+          </div>
+          {selectedCountry && (
+            <div className="mt-0.5 text-[12.5px] text-[#8AA3A9]">
+              <span aria-hidden>{countryFlag(selected.country)}</span> {selectedCountry}
+            </div>
+          )}
         </div>
-        <span className="hidden max-w-[140px] truncate font-mono text-[12.5px] text-[#9BB2B8] sm:inline">
-          {selected.wallet}
-        </span>
         <span className="text-[13.5px] font-medium text-kobo-teal-600">
           {open ? "Close" : "Change"}
         </span>

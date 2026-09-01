@@ -1,5 +1,7 @@
 import type {
   ActivityTransfer,
+  TransferHistoryPage,
+  TransferHistoryQuery,
   BalanceResponse,
   CreateFundingRequest,
   CreateFundingResponse,
@@ -19,6 +21,7 @@ import type {
   UserProfile,
 } from "./types";
 import { CURRENT_USER, RECIPIENTS, TRANSFER_HISTORY, randomRate } from "./mock-data";
+import { TRANSFER_STATUS_GROUPS, statusGroupParam } from "./transfer-display";
 import { API_URL, isMockMode } from "./config";
 import { generatePlaceholderWalletAddress } from "./solana";
 import { getValidAccessToken, handleUnauthorized, updateStoredUser } from "./auth";
@@ -339,19 +342,96 @@ export async function getMyTransfers(): Promise<ActivityTransfer[]> {
   }
 
   await new Promise((r) => setTimeout(r, 200));
+  return mockActivityTransfers();
+}
+
+/** The mock-mode `ActivityTransfer[]`, derived from the `TRANSFER_HISTORY`
+ * fixture. Newest first (index 0), stable dates. Shared by `getMyTransfers`
+ * (Overview + stats) and `getTransferHistory` (the Activity list). */
+function mockActivityTransfers(): ActivityTransfer[] {
   const nameById = new Map(RECIPIENTS.map((r) => [r.id, r.name]));
   const base = Date.UTC(2026, 7, 20); // fixed reference so mock dates are stable
-  return TRANSFER_HISTORY.map((t, i) => ({
-    id: t.id,
-    recipient_id: t.recipientId,
-    recipient_name: nameById.get(t.recipientId) ?? null,
-    amount_eur: t.amountEur,
-    amount_usdc: null,
-    status: (t.status === "Delivered" ? "confirmed" : "failed") as TransferStatus,
-    solana_tx_signature: t.status === "Delivered" ? `mock_sig_${t.id}` : null,
-    failure_reason: t.status === "Refunded" ? "The transfer was refunded." : null,
-    created_at: new Date(base - i * 6 * 86_400_000).toISOString(),
-  }));
+  return TRANSFER_HISTORY.map((t, i) => {
+    const status: TransferStatus =
+      t.status === "Delivered" ? "confirmed" : t.status === "Refunded" ? "failed" : "sent";
+    return {
+      id: t.id,
+      recipient_id: t.recipientId,
+      recipient_name: nameById.get(t.recipientId) ?? null,
+      amount_eur: t.amountEur,
+      amount_usdc: status === "confirmed" ? Number((t.amountEur * 1.08).toFixed(2)) : null,
+      status,
+      solana_tx_signature: status === "confirmed" || status === "sent" ? `mock_sig_${t.id}` : null,
+      failure_reason: t.status === "Refunded" ? "The transfer was refunded." : null,
+      created_at: new Date(base - i * 6 * 86_400_000).toISOString(),
+    };
+  });
+}
+
+/**
+ * `GET /transfers?q=&status=&limit=&offset=` — one filtered, paginated page of
+ * the signed-in sender's history, for the Activity screen's "Transfer history"
+ * block. Real rows in real mode (server does the filtering); mock mode
+ * filters/paginates the `TRANSFER_HISTORY` fixture in memory (no fixture
+ * history ever reaches real mode). Shape confirmed against the real backend —
+ * see API_CONTRACT.md.
+ */
+export const TRANSFER_HISTORY_PAGE_SIZE = 10;
+
+export async function getTransferHistory(
+  query: TransferHistoryQuery = {}
+): Promise<TransferHistoryPage> {
+  const limit = query.limit ?? TRANSFER_HISTORY_PAGE_SIZE;
+  const offset = query.offset ?? 0;
+  const group = query.group ?? "all";
+  const q = query.q?.trim() || undefined;
+  const statusParam = statusGroupParam(group);
+
+  if (!isMockMode()) {
+    const params = new URLSearchParams({ limit: String(limit), offset: String(offset) });
+    if (statusParam) params.set("status", statusParam);
+    if (q) params.set("q", q);
+
+    const res = await fetch(`${API_URL}/transfers?${params.toString()}`, {
+      headers: await authHeaders(),
+    });
+    if (res.status === 401) {
+      handleUnauthorized();
+      throw new Error("Your session has expired. Please sign in again");
+    }
+    if (!res.ok) throw new Error(`GET /transfers failed: ${res.status}`);
+    const body: Partial<TransferHistoryPage> & { transfers: ActivityTransfer[] } = await res.json();
+    return {
+      transfers: body.transfers,
+      total: body.total ?? body.transfers.length,
+      limit: body.limit ?? limit,
+      offset: body.offset ?? offset,
+      has_more: body.has_more ?? false,
+    };
+  }
+
+  await new Promise((r) => setTimeout(r, 200));
+  const groupStatuses = TRANSFER_STATUS_GROUPS.find((g) => g.key === group)?.statuses ?? [];
+  const all = mockActivityTransfers().filter((t) => {
+    if (groupStatuses.length && !groupStatuses.includes(t.status)) return false;
+    if (q) {
+      const hay = q.toLowerCase();
+      return (
+        (t.recipient_name ?? "").toLowerCase().includes(hay) ||
+        t.id.toLowerCase().includes(hay) ||
+        (t.solana_tx_signature ?? "").toLowerCase().includes(hay)
+      );
+    }
+    return true;
+  });
+  const page = all.slice(offset, offset + limit);
+  return {
+    transfers: page,
+    total: all.length,
+    limit,
+    offset,
+    has_more: offset + page.length < all.length,
+  };
 }
 
 /**

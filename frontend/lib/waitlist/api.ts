@@ -1,90 +1,23 @@
 /**
- * ────────────────────────────────────────────────────────────────────────────
- *  MOCK WAITLIST API. There is no real backend for this yet.
- * ────────────────────────────────────────────────────────────────────────────
+ * Waitlist client. Talks to the real backend
+ * (`POST /waitlist/signup`, `GET /waitlist/count`) when `NEXT_PUBLIC_KOBO_API_URL`
+ * is set; otherwise runs a local mock so the campaign page still works with no
+ * backend.
  *
- * `rank` here is a STABLE PLACEHOLDER, not a fabricated real position: a mock in
- * one browser has no queue to count against, so it derives a fixed number from
- * the email (same email -> same number, every reload) rather than a random one.
- * The real backend returns `count(entries ahead) + 1`, recomputed live; see the
- * BACKEND NOTES in ./types.ts. The UI labels this number "estimated" while
- * `isWaitlistMockMode()` is true. The referral count is genuinely 0 (one browser
- * can't see other people's signups); `simulateReferrals()` exists only so the
- * campaign team can screenshot the "spots gained" state.
- *
- * Swap-in plan when a backend exists: set `NEXT_PUBLIC_WAITLIST_API_URL`, then
- * replace the mock branches below with the `fetch` calls sketched in the TODOs.
- * The exported function signatures + ./types.ts shapes stay the same.
+ * `signup_number` is the exact position the DB assigned — this client never
+ * invents or estimates it. The mock derives a *stable* number from the email
+ * (same email → same number) so a no-backend preview isn't obviously random,
+ * and stores it locally like the real path does.
  */
 
+import { API_URL, isMockMode } from "@/lib/kobo/config";
 import type {
-  JoinWaitlistResponse,
-  ReferralTier,
-  WaitlistStatusResponse,
+  RememberedSignup,
+  WaitlistCountResponse,
+  WaitlistSignupResponse,
 } from "./types";
 
-const WAITLIST_API_URL = process.env.NEXT_PUBLIC_WAITLIST_API_URL;
-
-/** True while there's no waitlist backend configured (always, for now). */
-export function isWaitlistMockMode() {
-  return !WAITLIST_API_URL;
-}
-
-/**
- * Referral mechanic shown on the page and used to compute `spotsGained`:
- *   "Refer 2, jump 100 spots. Refer 5, unlock early access."
- * i.e. 50 spots per referral, with an early-access flip at 5.
- */
-export const SPOTS_PER_REFERRAL = 50;
-export const EARLY_ACCESS_AT = 5;
-
-export const REFERRAL_TIERS: ReferralTier[] = [
-  { referrals: 2, reward: "jump 100 spots" },
-  { referrals: EARLY_ACCESS_AT, reward: "unlock early access", unlocksEarlyAccess: true },
-];
-
-export function spotsGainedFor(referralCount: number): number {
-  return Math.max(0, Math.floor(referralCount)) * SPOTS_PER_REFERRAL;
-}
-
-export function hasEarlyAccess(referralCount: number): boolean {
-  return referralCount >= EARLY_ACCESS_AT;
-}
-
-// ── mock persistence ────────────────────────────────────────────────────────
-
-const STORAGE_KEY = "kobo_waitlist_v1";
-const MOCK_LATENCY_MS = 550;
-
-interface StoredEntry {
-  email: string;
-  basePosition: number;
-  referralCode: string;
-  joinedAt: string;
-  referralCount: number;
-}
-
-function readEntry(): StoredEntry | null {
-  if (typeof window === "undefined") return null;
-  try {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
-    return raw ? (JSON.parse(raw) as StoredEntry) : null;
-  } catch {
-    return null;
-  }
-}
-
-function writeEntry(entry: StoredEntry) {
-  try {
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(entry));
-  } catch {
-    /* private mode / storage disabled; the in-memory response still works for this session */
-  }
-}
-
-const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
-
-// ── helpers ─────────────────────────────────────────────────────────────────
+export class WaitlistError extends Error {}
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -92,126 +25,117 @@ export function isValidEmail(email: string): boolean {
   return EMAIL_RE.test(email.trim());
 }
 
-/** Deterministic-ish 6-char code from the email plus a little entropy. */
-function makeReferralCode(email: string): string {
-  let h = 0;
-  for (let i = 0; i < email.length; i++) h = (h * 31 + email.charCodeAt(i)) | 0;
-  const seed = Math.abs(h ^ Math.floor(Math.random() * 0xffffff));
-  return seed.toString(36).toUpperCase().padStart(6, "0").slice(0, 6);
+/** True while there's no waitlist backend configured (shares the app's one flag). */
+export function isWaitlistMockMode(): boolean {
+  return isMockMode();
 }
 
-/**
- * PLACEHOLDER position, deterministic from the email so it never changes on
- * reload and is obviously a function of identity, not a dice roll. NOT a real
- * queue position; the backend computes the true `count(ahead) + 1`.
- */
-function placeholderPosition(email: string): number {
+const STORAGE_KEY = "kobo_waitlist_v2";
+
+function readRemembered(): RememberedSignup | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = window.localStorage.getItem(STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Partial<RememberedSignup>;
+    if (typeof parsed.email === "string" && typeof parsed.signup_number === "number") {
+      return { email: parsed.email, signup_number: parsed.signup_number };
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+function writeRemembered(entry: RememberedSignup): void {
+  try {
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(entry));
+  } catch {
+    /* private mode / storage disabled — the response still works for this session */
+  }
+}
+
+/** This browser's own signup, if it has one — lets a returning visitor skip the form. */
+export function getRememberedSignup(): RememberedSignup | null {
+  return readRemembered();
+}
+
+/** Forget this browser's signup (the "use a different email" affordance). */
+export function resetWaitlist(): void {
+  try {
+    window.localStorage.removeItem(STORAGE_KEY);
+  } catch {
+    /* noop */
+  }
+}
+
+const MOCK_LATENCY_MS = 450;
+const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/** Stable, email-derived number for the no-backend mock (never random per call). */
+function mockSignupNumber(email: string): number {
   let h = 0;
   for (let i = 0; i < email.length; i++) h = (h * 131 + email.charCodeAt(i)) | 0;
-  return 300 + (Math.abs(h) % 1701); // stable 300-2000
+  return 1 + (Math.abs(h) % 4000);
 }
 
-// ── API ─────────────────────────────────────────────────────────────────────
-
-export class WaitlistError extends Error {}
-
 /**
- * POST /waitlist: join the list.
- * MOCK: returns a stable email-derived placeholder rank + generated code and
- * stashes it in localStorage.
+ * POST /waitlist/signup — join (or re-confirm) the list. Idempotent: the same
+ * email always resolves to the same `signup_number`. Persists it locally so a
+ * reload shows the joined state without another request.
  */
-export async function joinWaitlist(email: string): Promise<JoinWaitlistResponse> {
+export async function joinWaitlist(email: string): Promise<WaitlistSignupResponse> {
   const trimmed = email.trim().toLowerCase();
   if (!isValidEmail(trimmed)) {
     throw new WaitlistError("That doesn't look like an email address.");
   }
 
-  if (!isWaitlistMockMode()) {
-    // TODO(real backend):
-    // const res = await fetch(`${WAITLIST_API_URL}/waitlist`, {
-    //   method: "POST",
-    //   headers: { "content-type": "application/json" },
-    //   body: JSON.stringify({ email: trimmed } satisfies JoinWaitlistRequest),
-    // });
-    // if (!res.ok) throw new WaitlistError(`POST /waitlist failed: ${res.status}`);
-    // return (await res.json()) as JoinWaitlistResponse;
-    throw new WaitlistError("Waitlist backend not wired up.");
+  if (!isMockMode()) {
+    let res: Response;
+    try {
+      res = await fetch(`${API_URL}/waitlist/signup`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: trimmed }),
+      });
+    } catch {
+      throw new WaitlistError("Couldn't reach the waitlist. Check your connection and try again.");
+    }
+    if (res.status === 429) {
+      throw new WaitlistError("Too many attempts. Please wait a minute and try again.");
+    }
+    const body = (await res.json().catch(() => null)) as
+      | (Partial<WaitlistSignupResponse> & { error?: string })
+      | null;
+    if (!res.ok || typeof body?.signup_number !== "number") {
+      throw new WaitlistError(body?.error ?? "Something went wrong. Please try again.");
+    }
+    const signup = { signup_number: body.signup_number };
+    writeRemembered({ email: trimmed, ...signup });
+    return signup;
   }
 
   await wait(MOCK_LATENCY_MS);
-
-  const existing = readEntry();
-  // Re-joining with the same email returns the same slot (idempotent-ish).
-  if (existing && existing.email === trimmed) {
-    return { rank: effectiveRank(existing), referralCode: existing.referralCode };
-  }
-
-  const entry: StoredEntry = {
-    email: trimmed,
-    basePosition: placeholderPosition(trimmed),
-    referralCode: makeReferralCode(trimmed),
-    joinedAt: new Date().toISOString(),
-    referralCount: 0,
-  };
-  writeEntry(entry);
-  // Always the derived effective position (== basePosition here, since a fresh
-  // entry has 0 referrals); mirrors how the real backend never returns a raw
-  // stored number.
-  return { rank: effectiveRank(entry), referralCode: entry.referralCode };
+  const existing = readRemembered();
+  const signup_number =
+    existing && existing.email === trimmed ? existing.signup_number : mockSignupNumber(trimmed);
+  writeRemembered({ email: trimmed, signup_number });
+  return { signup_number };
 }
 
 /**
- * GET /waitlist/status: where the current visitor stands.
- * MOCK: reads the localStorage entry written by joinWaitlist().
+ * GET /waitlist/count — total signups so far. Returns `null` when there's no
+ * backend to ask (the page doesn't currently render this, but the client
+ * mirrors the full contract).
  */
-export async function getWaitlistStatus(): Promise<WaitlistStatusResponse | null> {
-  if (!isWaitlistMockMode()) {
-    // TODO(real backend):
-    // const res = await fetch(`${WAITLIST_API_URL}/waitlist/status`, { credentials: "include" });
-    // if (res.status === 404) return null;
-    // if (!res.ok) throw new WaitlistError(`GET /waitlist/status failed: ${res.status}`);
-    // return (await res.json()) as WaitlistStatusResponse;
-    return null;
-  }
-
-  await wait(MOCK_LATENCY_MS);
-  const entry = readEntry();
-  if (!entry) return null;
-  return {
-    rank: effectiveRank(entry),
-    referralCount: entry.referralCount,
-    spotsGained: spotsGainedFor(entry.referralCount),
-  };
-}
-
-function effectiveRank(entry: StoredEntry): number {
-  return Math.max(1, entry.basePosition - spotsGainedFor(entry.referralCount));
-}
-
-// ── demo-only helpers (not used by the page's normal flow) ───────────────────
-
-/**
- * The referral code for the current browser's signup, if any. Its own function
- * because `WaitlistStatusResponse` (the real contract) deliberately doesn't
- * carry it; the code comes back once from `joinWaitlist`, and a real client
- * would keep it from that response rather than re-fetching.
- */
-export function getStoredReferralCode(): string | null {
-  return readEntry()?.referralCode ?? null;
-}
-
-/** MOCK-ONLY: bump the stored referral count so the campaign team can screenshot the earned-spots state. */
-export function simulateReferrals(count: number) {
-  const entry = readEntry();
-  if (!entry) return;
-  writeEntry({ ...entry, referralCount: Math.max(0, Math.floor(count)) });
-}
-
-/** MOCK-ONLY: clear the stored signup (used by tests + "start over"). */
-export function resetWaitlist() {
+export async function getWaitlistCount(): Promise<number | null> {
+  if (isMockMode()) return null;
   try {
-    window.localStorage.removeItem(STORAGE_KEY);
+    const res = await fetch(`${API_URL}/waitlist/count`);
+    if (!res.ok) return null;
+    const body = (await res.json()) as WaitlistCountResponse;
+    return typeof body.total === "number" ? body.total : null;
   } catch {
-    /* noop */
+    return null;
   }
 }

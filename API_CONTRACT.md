@@ -817,14 +817,24 @@ For a transfer created via the new instant-send path, `onramp_session_id` and
 `onramp_reference` are always `null` — nothing about that transfer ever touched
 Transak.
 
-## `GET /transfers` — **NEW this sync (Activity page)**
+## `GET /transfers` — **search / status / pagination added (Sprint 1B)**
 
 The signed-in sender's own transfer history, newest first — for the Activity
-page's "Transfer history" list and its sending stats. Own resource only: rows
+page's "Transfer history" block and its sending stats. Own resource only: rows
 are filtered by `sender_id = <caller's users.id from the verified session>`,
-never a client-supplied id — same ownership model as `GET /transfers/:id`.
+never a client-supplied id — same ownership model as `GET /transfers/:id`. A
+`sender_id` / `senderId` in the query string is ignored.
 
 **Header:** `Authorization: Bearer <access_token>`
+
+**Query parameters (all optional; a param-less call is unchanged behaviour):**
+
+| param    | meaning |
+|----------|---------|
+| `q`      | Free-text search. A well-formed UUID → exact `id` match (the "reference" the receipt shows); a base58 string ≥32 chars → exact `solana_tx_signature` match; anything else → recipient-name substring, case-insensitive (`ilike` over the `users` join). Trimmed; `> 200` chars → `400`. |
+| `status` | One or more **raw** `transfers.status` values, comma-separated (`confirmed`, or `pending,onramp_complete,sent`). No new statuses are introduced — the frontend's "In progress" group just sends the three raw values. 1–5 tokens; any unknown token → `400`. |
+| `limit`  | Page size. Integer `1`–`100`; default **50** (unchanged from before). Anything else → `400`. |
+| `offset` | Rows to skip, for "load more". Non-negative integer; default `0`. Anything else → `400`. |
 
 **Response — `200`:**
 ```json
@@ -841,24 +851,32 @@ never a client-supplied id — same ownership model as `GET /transfers/:id`.
       "failure_reason": "string | null",
       "created_at": "2026-08-27T14:58:17.118Z"
     }
-  ]
+  ],
+  "total": 128,
+  "limit": 50,
+  "offset": 0,
+  "has_more": true
 }
 ```
-Existing `transfers` columns plus `recipient_name` — **joined from `users.name`
-(`users!transfers_recipient_id_fkey`), not a new column on `transfers`.** No
-schema change. Ordered `created_at` desc, capped at 50 rows. `status` is the
-raw enum (`pending | onramp_complete | sent | confirmed | failed`); the
+`transfers` is unchanged: existing `transfers` columns plus `recipient_name` —
+**joined from `users.name` (`users!transfers_recipient_id_fkey`), not a new
+column on `transfers`.** No schema change. Ordered `created_at` desc. `status`
+is the raw enum (`pending | onramp_complete | sent | confirmed | failed`); the
 frontend maps it (`confirmed → "Delivered"`, `failed → "Failed"`, everything
-else → "In progress").
+else → "In progress"). `total` is the count matching the filter (ignoring
+`limit`/`offset`); `has_more` is `offset + returned < total`.
 
 **Error responses:**
+- `400` — `{ "error": "<which parameter, and the allowed range>" }` for a malformed `q` / `status` / `limit` / `offset`.
 - `401` — `{ "error": "Missing or invalid Authorization header" }` / `"Invalid or expired session" }`
 - `403` — `{ "error": "No sender account linked to this session" }`
 - `500` — `{ "error": "<supabase error message>" }`
 
-**Verified live, this sync:** a real account with two real €0.05 sends returns
-both rows with `recipient_name: "Adaeze Okonkwo"` and `status: "confirmed"`; a
-fresh account returns `{ "transfers": [] }`; no header → `401`.
+**Implementation:** `createTransfersRouter({ listTransfers })` injects the DB
+read (`backend/src/lib/transfers-repo.ts` → `makeSupabaseTransferLister`), so
+the route's parsing / ownership / pagination logic is unit-tested with an
+in-memory fake (`backend/src/test/transfers-list.test.ts`). The send /
+settlement / balance pipeline (`POST /transfers`) is untouched.
 
 ## `POST /webhooks/moonpay` — MoonPay on-ramp completion (current provider)
 
@@ -1040,6 +1058,20 @@ in `KOBO_BUILD_PLAN.md`'s "Decided" section):** this is a general-purpose fiat<-
 rate source, not something built one-off for the header ticker. The recipient
 balance display feature can call this same endpoint to convert a recipient's real
 USDC balance into an EUR-equivalent, rather than needing its own rate source.
+
+**Sprint 1C — `GET /rate` is unchanged; the frontend now consumes it through an FX
+abstraction.** `frontend/lib/kobo/fx.ts` (`koboFxProvider: FxQuoteProvider`) is the
+only thing the Send UI touches for a display rate. It returns a tagged
+`FxQuote { base, quote, rate, timestamp, source, expiresAt }` — `source:
+"transak-market"` for a real `GET /rate` result, `source: "mock"` only in mock
+mode — or `{ available: false, reason }` (`"unsupported_pair"` for anything but
+`EUR|GBP|USD → USDC`, e.g. EUR/NGN; `"provider_error"` when `/rate` fails). The
+Send screen blocks Confirm and shows "Rate unavailable" on an unavailable quote —
+a real transfer is never confirmed off a fabricated rate. **No executable-FX
+endpoint exists; none was added.** EUR/NGN is display-only groundwork
+(`frontend/lib/kobo/currencies.ts` capability flags: `funding: false`,
+`settlement: false`) — `GET /rate` still `400`s for `NGN`, which is the honest
+answer.
 
 ## `GET /market/overview` — **NEW this sync (Activity page)**
 

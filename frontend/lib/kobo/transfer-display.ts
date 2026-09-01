@@ -1,4 +1,4 @@
-import type { TransferStatus } from "./types";
+import type { TransferStatus, TransferStatusGroup } from "./types";
 
 /**
  * One place that turns a raw `TransferStatus` (from `GET /transfers`) into the
@@ -49,4 +49,63 @@ export function transferLongDate(iso: string): string {
  */
 export function transferReference(id: string): string {
   return id;
+}
+
+/** Full date + time for the detail dialog's secondary info: "12 August 2026, 14:58". */
+export function transferDateTime(iso: string): string {
+  return new Date(iso).toLocaleString("en-IE", {
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+/**
+ * Middle-truncates a long opaque string (a transfer id, a Solana signature) so a
+ * detail row can never force horizontal scroll. The full value stays available
+ * via Copy / a `title` attribute.
+ */
+export function truncateMiddle(value: string, head = 6, tail = 6): string {
+  if (value.length <= head + tail + 1) return value;
+  return `${value.slice(0, head)}…${value.slice(-tail)}`;
+}
+
+/**
+ * Mock-mode signatures are `mock_sig_<id>` placeholders (see `lib/kobo/api.ts`);
+ * real ones are ~87–88-char base58. Only the latter belong on-chain.
+ */
+export function isRealSolanaSignature(sig: string | null | undefined): sig is string {
+  return !!sig && !sig.startsWith("mock_sig_") && /^[1-9A-HJ-NP-Za-km-z]{32,120}$/.test(sig);
+}
+
+/**
+ * Solana Explorer URL for a real signature, or `null` for a placeholder /
+ * missing one (never link to a fake). Kobo settles on devnet, so the cluster
+ * is pinned unless `NEXT_PUBLIC_SOLANA_CLUSTER` overrides it.
+ */
+export function solanaExplorerUrl(sig: string | null | undefined): string | null {
+  if (!isRealSolanaSignature(sig)) return null;
+  const cluster = process.env.NEXT_PUBLIC_SOLANA_CLUSTER || "devnet";
+  const suffix = cluster === "mainnet-beta" ? "" : `?cluster=${cluster}`;
+  return `https://explorer.solana.com/tx/${sig}${suffix}`;
+}
+
+/** The Activity history status filter — group label + the raw statuses it selects. */
+export const TRANSFER_STATUS_GROUPS: {
+  key: TransferStatusGroup;
+  label: string;
+  statuses: TransferStatus[];
+}[] = [
+  { key: "all", label: "All", statuses: [] },
+  { key: "delivered", label: "Delivered", statuses: ["confirmed"] },
+  { key: "pending", label: "In progress", statuses: ["pending", "onramp_complete", "sent"] },
+  { key: "failed", label: "Failed", statuses: ["failed"] },
+];
+
+/** The comma-joined `status=` query value for a group, or `undefined` for "all". */
+export function statusGroupParam(group: TransferStatusGroup): string | undefined {
+  const match = TRANSFER_STATUS_GROUPS.find((g) => g.key === group);
+  return match && match.statuses.length ? match.statuses.join(",") : undefined;
 }

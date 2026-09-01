@@ -137,6 +137,6 @@ describe("Activity nav item", () => {
     expect(screen.getByText("Market")).toBeInTheDocument();
     expect(screen.getByText("Transfer history")).toBeInTheDocument();
     // mock-mode transfer history is derived from the existing fixture
-    expect(await screen.findByText("Adaeze Okonkwo")).toBeInTheDocument();
+    expect((await screen.findAllByText("Adaeze Okonkwo")).length).toBeGreaterThan(0);
   });
 });

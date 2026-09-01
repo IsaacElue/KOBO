@@ -25,7 +25,10 @@ export function AddRecipientDialog({
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onAdd: (user: CreateUserResponse) => void;
+  onAdd: (
+    user: CreateUserResponse,
+    extra?: { email?: string | null; country?: string | null }
+  ) => void;
 }) {
   const [mode, setMode] = useState<"email" | "address">("email");
   const [name, setName] = useState("");
@@ -92,7 +95,10 @@ export function AddRecipientDialog({
       // added here is in Nigeria by product scope, not by assumption — there's no
       // country input in this form (see API_CONTRACT.md, "Add new recipient").
       const created = await createUser(request);
-      onAdd(created);
+      onAdd(created, {
+        email: mode === "email" ? request.email ?? null : null,
+        country: request.country,
+      });
       reset();
       onOpenChange(false);
     } catch {

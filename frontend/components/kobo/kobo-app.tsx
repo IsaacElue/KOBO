@@ -37,8 +37,9 @@ import {
   CURRENT_USER,
   SEED_RECIPIENTS,
   SUPPORT_EMAIL,
-  randomRate,
 } from "@/lib/kobo/mock-data";
+import { koboFxProvider, fxSourceLabel, type FxQuoteResult } from "@/lib/kobo/fx";
+import { countryName } from "@/lib/kobo/currencies";
 import {
   ACTIVITY_INDEX,
   HELP_INDEX,
@@ -52,7 +53,6 @@ import {
   createFunding,
   createTransfer,
   getBalance,
-  getRate,
   pollFundingStatus,
   pollTransferStatus,
   FUNDING_STATUS_LABEL,
@@ -153,7 +153,11 @@ export function KoboApp({
   // balance was 0. Empty -> amt 0 -> Confirm stays disabled, no false error.
   const [amount, setAmount] = useState(() => loadOnrampDraft()?.amount ?? "");
   const [recipientId, setRecipientId] = useState(() => loadOnrampDraft()?.recipientId ?? SEED_RECIPIENTS[0].id);
-  const [rate, setRate] = useState(randomRate("EUR"));
+  // The EUR/GBP/USD → USDC display quote. `null` = not loaded yet; an
+  // `available: false` result = no verified rate (real mode, provider down).
+  // Never seeded with a random number — a real-money confirmation screen must
+  // not be able to show a mock rate (Sprint 1C Task 7).
+  const [fxQuote, setFxQuote] = useState<FxQuoteResult | null>(null);
   const [secsUntilLock, setSecsUntilLock] = useState(RATE_LOCK_SECONDS);
   const [balance, setBalance] = useState(0);
 
@@ -181,17 +185,17 @@ export function KoboApp({
     step !== "form" || addRecipientOpen || detailTransfer !== null || fundingStep !== "closed";
 
   /**
-   * Fetches the live rate (real `GET /rate` -> Transak's public quote in real
-   * mode, `randomRate` in mock mode) and swaps it in. On failure, silently keeps
-   * showing the last known-good rate rather than blanking the ticker — the next
-   * 30s cycle (or a currency switch) retries. No error UI by design: the ticker
-   * has no error-state slot today and this isn't the place to add one.
+   * Fetches the display FX quote (`base` → USDC) through the FX abstraction:
+   * a verified Transak market quote in real mode, a clearly-tagged mock rate in
+   * mock mode. On a real-mode failure the quote becomes `available: false` and
+   * the Send screen shows "Rate unavailable" + blocks Confirm rather than
+   * silently keeping a stale or fabricated number (Sprint 1C Task 7).
    */
-  async function refreshRate(curr: CurrencyCode) {
+  async function refreshQuote(curr: CurrencyCode) {
     try {
-      setRate(await getRate(curr));
+      setFxQuote(await koboFxProvider.getQuote(curr, "USDC"));
     } catch {
-      // see comment above — intentionally silent
+      setFxQuote({ available: false, base: curr, quote: "USDC", reason: "provider_error" });
     }
   }
 
@@ -209,11 +213,10 @@ export function KoboApp({
     return () => clearTimeout(t);
   }, []);
 
-  // Get the real rate and balance in as soon as possible after mount.
+  // Get the real quote and balance in as soon as possible after mount.
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional one-time fetch-on-mount, not a render loop
-    refreshRate(currency);
-    // eslint-disable-next-line react-hooks/set-state-in-effect
+    refreshQuote(currency);
     refreshBalance();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -283,7 +286,7 @@ export function KoboApp({
     const iv = setInterval(() => {
       setSecsUntilLock((s) => {
         if (s <= 1) {
-          refreshRate(currency);
+          refreshQuote(currency);
           return RATE_LOCK_SECONDS;
         }
         return s - 1;
@@ -296,23 +299,33 @@ export function KoboApp({
   const firstName = recipient.name.split(" ")[0];
   const currencyMeta = CURRENCIES[currency];
 
+  // The verified display rate, or null when we have no trustworthy number.
+  const rate = fxQuote?.available ? fxQuote.rate : null;
+  const rateAvailable = rate != null && rate > 0;
+  const rateSource = fxQuote?.available ? fxQuote.source : null;
+
   const amt = Math.max(0, parseFloat(amount.replace(/[^\d.]/g, "")) || 0);
   const fee = amt * CONVERSION_FEE_RATE;
-  const receiveUsdc = (amt - fee) * rate;
-  // Real balance is in USDC — converted into whichever currency is selected,
-  // using the same live `rate` state the header ticker already reuses (no
-  // second rate mechanism).
-  const balanceInCurrency = rate > 0 ? balance / rate : 0;
+  // Every rate-derived figure is null when the rate is unavailable — the UI
+  // renders "—" / "Rate unavailable" rather than a fabricated number, and
+  // Confirm is blocked below.
+  const receiveUsdc = rateAvailable ? (amt - fee) * rate! : null;
+  // Real balance is in USDC — converted into the selected currency with the
+  // same display rate the header ticker uses (no second rate mechanism).
+  const balanceInCurrency = rateAvailable ? balance / rate! : null;
 
   const sentStr = `${currencyMeta.symbol}${formatAmount(amt)}`;
   const feeStr = `${currencyMeta.symbol}${formatAmount(fee)}`;
-  const receiveStr = formatAmount(receiveUsdc);
-  const rateStr = rate.toFixed(4);
-  const balanceStr = `${currencyMeta.symbol}${formatAmount(balanceInCurrency)}`;
+  const totalStr = `${currencyMeta.symbol}${formatAmount(amt)}`;
+  const receiveStr = receiveUsdc != null ? formatAmount(receiveUsdc) : "—";
+  const rateStr = rate != null ? rate.toFixed(4) : "—";
+  const balanceStr =
+    balanceInCurrency != null ? `${currencyMeta.symbol}${formatAmount(balanceInCurrency)}` : "—";
 
   function handleCurrencyChange(next: CurrencyCode) {
     setCurrency(next);
-    refreshRate(next);
+    setFxQuote(null);
+    refreshQuote(next);
     setSecsUntilLock(RATE_LOCK_SECONDS);
   }
 
@@ -323,6 +336,13 @@ export function KoboApp({
 
   /** Before submitting, a fresh real balance check — insufficient prompts Add Funds instead of the passcode gate. */
   async function handleConfirmClick() {
+    // Quote safety: never let a send be confirmed off a rate we can't stand
+    // behind (Sprint 1C Task 7). The button is already disabled in this state;
+    // this is the belt-and-braces guard.
+    if (!rateAvailable || receiveUsdc == null) {
+      toast.error("Rate unavailable right now. Please try again in a moment.");
+      return;
+    }
     let currentBalance = balance;
     try {
       currentBalance = await getBalance(authUser.id);
@@ -573,14 +593,22 @@ export function KoboApp({
     window.location.href = `mailto:${SUPPORT_EMAIL}`;
   }
 
-  function handleAddRecipient(user: CreateUserResponse) {
+  function handleAddRecipient(
+    user: CreateUserResponse,
+    extra?: { email?: string | null; country?: string | null }
+  ) {
+    const country = extra?.country ?? user.country ?? null;
+    const email = extra?.email ?? null;
+    const countryLabel = countryName(country);
     const newRecipient: Recipient = {
       id: user.id,
       name: user.name,
       initials: nameToInitials(user.name),
-      meta: "New recipient · USDC wallet",
+      meta: countryLabel ? `New recipient · ${countryLabel}` : "New recipient",
       wallet: user.wallet_address,
       lastSent: "No transfers yet",
+      email,
+      country,
     };
     setRecipients((prev) => [newRecipient, ...prev]);
     setRecipientId(newRecipient.id);
@@ -739,15 +767,25 @@ export function KoboApp({
                   </div>
 
                   <TransferSummaryPanel
+                    recipientName={recipient.name}
+                    recipientEmail={recipient.email}
+                    recipientCountry={recipient.country}
                     currencyCode={currency}
                     currencySymbol={currencyMeta.symbol}
                     rate={rateStr}
+                    rateAvailable={rateAvailable}
+                    rateSourceLabel={rateSource ? fxSourceLabel(rateSource) : null}
                     secsUntilLock={secsUntilLock}
                     amountSent={amt}
                     fee={fee}
-                    receiveUsdc={receiveUsdc}
+                    totalStr={totalStr}
+                    receiveStr={receiveStr}
                     onConfirm={handleConfirmClick}
-                    disabled={amt <= 0 || amt > balanceInCurrency}
+                    disabled={
+                      amt <= 0 ||
+                      !rateAvailable ||
+                      (balanceInCurrency != null && amt > balanceInCurrency)
+                    }
                   />
                 </div>
               </TabsContent>

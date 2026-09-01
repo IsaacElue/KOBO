@@ -68,7 +68,10 @@ export async function openTransferDetail(
   recipientName: string
 ) {
   await user.click(sidebarNavButton("Activity"));
-  const row = (await screen.findByText(recipientName)).closest("button") as HTMLButtonElement;
+  // The history list can carry several rows for the same recipient — open the
+  // first (newest) one.
+  const [nameEl] = await screen.findAllByText(recipientName);
+  const row = nameEl.closest("button") as HTMLButtonElement;
   await user.click(row);
   const dialog = await screen.findByRole("dialog", { name: /transfer details/i });
   return { row, dialog };

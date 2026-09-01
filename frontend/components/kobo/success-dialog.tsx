@@ -23,7 +23,8 @@ export function SuccessDialog({
   onDownloadReceipt,
 }: {
   open: boolean;
-  recipient: Pick<Recipient, "name" | "initials" | "wallet">;
+  recipient: Pick<Recipient, "name" | "initials" | "wallet"> &
+    Partial<Pick<Recipient, "email">>;
   firstName: string;
   currencyCode: string;
   sentStr: string;
@@ -145,8 +146,13 @@ export function SuccessDialog({
             </Avatar>
             <div className="min-w-0 flex-1">
               <div className="text-[16.5px] font-semibold text-kobo-ink">{recipient.name}</div>
-              <div className="truncate font-mono text-[12.5px] text-[#8AA3A9]">
-                {recipient.wallet}
+              <div
+                className={cn(
+                  "truncate text-[12.5px] text-[#8AA3A9]",
+                  !recipient.email && "font-mono"
+                )}
+              >
+                {recipient.email ?? recipient.wallet}
               </div>
             </div>
           </div>

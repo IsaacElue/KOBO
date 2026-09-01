@@ -24,11 +24,12 @@ export function SendAmountCard({
   presets: number[];
   onPickPreset: (value: number) => void;
   balance: string;
-  balanceValue: number;
+  /** Balance in the selected currency, or null when the rate needed to convert it is unavailable. */
+  balanceValue: number | null;
 }) {
   const meta = CURRENCIES[currency];
   const numericAmount = parseFloat(amount) || 0;
-  const overBalance = numericAmount > balanceValue;
+  const overBalance = balanceValue != null && numericAmount > balanceValue;
 
   return (
     <Card className="gap-4 rounded-[30px] border border-white/90 bg-gradient-to-br from-white to-[#FBFDFD] p-7 pb-6 shadow-[0_30px_60px_-44px_rgba(11,31,36,0.7)] ring-0">

@@ -9,6 +9,7 @@ import { rateRouter } from "./routes/rate";
 import { fundingRouter } from "./routes/funding";
 import { authRouter } from "./routes/auth";
 import { marketRouter } from "./routes/market";
+import { waitlistRouter } from "./routes/waitlist";
 
 const app = express();
 const port = process.env.PORT || 4000;
@@ -67,6 +68,7 @@ app.use("/users", usersRouter);
 app.use("/rate", rateRouter);
 app.use("/funding", fundingRouter);
 app.use("/market", marketRouter);
+app.use("/waitlist", waitlistRouter);
 
 app.listen(port, () => {
   console.log(`API listening on port ${port}`);
