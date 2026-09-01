@@ -1,5 +1,5 @@
 import "@testing-library/jest-dom/vitest";
-import { cleanup } from "@testing-library/react";
+import { cleanup, configure } from "@testing-library/react";
 import { afterEach, vi } from "vitest";
 import type { ReactNode } from "react";
 
@@ -12,6 +12,14 @@ import type { ReactNode } from "react";
 if (!process.env.NEXT_PUBLIC_CROSSMINT_CLIENT_KEY) {
   process.env.NEXT_PUBLIC_CROSSMINT_CLIENT_KEY = "ck_test_fake_not_a_real_key";
 }
+
+// Testing Library's default async wait (findBy*, waitFor) is 1000ms, which is
+// tight for KoboApp flows that mount a large tree and then poll (Add Funds
+// on-ramp, undo grace, processing checklist) — a single scheduler blip under
+// parallel load pushes them over. 5000ms rides that out while staying well
+// under the 15000ms per-test ceiling in vitest.config.mts, so a genuine hang
+// still fails the test rather than hanging the run.
+configure({ asyncUtilTimeout: 5000 });
 
 afterEach(() => {
   cleanup();
