@@ -4,8 +4,10 @@
  *
  *   POST /waitlist/signup  { email }  ->  { signup_number }
  *       201 for a brand-new signup, 200 (same number) if the email is already
- *       on the list. `signup_number` is a DB IDENTITY value assigned atomically
- *       at insert time — a real, exact position, never estimated or fabricated.
+ *       on the list. `signup_number` is an immutable historical ordinal — the
+ *       Nth person to join is #N, forever — assigned once by the DB inside an
+ *       advisory-locked transaction (see the `waitlist_signup` function).
+ *       Concurrency-safe; never estimated or fabricated.
  *
  *   GET  /waitlist/count             ->  { total }
  *       total rows in `waitlist_signups`.
@@ -18,7 +20,7 @@ export interface WaitlistSignupRequest {
 }
 
 export interface WaitlistSignupResponse {
-  /** The signer's permanent, exact position in line (1-indexed). */
+  /** Immutable 1-indexed signup ordinal (the Nth person to join is #N). */
   signup_number: number;
 }
 

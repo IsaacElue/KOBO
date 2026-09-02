@@ -15,7 +15,7 @@ const spaceGrotesk = Space_Grotesk({
 export const metadata: Metadata = {
   title: "Kobo waitlist: early access to euro-in, USDC-out",
   description:
-    "Join the Kobo waitlist. Send euros from Ireland to family in Nigeria as USDC on Solana, held safely until they choose to convert. Refer friends to move up the queue.",
+    "Join the Kobo waitlist. Send euros from Ireland to family in Nigeria as USDC on Solana, held safely until they choose to convert.",
   openGraph: {
     title: "Get early access to Kobo",
     description:

@@ -1,102 +1,161 @@
 import "dotenv/config";
-import express from "express";
-import request from "supertest";
-import { supabase } from "../src/lib/supabase";
-import { createWaitlistRouter } from "../src/routes/waitlist";
-import { createRateLimiter } from "../src/lib/rate-limit";
+import { Client } from "pg";
 
 /**
- * One-off: exercises POST /waitlist/signup + GET /waitlist/count against the
- * REAL Supabase DB, over the real Express router, then deletes every row it
- * created. Run after applying the migration:
+ * Non-destructive verification of the waitlist numbering: the `waitlist_signup`
+ * SQL function + `waitlist_counter` + `GET /waitlist/count`.
  *
+ * SAFETY: every check that writes runs inside a transaction that is ALWAYS
+ * ROLLED BACK. `waitlist_counter` is a plain row, so a ROLLBACK undoes the
+ * increment — this script consumes ZERO signup numbers and can be run against
+ * the live database at any time. Nothing is committed; no test row survives.
+ *
+ *   npx tsx scripts/run-migration.ts supabase/migrations/20260904000000_waitlist_immutable_signup_number.sql
  *   npx tsx scripts/verify-waitlist.ts
  */
 
-const stamp = Date.now();
-const emails = [
-  `verify+${stamp}-a@kobo-test.dev`,
-  `verify+${stamp}-b@kobo-test.dev`,
-  `verify+${stamp}-c@kobo-test.dev`,
-];
+const dbUrl = process.env.SUPABASE_DB_URL;
+if (!dbUrl) throw new Error("SUPABASE_DB_URL not set in .env");
+const ssl = { rejectUnauthorized: false } as const;
 
-function makeApp() {
-  const app = express();
-  app.set("trust proxy", true);
-  app.use(express.json());
-  // Generous limit so this script's own burst doesn't trip it; the 429 path is
-  // covered separately in the unit tests.
-  app.use("/waitlist", createWaitlistRouter({ signupRateLimiter: createRateLimiter({ windowMs: 60_000, max: 1000 }) }));
-  return app;
+const TEST_DOMAIN = "@waitlist-verify.invalid"; // reserved TLD — never a real address
+
+let ok = true;
+function check(label: string, cond: boolean, detail?: unknown) {
+  console.log(`${cond ? "✓" : "✗"} ${label}${detail !== undefined ? `  ${JSON.stringify(detail)}` : ""}`);
+  if (!cond) ok = false;
 }
 
-async function cleanup() {
-  const { error } = await supabase.from("waitlist_signups").delete().in("email", emails);
-  if (error) console.warn("cleanup warning:", error.message);
+async function signup(c: Client, email: string): Promise<{ signup_number: number; created: boolean }> {
+  const { rows } = await c.query("select signup_number, created from waitlist_signup($1)", [email]);
+  return rows[0];
 }
+const countRows = async (c: Client) =>
+  (await c.query("select count(*)::int as n from waitlist_signups")).rows[0].n as number;
+const counterValue = async (c: Client) =>
+  (await c.query("select next_number from waitlist_counter")).rows[0].next_number as number;
 
 async function main() {
-  const app = makeApp();
-  let ok = true;
-  const check = (label: string, cond: boolean) => {
-    console.log(`${cond ? "✓" : "✗"} ${label}`);
-    if (!cond) ok = false;
-  };
-
-  await cleanup(); // in case a prior run died mid-way
-
-  const countBefore = (await request(app).get("/waitlist/count")).body.total as number;
-  check("GET /waitlist/count returns a number", typeof countBefore === "number");
-
-  // 1. First signup → 201 + a numeric signup_number
-  const first = await request(app).post("/waitlist/signup").send({ email: emails[0].toUpperCase() });
-  check("first signup → 201", first.status === 201);
-  check("first signup → { signup_number: <number> }", typeof first.body.signup_number === "number");
-
-  // 2. Same email again (different case / whitespace) → 200 + SAME number (idempotent)
-  const again = await request(app).post("/waitlist/signup").send({ email: `  ${emails[0]}  ` });
-  check("repeat signup → 200", again.status === 200);
-  check("repeat signup → same signup_number", again.body.signup_number === first.body.signup_number);
-
-  // 3. Malformed email → 400, nothing inserted
-  const bad = await request(app).post("/waitlist/signup").send({ email: "not-an-email" });
-  check("malformed email → 400", bad.status === 400);
-  const missing = await request(app).post("/waitlist/signup").send({});
-  check("missing email → 400", missing.status === 400);
-
-  // 4. Concurrent signups of two NEW emails → both 201, distinct increasing numbers, no race
-  const [b, c] = await Promise.all([
-    request(app).post("/waitlist/signup").send({ email: emails[1] }),
-    request(app).post("/waitlist/signup").send({ email: emails[2] }),
-  ]);
-  check("concurrent new signups → both 201", b.status === 201 && c.status === 201);
-  const nums = [first.body.signup_number, b.body.signup_number, c.body.signup_number];
-  check("all three signup_numbers are distinct", new Set(nums).size === 3);
-
-  // 5. Concurrent DUPLICATE signups of one email → all resolve to the same number
-  const dupEmail = `verify+${stamp}-dup@kobo-test.dev`;
-  emails.push(dupEmail);
-  const dupResults = await Promise.all(
-    Array.from({ length: 5 }, () => request(app).post("/waitlist/signup").send({ email: dupEmail }))
+  // ── persistent, read-only snapshot ──────────────────────────────────────
+  const ro = new Client({ connectionString: dbUrl, ssl });
+  await ro.connect();
+  const { rows: liveRows } = await ro.query(
+    "select email, signup_number from waitlist_signups order by signup_number"
   );
-  const dupNums = new Set(dupResults.map((r) => r.body.signup_number));
-  check("5 concurrent dup signups → 1 distinct number", dupNums.size === 1);
-  check("5 concurrent dup signups → all 2xx", dupResults.every((r) => r.status === 200 || r.status === 201));
+  const baselineCount = await countRows(ro);
+  const baselineCounter = await counterValue(ro);
 
-  // 6. count reflects the 4 new emails
-  const countAfter = (await request(app).get("/waitlist/count")).body.total as number;
-  check("count increased by exactly 4", countAfter === countBefore + 4);
+  console.log(`\nLive waitlist: ${baselineCount} row(s), counter next_number = ${baselineCounter}`);
+  for (const r of liveRows) console.log(`  #${r.signup_number}  ${r.email}`);
 
-  await cleanup();
-  const countClean = (await request(app).get("/waitlist/count")).body.total as number;
-  check("count back to baseline after cleanup", countClean === countBefore);
+  check("no stray verification rows committed to the live table", !liveRows.some((r) => r.email.endsWith(TEST_DOMAIN)));
+  check(
+    "counter is exactly one past the highest assigned number",
+    baselineCounter === (liveRows.length ? Math.max(...liveRows.map((r) => r.signup_number)) : 0) + 1,
+    baselineCounter
+  );
+  if (baselineCount === 1) {
+    check("the single real signup is #1", liveRows[0].signup_number === 1, liveRows[0]);
+    check("counter next_number = 2", baselineCounter === 2);
+  }
+  await ro.end();
 
-  console.log(ok ? "\nALL GOOD ✅" : "\nFAILURES ❌");
+  // ── writes: one transaction, always ROLLED BACK ────────────────────────
+  const tx = new Client({ connectionString: dbUrl, ssl });
+  await tx.connect();
+  try {
+    await tx.query("begin");
+
+    // duplicate of an existing real email (mangled case + whitespace):
+    // its stored number, created=false, counter untouched
+    if (baselineCount >= 1) {
+      const dup = await signup(tx, `  ${liveRows[0].email.toUpperCase()}  `);
+      check(
+        "duplicate of an existing signup → its number, created=false, counter NOT advanced",
+        dup.created === false &&
+          dup.signup_number === liveRows[0].signup_number &&
+          (await counterValue(tx)) === baselineCounter,
+        dup
+      );
+    }
+
+    // next genuinely new unique signup → baseline counter value; counter now +1
+    const n1 = await signup(tx, `  A${TEST_DOMAIN.toUpperCase()} `);
+    check(`next new unique signup → #${baselineCounter}`, n1.created === true && n1.signup_number === baselineCounter, n1);
+    check("counter advanced by exactly 1", (await counterValue(tx)) === baselineCounter + 1);
+
+    // another new unique signup → consecutive
+    const n2 = await signup(tx, `b${TEST_DOMAIN}`);
+    check(`another new unique signup → #${baselineCounter + 1} (consecutive)`, n2.created === true && n2.signup_number === baselineCounter + 1, n2);
+
+    // duplicate of the just-added email → same number, counter still only +2
+    const dup2 = await signup(tx, `  B${TEST_DOMAIN.toUpperCase()}  `);
+    check(
+      "duplicate submission → same number, does not advance the counter",
+      dup2.created === false && dup2.signup_number === n2.signup_number && (await counterValue(tx)) === baselineCounter + 2,
+      dup2
+    );
+
+    // immutability: an earlier row deleted mid-transaction does NOT renumber the other
+    await tx.query("delete from waitlist_signups where email = $1", [`a${TEST_DOMAIN}`]);
+    const n2again = await signup(tx, `b${TEST_DOMAIN}`);
+    check("after an earlier row is deleted, the other keeps its number (immutable, no re-rank)", n2again.signup_number === n2.signup_number, n2again);
+    const n3 = await signup(tx, `c${TEST_DOMAIN}`);
+    check("and the next new signup does NOT reuse the deleted number", n3.signup_number === baselineCounter + 2, n3);
+
+    check("count endpoint math holds inside the tx", (await countRows(tx)) === baselineCount + 2);
+
+    await tx.query("rollback");
+
+    check("after ROLLBACK: row count back to baseline (zero residue)", (await countRows(tx)) === baselineCount);
+    check("after ROLLBACK: counter back to baseline (zero numbers consumed)", (await counterValue(tx)) === baselineCounter, await counterValue(tx));
+  } catch (err) {
+    await tx.query("rollback").catch(() => {});
+    throw err;
+  } finally {
+    await tx.end();
+  }
+
+  // ── serialization proof: two live connections, both rolled back ─────────
+  const a = new Client({ connectionString: dbUrl, ssl });
+  const b = new Client({ connectionString: dbUrl, ssl });
+  await a.connect();
+  await b.connect();
+  try {
+    await a.query("begin");
+    await b.query("begin");
+
+    await signup(a, `race-a${TEST_DOMAIN}`); // A holds the advisory xact lock
+
+    let bDone = false;
+    const bCall = signup(b, `race-b${TEST_DOMAIN}`).then((r) => ((bDone = true), r));
+    await new Promise((r) => setTimeout(r, 700));
+    check("a second concurrent signup BLOCKS while the first holds the lock", bDone === false);
+
+    await a.query("rollback"); // release the lock (and A's row)
+    const bResult = await bCall;
+    check("the second signup proceeds once the lock is released, taking the next number", bDone === true && bResult.signup_number === baselineCounter, bResult);
+
+    await b.query("rollback");
+  } finally {
+    await a.end();
+    await b.end();
+  }
+
+  // ── final: live state is exactly what it was before this run ────────────
+  const post = new Client({ connectionString: dbUrl, ssl });
+  await post.connect();
+  check("live row count unchanged by this verification run", (await countRows(post)) === baselineCount);
+  check("live counter unchanged by this verification run", (await counterValue(post)) === baselineCounter);
+  const { rows: leaked } = await post.query("select email from waitlist_signups where email like $1", [`%${TEST_DOMAIN}`]);
+  check("no verification email committed to the live table", leaked.length === 0);
+  await post.end();
+
+  console.log(ok ? "\nALL GOOD ✅  (nothing committed, zero numbers consumed)" : "\nFAILURES ❌");
   process.exit(ok ? 0 : 1);
 }
 
-main().catch(async (err) => {
+main().catch((err) => {
   console.error(err);
-  await cleanup();
   process.exit(1);
 });

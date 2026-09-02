@@ -9,25 +9,38 @@ import type { WaitlistRepository } from "../lib/waitlist-repo";
  * POST /waitlist/signup + GET /waitlist/count — route logic in isolation.
  * The DB access goes through an injected in-memory `WaitlistRepository`
  * (same DI pattern as users-recipients.test.ts); no Supabase, no network.
- * The real DB behaviour (atomic signup_number, idempotency under concurrency)
- * is verified separately by `scripts/verify-waitlist.ts` against live Supabase.
+ *
+ * The real numbering behaviour — the `waitlist_signup` SQL function's advisory
+ * lock, the `waitlist_counter` row, immutability, concurrency safety — is
+ * verified against live Supabase by `scripts/verify-waitlist.ts` (rollback-only,
+ * consumes nothing).
  */
 
-/** In-memory stand-in: an IDENTITY-style counter + email uniqueness. */
+/**
+ * In-memory stand-in that models the real contract: `signup_number` is an
+ * IMMUTABLE ordinal taken from a counter on the first insert. A duplicate
+ * returns its stored number and never advances the counter; a removed row
+ * leaves a permanent gap (its number is not reused).
+ */
 class FakeWaitlistRepo implements WaitlistRepository {
   private byEmail = new Map<string, number>();
-  private next = 1;
+  private nextNumber = 1;
 
   async signup(email: string) {
     const existing = this.byEmail.get(email);
     if (existing !== undefined) return { signup_number: existing, created: false };
-    const signup_number = this.next++;
+    const signup_number = this.nextNumber++;
     this.byEmail.set(email, signup_number);
     return { signup_number, created: true };
   }
 
   async count() {
     return this.byEmail.size;
+  }
+
+  /** Test helper — mirrors a row being deleted; its number is NOT reclaimed. */
+  remove(email: string) {
+    this.byEmail.delete(email);
   }
 
   get size() {
@@ -65,11 +78,38 @@ describe("POST /waitlist/signup", () => {
     expect(repo.size).toBe(1);
   });
 
-  it("assigns increasing numbers to successive new signups", async () => {
+  it("assigns consecutive positions to successive new signups (1, 2, 3)", async () => {
     const a = await request(app).post("/waitlist/signup").send({ email: "a@example.com" });
     const b = await request(app).post("/waitlist/signup").send({ email: "b@example.com" });
-    expect(a.body.signup_number).toBe(1);
-    expect(b.body.signup_number).toBe(2);
+    const c = await request(app).post("/waitlist/signup").send({ email: "c@example.com" });
+    expect([a.body.signup_number, b.body.signup_number, c.body.signup_number]).toEqual([1, 2, 3]);
+  });
+
+  it("a duplicate returns its position and does NOT advance the list", async () => {
+    await request(app).post("/waitlist/signup").send({ email: "first@example.com" });
+    const dupA = await request(app).post("/waitlist/signup").send({ email: "first@example.com" });
+    const second = await request(app).post("/waitlist/signup").send({ email: "second@example.com" });
+    const dupB = await request(app).post("/waitlist/signup").send({ email: "FIRST@example.com" });
+
+    expect(dupA.status).toBe(200);
+    expect(dupA.body.signup_number).toBe(1);
+    expect(second.body.signup_number).toBe(2); // the dup didn't consume a position
+    expect(dupB.body.signup_number).toBe(1);
+    expect(repo.size).toBe(2);
+  });
+
+  it("signup numbers are immutable: removing an earlier signup leaves a gap, others keep their number", async () => {
+    const x = await request(app).post("/waitlist/signup").send({ email: "x@example.com" });
+    const y = await request(app).post("/waitlist/signup").send({ email: "y@example.com" });
+    const z = await request(app).post("/waitlist/signup").send({ email: "z@example.com" });
+    expect([x.body.signup_number, y.body.signup_number, z.body.signup_number]).toEqual([1, 2, 3]);
+
+    repo.remove("y@example.com"); // e.g. a GDPR deletion
+
+    // x and z are unchanged; the next brand-new signup is #4, not #2 (no reuse)
+    expect((await request(app).post("/waitlist/signup").send({ email: "x@example.com" })).body.signup_number).toBe(1);
+    expect((await request(app).post("/waitlist/signup").send({ email: "z@example.com" })).body.signup_number).toBe(3);
+    expect((await request(app).post("/waitlist/signup").send({ email: "new@example.com" })).body.signup_number).toBe(4);
   });
 
   it("existing email → 200 with the SAME number (idempotent, not an error)", async () => {
