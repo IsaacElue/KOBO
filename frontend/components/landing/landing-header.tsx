@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { CtaButton } from "@/components/landing/cta-button";
+import { KoboLogo } from "@/components/kobo/kobo-logo";
 
 /**
  * Sticky translucent nav from the Landing export. Collapses its link list on
@@ -10,12 +11,8 @@ export function LandingHeader() {
   return (
     <nav className="sticky top-0 z-40 border-b border-landing-ink/[0.08] bg-landing-bg/80 backdrop-blur-[14px]">
       <div className="mx-auto flex max-w-[1360px] items-center justify-between px-6 py-[18px] sm:px-12">
-        <Link
-          href="/landing"
-          className="flex items-center gap-2.5 text-[19px] font-bold tracking-[-0.02em] text-landing-ink"
-        >
-          <span className="size-[26px] rounded-[8px] bg-gradient-to-br from-[#1E9B76] to-landing-teal-deep" />
-          Kobo
+        <Link href="/landing" className="flex items-center" aria-label="Kobo home">
+          <KoboLogo variant="full" priority className="h-7" />
         </Link>
 
         <div className="hidden items-center gap-9 text-[15px] font-medium text-[#33565E] md:flex">

@@ -1,0 +1,9 @@
+Deck sources and provenance
+
+- Product positioning and corridor: https://www.kobopayments.com/waitlist (reviewed 2026-09-02)
+- Global remittance cost: World Bank, Remittance Prices Worldwide, Q3 2025: https://remittanceprices.worldbank.org/
+- Nigeria remittance estimate: World Bank-KNOMAD, Migration and Development Brief 39 (2023): https://documents1.worldbank.org/curated/en/099740408142422676/pdf/IDU-84dfd61b-e135-4242-a202-3728b2e8fa86.pdf
+- Ireland population: Government of Ireland, Migration - the facts: https://www.gov.ie/en/department-of-the-taoiseach/collections/migration-the-facts/
+- Solana payment facts: Solana Payments documentation: https://solana.com/es/docs/payments and institutional payments page: https://solana.com/solutions/institutional-payments
+- Competition context: Remitly product pages https://www.remitly.com/us/en/money-transfer ; Yellow Card company and corridor pages https://yellowcard.io/about-us ; https://help.yellowcard.io/articles/8016607239-supported-fiat-receive-send-corridors-by-country
+- Build-state claims: local KOBO codebase and API_CONTRACT.md, reviewed 2026-09-02.

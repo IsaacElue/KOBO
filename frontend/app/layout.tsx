@@ -20,6 +20,25 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "Kobo",
   description: "Send EUR home as USDC, usually within two minutes.",
+  // Browser-tab icon, theme-aware. The dotted K is a single dark colour
+  // (#0b1f24) — invisible on a dark tab strip — so we ship two variants and let
+  // the browser pick: the ink mark by default (light chrome), a light mint mark
+  // under `prefers-color-scheme: dark`. Assets: scripts/build-brand-assets.mjs.
+  // `app/favicon.ico` stays a file-convention asset (Next always emits its
+  // link, as the legacy fallback); defining `icons` here suppresses the
+  // file-convention `icon`/`apple-icon` merge, so those are listed explicitly.
+  icons: {
+    icon: [
+      { url: "/brand/kobo-icon.png", type: "image/png", sizes: "96x96" },
+      {
+        url: "/brand/kobo-icon-light.png",
+        type: "image/png",
+        sizes: "96x96",
+        media: "(prefers-color-scheme: dark)",
+      },
+    ],
+    apple: { url: "/brand/kobo-apple-icon.png", type: "image/png", sizes: "180x180" },
+  },
 };
 
 // `viewport-fit=cover` so `env(safe-area-inset-*)` resolves to real values on

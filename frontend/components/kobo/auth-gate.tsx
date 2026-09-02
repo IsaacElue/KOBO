@@ -8,6 +8,7 @@ import { LoginDialog } from "@/components/kobo/login-dialog";
 import { PinSetupDialog } from "@/components/kobo/pin-setup-dialog";
 import { PinUnlockDialog } from "@/components/kobo/pin-unlock-dialog";
 import { Skeleton } from "@/components/ui/skeleton";
+import { KoboLogo } from "@/components/kobo/kobo-logo";
 import { API_URL, isMockMode, ROOT_REDIRECT_TARGET } from "@/lib/kobo/config";
 import { getStoredAuth, getValidAccessToken, logout, onAuthChange, type StoredAuth } from "@/lib/kobo/auth";
 import { isWaitlistMode } from "@/lib/access/mode";
@@ -227,7 +228,7 @@ export function AuthGate() {
 function WaitlistModeNotice({ onLogout }: { onLogout: () => void }) {
   return (
     <div className="w-full max-w-sm rounded-[32px] border border-black/5 bg-white p-8 text-center shadow-[0_60px_110px_-44px_rgba(0,0,0,0.5)]">
-      <div className="mx-auto mb-5 size-14 rounded-2xl bg-gradient-to-br from-[#1E9B76] to-kobo-teal-800" />
+      <KoboLogo variant="mark" className="mx-auto mb-5 h-14" />
       <h1 className="text-[24px] font-bold tracking-tight text-kobo-ink">You&apos;re on the list</h1>
       <p className="mt-3 text-[15px] leading-relaxed text-[#5E7A81]">
         Kobo is in early access and isn&apos;t open yet. We&apos;ll email you the moment your

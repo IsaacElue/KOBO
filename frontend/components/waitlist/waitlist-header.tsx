@@ -4,17 +4,14 @@
  * links to /landing so a curious visitor can still see the product.
  */
 import Link from "next/link";
+import { KoboLogo } from "@/components/kobo/kobo-logo";
 
 export function WaitlistHeader() {
   return (
     <header className="px-6 py-[18px] sm:px-12">
       <div className="mx-auto flex max-w-[1200px] items-center justify-between">
-        <Link
-          href="/landing"
-          className="flex items-center gap-2.5 text-[19px] font-bold tracking-[-0.02em] text-landing-ink"
-        >
-          <span className="size-[26px] rounded-[8px] bg-gradient-to-br from-[#1E9B76] to-landing-teal-deep" />
-          Kobo
+        <Link href="/landing" className="flex items-center" aria-label="Kobo home">
+          <KoboLogo variant="full" priority className="h-7" />
         </Link>
         <span className="text-[13px] font-semibold tracking-[0.02em] text-landing-mint-dark">
           Waitlist

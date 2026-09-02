@@ -3,7 +3,8 @@
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { NAV_ITEMS } from "@/lib/kobo/nav";
-import { ShieldCheck, CircleDot } from "lucide-react";
+import { KoboLogo } from "@/components/kobo/kobo-logo";
+import { ShieldCheck } from "lucide-react";
 
 export function AppSidebar({
   activeIndex,
@@ -22,11 +23,8 @@ export function AppSidebar({
 }) {
   return (
     <aside className="hidden w-64 shrink-0 flex-col gap-6 border-r border-kobo-ink/[0.07] bg-white/55 p-5 backdrop-blur-xl lg:flex">
-      <div className="flex items-center gap-2.5 px-2 py-1">
-        <div className="flex size-9 items-center justify-center rounded-xl bg-gradient-to-br from-kobo-teal-500 to-kobo-teal-800 shadow-lg shadow-kobo-teal-900/40">
-          <CircleDot className="size-4 text-kobo-mint-light" strokeWidth={1.7} />
-        </div>
-        <span className="text-xl font-semibold tracking-tight text-kobo-ink">Kobo</span>
+      <div className="flex items-center px-2 py-1">
+        <KoboLogo variant="full" className="h-7" />
       </div>
 
       <nav aria-label="Primary" className="flex flex-col gap-1">

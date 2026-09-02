@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { KoboLogo } from "@/components/kobo/kobo-logo";
 import { login, type StoredAuth } from "@/lib/kobo/auth";
 
 export function LoginDialog({
@@ -46,7 +47,7 @@ export function LoginDialog({
         className="max-w-sm gap-0 rounded-[32px] border border-white/95 bg-white p-8 pb-7 shadow-[0_60px_110px_-44px_rgba(0,0,0,0.6)] ring-0"
       >
         <form onSubmit={handleSubmit}>
-          <div className="mx-auto mb-5 size-14 rounded-2xl bg-gradient-to-br from-[#1E9B76] to-kobo-teal-800" />
+          <KoboLogo variant="mark" priority className="mx-auto mb-5 h-14" />
           <DialogTitle className="text-center text-[30px] font-bold tracking-tight text-kobo-ink">
             Welcome back.
           </DialogTitle>

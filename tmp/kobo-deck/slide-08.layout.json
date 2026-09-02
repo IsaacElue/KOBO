@@ -1,0 +1,530 @@
+{
+  "schema": "openai.presentation.layout/v4",
+  "unit": "px",
+  "slide": {
+    "aid": "sl/gu6tjo",
+    "id": "gu6tjo",
+    "slide": 8,
+    "layoutId": "98741835-be25-4483-9f69-def084b6f783",
+    "layoutName": "Title Slide",
+    "layoutType": "title",
+    "masterLayoutId": "efd6d58d-593c-4228-ab0c-d090521645a3",
+    "masterLayoutName": "Master",
+    "backgroundColor": "#C8FF3D",
+    "frame": {
+      "left": 0,
+      "top": 0,
+      "width": 1280,
+      "height": 720
+    }
+  },
+  "theme": {
+    "colorSchemeName": "ChatGPT",
+    "colors": {
+      "accent1": "#156082",
+      "accent2": "#E97132",
+      "accent3": "#196B24",
+      "accent4": "#0F9ED5",
+      "accent5": "#A02B93",
+      "accent6": "#4EA72E",
+      "bg1": "#FFFFFF",
+      "bg2": "#000000",
+      "tx1": "#1F1F1F",
+      "tx2": "#FFFFFF",
+      "dk1": "#000000",
+      "lt1": "#FFFFFF",
+      "dk2": "#0E2841",
+      "lt2": "#E8E8E8",
+      "hlink": "#467886",
+      "folHlink": "#96607D"
+    },
+    "typefaces": [
+      "+mn-lt"
+    ]
+  },
+  "inheritedLayers": [
+    {
+      "scope": "layout",
+      "id": "98741835-be25-4483-9f69-def084b6f783",
+      "name": "Title Slide",
+      "type": "title",
+      "parentLayoutId": "efd6d58d-593c-4228-ab0c-d090521645a3",
+      "elements": []
+    },
+    {
+      "scope": "master",
+      "id": "efd6d58d-593c-4228-ab0c-d090521645a3",
+      "name": "Master",
+      "type": "master",
+      "elements": []
+    }
+  ],
+  "elements": [
+    {
+      "order": 1,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/l4v2p8rm",
+      "id": "1",
+      "bbox": [
+        64,
+        48,
+        180,
+        28
+      ],
+      "geometry": "rect",
+      "text": "KOBO",
+      "textPreview": "KOBO",
+      "resolvedFontSize": 16,
+      "resolvedTextStyle": {
+        "fontSize": 16,
+        "typeface": "+mn-lt",
+        "color": "#0C0D0C",
+        "bold": true,
+        "alignment": "left",
+        "insets": {
+          "top": 4.8,
+          "right": 9.6,
+          "bottom": 4.8,
+          "left": 9.6
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "KOBO"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "KOBO",
+          "resolvedTextStyle": {
+            "fontSize": 16,
+            "color": "#0C0D0C",
+            "bold": true,
+            "alignment": "left"
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "KOBO",
+              "fontSize": 16,
+              "color": "#0C0D0C",
+              "bold": true,
+              "alignment": "left"
+            }
+          ],
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 2,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/y1k3udsb",
+      "id": "2",
+      "bbox": [
+        64,
+        144,
+        830,
+        130
+      ],
+      "geometry": "rect",
+      "text": "We're building the payment\nexperience our families deserve.",
+      "textPreview": "We're building the payment | experience our families deserve.",
+      "resolvedFontSize": 54,
+      "resolvedTextStyle": {
+        "fontSize": 54,
+        "typeface": "+mn-lt",
+        "color": "#0C0D0C",
+        "bold": true,
+        "alignment": "left",
+        "insets": {
+          "top": 4.8,
+          "right": 9.6,
+          "bottom": 4.8,
+          "left": 9.6
+        }
+      },
+      "textLayout": {
+        "lineCount": 2,
+        "lines": [
+          {
+            "index": 1,
+            "text": "We're building the payment"
+          },
+          {
+            "index": 2,
+            "text": "experience our families deserve."
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "We're building the payment",
+          "resolvedTextStyle": {
+            "fontSize": 54,
+            "color": "#0C0D0C",
+            "bold": true,
+            "alignment": "left"
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "We're building the payment",
+              "fontSize": 54,
+              "color": "#0C0D0C",
+              "bold": true,
+              "alignment": "left"
+            }
+          ],
+          "marginLeft": 0
+        },
+        {
+          "index": 2,
+          "text": "experience our families deserve.",
+          "resolvedTextStyle": {
+            "fontSize": 54,
+            "color": "#0C0D0C",
+            "bold": true,
+            "alignment": "left"
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "experience our families deserve.",
+              "fontSize": 54,
+              "color": "#0C0D0C",
+              "bold": true,
+              "alignment": "left"
+            }
+          ],
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 3,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/z2tkni9w",
+      "id": "3",
+      "bbox": [
+        68,
+        320,
+        782,
+        66
+      ],
+      "geometry": "rect",
+      "text": "We don't need everyone to understand crypto.\nWe need them to understand that their money should move better.",
+      "textPreview": "We don't need everyone to understand crypto. | We need them to understand that their money should move better.",
+      "resolvedFontSize": 23,
+      "resolvedTextStyle": {
+        "fontSize": 23,
+        "typeface": "+mn-lt",
+        "color": "#1E5A40",
+        "alignment": "left",
+        "insets": {
+          "top": 4.8,
+          "right": 9.6,
+          "bottom": 4.8,
+          "left": 9.6
+        }
+      },
+      "textLayout": {
+        "lineCount": 2,
+        "lines": [
+          {
+            "index": 1,
+            "text": "We don't need everyone to understand crypto."
+          },
+          {
+            "index": 2,
+            "text": "We need them to understand that their money should move better."
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "We don't need everyone to understand crypto.",
+          "resolvedTextStyle": {
+            "fontSize": 23,
+            "color": "#1E5A40",
+            "alignment": "left"
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "We don't need everyone to understand crypto.",
+              "fontSize": 23,
+              "color": "#1E5A40",
+              "alignment": "left"
+            }
+          ],
+          "marginLeft": 0
+        },
+        {
+          "index": 2,
+          "text": "We need them to understand that their money should move better.",
+          "resolvedTextStyle": {
+            "fontSize": 23,
+            "color": "#1E5A40",
+            "alignment": "left"
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "We need them to understand that their money should move better.",
+              "fontSize": 23,
+              "color": "#1E5A40",
+              "alignment": "left"
+            }
+          ],
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 4,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/87ml0nad",
+      "id": "4",
+      "bbox": [
+        68,
+        518,
+        620,
+        34
+      ],
+      "geometry": "rect",
+      "text": "KOBOPAYMENTS.COM",
+      "textPreview": "KOBOPAYMENTS.COM",
+      "resolvedFontSize": 27,
+      "resolvedTextStyle": {
+        "fontSize": 27,
+        "typeface": "+mn-lt",
+        "color": "#0C0D0C",
+        "bold": true,
+        "alignment": "left",
+        "insets": {
+          "top": 4.8,
+          "right": 9.6,
+          "bottom": 4.8,
+          "left": 9.6
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "KOBOPAYMENTS.COM"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "KOBOPAYMENTS.COM",
+          "resolvedTextStyle": {
+            "fontSize": 27,
+            "color": "#0C0D0C",
+            "bold": true,
+            "alignment": "left"
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "KOBOPAYMENTS.COM",
+              "fontSize": 27,
+              "color": "#0C0D0C",
+              "bold": true,
+              "alignment": "left"
+            }
+          ],
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 5,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/98vmtsry",
+      "id": "5",
+      "bbox": [
+        68,
+        564,
+        390,
+        28
+      ],
+      "geometry": "rect",
+      "text": "Join the waitlist",
+      "textPreview": "Join the waitlist",
+      "resolvedFontSize": 20,
+      "resolvedTextStyle": {
+        "fontSize": 20,
+        "typeface": "+mn-lt",
+        "color": "#1E5A40",
+        "bold": true,
+        "alignment": "left",
+        "insets": {
+          "top": 4.8,
+          "right": 9.6,
+          "bottom": 4.8,
+          "left": 9.6
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "Join the waitlist"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "Join the waitlist",
+          "resolvedTextStyle": {
+            "fontSize": 20,
+            "color": "#1E5A40",
+            "bold": true,
+            "alignment": "left"
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "Join the waitlist",
+              "fontSize": 20,
+              "color": "#1E5A40",
+              "bold": true,
+              "alignment": "left"
+            }
+          ],
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 6,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/m543yds7",
+      "id": "6",
+      "bbox": [
+        68,
+        626,
+        450,
+        24
+      ],
+      "geometry": "rect",
+      "text": "@isaackobo     @shinakobo",
+      "textPreview": "@isaackobo     @shinakobo",
+      "resolvedFontSize": 18,
+      "resolvedTextStyle": {
+        "fontSize": 18,
+        "typeface": "+mn-lt",
+        "color": "#0C0D0C",
+        "bold": true,
+        "alignment": "left",
+        "insets": {
+          "top": 4.8,
+          "right": 9.6,
+          "bottom": 4.8,
+          "left": 9.6
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "@isaackobo     @shinakobo"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "@isaackobo     @shinakobo",
+          "resolvedTextStyle": {
+            "fontSize": 18,
+            "color": "#0C0D0C",
+            "bold": true,
+            "alignment": "left"
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "@isaackobo     @shinakobo",
+              "fontSize": 18,
+              "color": "#0C0D0C",
+              "bold": true,
+              "alignment": "left"
+            }
+          ],
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 7,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/76dkri9s",
+      "id": "7",
+      "bbox": [
+        928,
+        414,
+        196,
+        196
+      ],
+      "geometry": "roundRect",
+      "fillColor": "#FFFFFF",
+      "lineColor": "#FFFFFF",
+      "lineWidth": 1
+    },
+    {
+      "order": 8,
+      "kind": "image",
+      "scope": "slide",
+      "aid": "im/lsny1ofe",
+      "id": "8",
+      "bbox": [
+        944,
+        430,
+        164,
+        164
+      ],
+      "geometry": "rect",
+      "alt": "QR code for Kobo waitlist",
+      "contentType": "image/png",
+      "imageFit": "contain",
+      "imageMask": {
+        "geometry": "rect"
+      },
+      "asset": {
+        "assetId": "6a784821-8e4e-4af3-814f-7530d6bf7835",
+        "contentType": "image/png",
+        "byteLength": 575
+      }
+    }
+  ],
+  "composeRuns": []
+}

@@ -1,0 +1,164 @@
+{"kind":"deck","id":"pr/xl9cme","name":"Deck"}
+{"kind":"layout","layoutId":"efd6d58d-593c-4228-ab0c-d090521645a3","name":"Master","type":"master"}
+{"kind":"layout","layoutId":"98741835-be25-4483-9f69-def084b6f783","name":"Title Slide","type":"title"}
+{"kind":"slide","id":"sl/438to5","slide":1,"title":"KOBO","textShapes":8}
+{"kind":"textbox","id":"sh/t0ze5szm","slide":1,"text":"KOBO","textPreview":"KOBO","textChars":4,"textLines":1,"bbox":[64,44,180,28]}
+{"kind":"textbox","id":"sh/6xofuxgb","slide":1,"text":"Ireland → Nigeria","textPreview":"Ireland → Nigeria","textChars":17,"textLines":1,"bbox":[1000,44,216,28]}
+{"kind":"textbox","id":"sh/7yxw32hg","slide":1,"text":"Sending money home\nshouldn't cost you\npeace of mind.","textPreview":"Sending money home | shouldn't cost you | peace of mind.","textChars":52,"textLines":3,"bbox":[64,142,720,244]}
+{"kind":"textbox","id":"sh/gnqx07yd","slide":1,"text":"A person sends €500. The point is not the transfer.\nIt's who is waiting on the other side.","textPreview":"A person sends €500. The point is not the transfer. | It's who is waiting on the other side.","textChars":90,"textLines":2,"bbox":[68,422,610,62]}
+{"kind":"shape","id":"sh/hoze9czy","slide":1,"bbox":[810,154,342,364]}
+{"kind":"textbox","id":"sh/ul8fyxg7","slide":1,"text":"€500","textPreview":"€500","textChars":4,"textLines":1,"bbox":[850,206,260,66]}
+{"kind":"shape","id":"sh/vmhw72hs","slide":1,"bbox":[875,309,210,0]}
+{"kind":"textbox","id":"sh/wrmdo3yt","slide":1,"text":"fees  ·  FX  ·  waiting","textPreview":"fees  ·  FX  ·  waiting","textChars":23,"textLines":1,"bbox":[848,332,268,30]}
+{"kind":"shape","id":"sh/xsfex8ze","slide":1,"bbox":[875,391,210,0]}
+{"kind":"textbox","id":"sh/9w7i9o3u","slide":1,"text":"KOBO → family","textPreview":"KOBO → family","textChars":13,"textLines":1,"bbox":[845,414,274,32]}
+{"kind":"textbox","id":"sh/8vyh0j29","slide":1,"text":"Better rails. A simpler experience.","textPreview":"Better rails. A simpler experience.","textChars":35,"textLines":1,"bbox":[64,624,610,28]}
+{"kind":"notes","id":"nt/438to5","slide":1,"text":"Open with the human moment. Someone in Ireland is trying to support a person they love in Nigeria. That should feel certain and simple - but today, the journey can take money, time and confidence out of every send. Kobo starts with that feeling, not with crypto."}
+{"kind":"slide","id":"sl/jeqnav","slide":2,"title":"KOBO","textShapes":21}
+{"kind":"textbox","id":"sh/ponqxwr6","slide":2,"text":"KOBO","textPreview":"KOBO","textChars":4,"textLines":1,"bbox":[64,35,180,26]}
+{"kind":"textbox","id":"sh/2lc721sv","slide":2,"text":"02","textPreview":"02","textChars":2,"textLines":1,"bbox":[1158,35,58,26]}
+{"kind":"shape","id":"sh/3ml8v690","slide":2,"bbox":[64,72,1152,0]}
+{"kind":"textbox","id":"sh/crepsbax","slide":2,"text":"THE PROBLEM","textPreview":"THE PROBLEM","textChars":11,"textLines":1,"bbox":[64,88,360,22]}
+{"kind":"textbox","id":"sh/dsnq1gri","slide":2,"text":"The money moves.\nThe friction doesn't.","textPreview":"The money moves. | The friction doesn't.","textChars":38,"textLines":2,"bbox":[64,144,690,134]}
+{"kind":"textbox","id":"sh/qpw7q1sr","slide":2,"text":"A transfer can lose value at more than one step.","textPreview":"A transfer can lose value at more than one step.","textChars":48,"textLines":1,"bbox":[64,302,600,32]}
+{"kind":"shape","id":"sh/rq58z69c","slide":2,"bbox":[64,394,168,126]}
+{"kind":"textbox","id":"sh/svapw7ad","slide":2,"text":"SEND","textPreview":"SEND","textChars":4,"textLines":1,"bbox":[82,420,132,26]}
+{"kind":"textbox","id":"sh/tw36pcry","slide":2,"text":"a family need","textPreview":"a family need","textChars":13,"textLines":1,"bbox":[82,458,134,42]}
+{"kind":"textbox","id":"sh/9gvy9onu","slide":2,"text":"→","textPreview":"→","textChars":1,"textLines":1,"bbox":[239,430,34,34]}
+{"kind":"shape","id":"sh/8vmxgj69","slide":2,"bbox":[278,394,168,126]}
+{"kind":"textbox","id":"sh/nudw7e5o","slide":2,"text":"FEE","textPreview":"FEE","textChars":3,"textLines":1,"bbox":[296,420,132,26]}
+{"kind":"textbox","id":"sh/mt4fe9o3","slide":2,"text":"visible + hidden","textPreview":"visible + hidden","textChars":16,"textLines":1,"bbox":[296,458,134,42]}
+{"kind":"textbox","id":"sh/xkfydonq","slide":2,"text":"→","textPreview":"→","textChars":1,"textLines":1,"bbox":[453,430,34,34]}
+{"kind":"shape","id":"sh/wj6xkj6l","slide":2,"bbox":[492,394,168,126]}
+{"kind":"textbox","id":"sh/vixgby50","slide":2,"text":"FX","textPreview":"FX","textChars":2,"textLines":1,"bbox":[510,420,132,26]}
+{"kind":"textbox","id":"sh/ah4fitof","slide":2,"text":"rate uncertainty","textPreview":"rate uncertainty","textChars":16,"textLines":1,"bbox":[510,458,134,42]}
+{"kind":"textbox","id":"sh/5ofyh8n2","slide":2,"text":"→","textPreview":"→","textChars":1,"textLines":1,"bbox":[667,430,34,34]}
+{"kind":"shape","id":"sh/kn6xo3mh","slide":2,"bbox":[706,394,168,126]}
+{"kind":"textbox","id":"sh/43y90byp","slide":2,"text":"WAIT","textPreview":"WAIT","textChars":4,"textLines":1,"bbox":[724,420,132,26]}
+{"kind":"textbox","id":"sh/p47q9gza","slide":2,"text":"processing","textPreview":"processing","textChars":10,"textLines":1,"bbox":[724,458,134,42]}
+{"kind":"textbox","id":"sh/21gry1gz","slide":2,"text":"→","textPreview":"→","textChars":1,"textLines":1,"bbox":[881,430,34,34]}
+{"kind":"shape","id":"sh/32p876hk","slide":2,"bbox":[920,394,168,126]}
+{"kind":"textbox","id":"sh/c7i94by1","slide":2,"text":"RECEIVE","textPreview":"RECEIVE","textChars":7,"textLines":1,"bbox":[938,420,132,26]}
+{"kind":"textbox","id":"sh/d8rqdgzm","slide":2,"text":"less clarity","textPreview":"less clarity","textChars":12,"textLines":1,"bbox":[938,458,134,42]}
+{"kind":"textbox","id":"sh/q5gr2lgv","slide":2,"text":"6.36%","textPreview":"6.36%","textChars":5,"textLines":1,"bbox":[802,176,270,70]}
+{"kind":"textbox","id":"sh/r6p8b6hg","slide":2,"text":"global average cost of sending a remittance","textPreview":"global average cost of sending a remittance","textChars":43,"textLines":1,"bbox":[748,250,330,44]}
+{"kind":"notes","id":"nt/jeqnav","slide":2,"text":"This is bigger than a fee. A sender can encounter the fee, the rate, the conversion, the processing window and uncertainty about what lands. The World Bank's latest Remittance Prices Worldwide reporting puts the global average cost at 6.36 percent. Repeated family support makes those small losses matter.\n\n[Sources]\n- World Bank, Remittance Prices Worldwide, Q3 2025: https://remittanceprices.worldbank.org/"}
+{"kind":"slide","id":"sl/zl27bb","slide":3,"title":"KOBO","textShapes":12}
+{"kind":"textbox","id":"sh/hgj2dsv2","slide":3,"text":"KOBO","textPreview":"KOBO","textChars":4,"textLines":1,"bbox":[64,35,180,26]}
+{"kind":"textbox","id":"sh/udsj2dwb","slide":3,"text":"03","textPreview":"03","textChars":2,"textLines":1,"bbox":[1158,35,58,26]}
+{"kind":"shape","id":"sh/fe1kbidw","slide":3,"bbox":[64,72,1152,0]}
+{"kind":"textbox","id":"sh/sbq103e5","slide":3,"text":"WHY THIS CORRIDOR","textPreview":"WHY THIS CORRIDOR","textChars":17,"textLines":1,"bbox":[64,88,360,22]}
+{"kind":"textbox","id":"sh/tcji98vq","slide":3,"text":"We started where\nthe problem is personal.","textPreview":"We started where | the problem is personal.","textChars":41,"textLines":2,"bbox":[64,142,600,132]}
+{"kind":"textbox","id":"sh/698jydwf","slide":3,"text":"Ireland","textPreview":"Ireland","textChars":7,"textLines":1,"bbox":[64,342,218,48]}
+{"kind":"textbox","id":"sh/7ah07idk","slide":3,"text":"Nigeria","textPreview":"Nigeria","textChars":7,"textLines":1,"bbox":[896,342,220,48]}
+{"kind":"shape","id":"sh/c7u1c7up","slide":3,"bbox":[292,368,590,0]}
+{"kind":"textbox","id":"sh/d832lcvu","slide":3,"text":"€","textPreview":"€","textChars":1,"textLines":1,"bbox":[554,327,74,76]}
+{"kind":"textbox","id":"sh/d03uhgre","slide":3,"text":"$20.5B","textPreview":"$20.5B","textChars":6,"textLines":1,"bbox":[64,454,350,72]}
+{"kind":"textbox","id":"sh/szudobat","slide":3,"text":"estimated remittances received by Nigeria in 2023","textPreview":"estimated remittances received by Nigeria in 2023","textChars":49,"textLines":1,"bbox":[68,528,390,48]}
+{"kind":"textbox","id":"sh/rylcfq98","slide":3,"text":"5.38M","textPreview":"5.38M","textChars":5,"textLines":1,"bbox":[806,454,350,72]}
+{"kind":"textbox","id":"sh/qdcvmls3","slide":3,"text":"people living in Ireland, April 2024","textPreview":"people living in Ireland, April 2024","textChars":36,"textLines":1,"bbox":[796,528,360,48]}
+{"kind":"textbox","id":"sh/5cjudgri","slide":3,"text":"Millions already need the payment. They do not need to know it is on-chain.","textPreview":"Millions already need the payment. They do not need to know it is on-chain.","textChars":75,"textLines":1,"bbox":[64,626,1090,30]}
+{"kind":"notes","id":"nt/zl27bb","slide":3,"text":"Kobo's initial wedge is Ireland to Nigeria: euro in, USDC out. Nigeria is one of the largest remittance recipient markets in Sub-Saharan Africa. The market figure establishes the scale of the broader receiving market; it is not a claimed estimate of the Ireland-to-Nigeria corridor. The opportunity is people with a real payment need, most of whom should never have to become crypto users.\n\n[Sources]\n- World Bank-KNOMAD, Migration and Development Brief 39, 2023 estimate: https://documents1.worldbank.org/curated/en/099740408142422676/pdf/IDU-84dfd61b-e135-4242-a202-3728b2e8fa86.pdf\n- Government of Ireland, Migration - the facts: https://www.gov.ie/en/department-of-the-taoiseach/collections/migration-the-facts/\n- Kobo waitlist, product corridor: https://www.kobopayments.com/waitlist"}
+{"kind":"slide","id":"sl/0427b1","slide":4,"title":"KOBO","textShapes":21}
+{"kind":"textbox","id":"sh/4fetwn2x","slide":4,"text":"KOBO","textPreview":"KOBO","textChars":4,"textLines":1,"bbox":[64,35,180,26]}
+{"kind":"textbox","id":"sh/3u5s3i1c","slide":4,"text":"04","textPreview":"04","textChars":2,"textLines":1,"bbox":[1158,35,58,26]}
+{"kind":"shape","id":"sh/2twbudkr","slide":4,"bbox":[64,72,1152,0]}
+{"kind":"textbox","id":"sh/hsna18j6","slide":4,"text":"THE GAP","textPreview":"THE GAP","textChars":7,"textLines":1,"bbox":[64,88,360,22]}
+{"kind":"textbox","id":"sh/gre9sn21","slide":4,"text":"The market already moves money.\nIt just wasn't built this way.","textPreview":"The market already moves money. | It just wasn't built this way.","textChars":62,"textLines":2,"bbox":[64,142,840,110]}
+{"kind":"shape","id":"sh/fq5szi1g","slide":4,"bbox":[64,326,244,258]}
+{"kind":"textbox","id":"sh/upwrqdkv","slide":4,"text":"Traditional\nremittance","textPreview":"Traditional | remittance","textChars":22,"textLines":2,"bbox":[84,354,204,48]}
+{"kind":"textbox","id":"sh/1oradcjq","slide":4,"text":"They do well","textPreview":"They do well","textChars":12,"textLines":1,"bbox":[84,430,204,20]}
+{"kind":"textbox","id":"sh/0nit4725","slide":4,"text":"Familiar access\n+ distribution","textPreview":"Familiar access | + distribution","textChars":30,"textLines":2,"bbox":[84,461,204,44]}
+{"kind":"textbox","id":"sh/qd8fqlwz","slide":4,"text":"Trusted\nby families","textPreview":"Trusted | by families","textChars":19,"textLines":2,"bbox":[84,524,204,42]}
+{"kind":"shape","id":"sh/behwzqd4","slide":4,"bbox":[350,326,244,258]}
+{"kind":"textbox","id":"sh/cfqxsbep","slide":4,"text":"Digital\nremittance","textPreview":"Digital | remittance","textChars":18,"textLines":2,"bbox":[370,354,204,48]}
+{"kind":"textbox","id":"sh/dgze1gva","slide":4,"text":"They do well","textPreview":"They do well","textChars":12,"textLines":1,"bbox":[370,430,204,20]}
+{"kind":"textbox","id":"sh/29ovm1wn","slide":4,"text":"Clearer digital\nexperiences","textPreview":"Clearer digital | experiences","textChars":27,"textLines":2,"bbox":[370,461,204,44]}
+{"kind":"textbox","id":"sh/3axwv6d8","slide":4,"text":"Choice of delivery\nand tracking","textPreview":"Choice of delivery | and tracking","textChars":31,"textLines":2,"bbox":[370,524,204,42]}
+{"kind":"shape","id":"sh/ob6dobet","slide":4,"bbox":[636,326,244,258]}
+{"kind":"textbox","id":"sh/pczexgve","slide":4,"text":"Stablecoin\nproducts","textPreview":"Stablecoin | products","textChars":19,"textLines":2,"bbox":[656,354,204,48]}
+{"kind":"textbox","id":"sh/m5sfy5wr","slide":4,"text":"They do well","textPreview":"They do well","textChars":12,"textLines":1,"bbox":[656,430,204,20]}
+{"kind":"textbox","id":"sh/n61wradc","slide":4,"text":"Efficient settlement\n+ liquidity","textPreview":"Efficient settlement | + liquidity","textChars":32,"textLines":2,"bbox":[656,461,204,44]}
+{"kind":"textbox","id":"sh/jqtcj2to","slide":4,"text":"Modern financial\ninfrastructure","textPreview":"Modern financial | infrastructure","textChars":31,"textLines":2,"bbox":[656,524,204,42]}
+{"kind":"shape","id":"sh/ipkbqxcj","slide":4,"bbox":[922,326,244,258]}
+{"kind":"textbox","id":"sh/5cbulsbu","slide":4,"text":"KOBO","textPreview":"KOBO","textChars":4,"textLines":1,"bbox":[942,354,204,48]}
+{"kind":"textbox","id":"sh/4r2ts7u9","slide":4,"text":"They do well","textPreview":"They do well","textChars":12,"textLines":1,"bbox":[942,430,204,20]}
+{"kind":"textbox","id":"sh/redcn2t0","slide":4,"text":"Simple payment\nexperience","textPreview":"Simple payment | experience","textChars":25,"textLines":2,"bbox":[942,461,204,44]}
+{"kind":"textbox","id":"sh/6d4buxcf","slide":4,"text":"Hide the rail.\nShow the certainty.","textPreview":"Hide the rail. | Show the certainty.","textChars":34,"textLines":2,"bbox":[942,524,204,42]}
+{"kind":"textbox","id":"sh/tgvupcb6","slide":4,"text":"The point is not that incumbents failed. They solved parts of the journey. Kobo is designed to connect them.","textPreview":"The point is not that incumbents failed. They solved parts of the journey. Kobo is designed to connect them.","textChars":108,"textLines":1,"bbox":[64,652,1080,28]}
+{"kind":"notes","id":"nt/0427b1","slide":4,"text":"We respect the existing players. Western Union and MoneyGram have distribution. Digital specialists such as Remitly make sending much easier. Stablecoin infrastructure players such as Yellow Card bring modern settlement and liquidity. Kobo's opportunity is to make the underlying rail better without asking everyday users to learn wallets or networks. This is a strategic design goal, not a claim that Kobo is already superior on every dimension.\n\n[Sources]\n- Remitly product overview: https://www.remitly.com/us/en/money-transfer\n- Yellow Card company overview: https://yellowcard.io/about-us\n- Yellow Card supported corridors: https://help.yellowcard.io/articles/8016607239-supported-fiat-receive-send-corridors-by-country"}
+{"kind":"slide","id":"sl/7torie","slide":5,"title":"KOBO","textShapes":13}
+{"kind":"textbox","id":"sh/ix8vy54n","slide":5,"text":"KOBO","textPreview":"KOBO","textChars":4,"textLines":1,"bbox":[64,35,180,26]}
+{"kind":"textbox","id":"sh/50ju9kne","slide":5,"text":"05","textPreview":"05","textChars":2,"textLines":1,"bbox":[1158,35,58,26]}
+{"kind":"shape","id":"sh/4zad0fmt","slide":5,"bbox":[64,72,1152,0]}
+{"kind":"textbox","id":"sh/vuhc3a5w","slide":5,"text":"MEET KOBO","textPreview":"MEET KOBO","textChars":9,"textLines":1,"bbox":[64,88,360,22]}
+{"kind":"textbox","id":"sh/ut8bu54r","slide":5,"text":"Euro in.\nUSDC out.","textPreview":"Euro in. | USDC out.","textChars":18,"textLines":2,"bbox":[64,154,470,132]}
+{"kind":"textbox","id":"sh/hwzu50n2","slide":5,"text":"The product is a better payment experience.\nStablecoins are the infrastructure underneath.","textPreview":"The product is a better payment experience. | Stablecoins are the infrastructure underneath.","textChars":90,"textLines":2,"bbox":[68,314,478,62]}
+{"kind":"shape","id":"sh/wvqdwfmh","slide":5,"bbox":[666,114,482,500]}
+{"kind":"textbox","id":"sh/7qxczq50","slide":5,"text":"KOBO","textPreview":"KOBO","textChars":4,"textLines":1,"bbox":[708,152,130,24]}
+{"kind":"textbox","id":"sh/m5obql4f","slide":5,"text":"Send money home","textPreview":"Send money home","textChars":15,"textLines":1,"bbox":[708,202,366,36]}
+{"kind":"shape","id":"sh/obixsnm1","slide":5,"bbox":[708,272,398,86]}
+{"kind":"textbox","id":"sh/pcby1s3m","slide":5,"text":"You send","textPreview":"You send","textChars":8,"textLines":1,"bbox":[730,290,110,18]}
+{"kind":"textbox","id":"sh/290fqd4b","slide":5,"text":"€500.00","textPreview":"€500.00","textChars":7,"textLines":1,"bbox":[730,313,150,28]}
+{"kind":"shape","id":"sh/3a9wzilg","slide":5,"bbox":[708,374,398,86]}
+{"kind":"textbox","id":"sh/g7ixo3m5","slide":5,"text":"They receive","textPreview":"They receive","textChars":12,"textLines":1,"bbox":[730,392,150,18]}
+{"kind":"textbox","id":"sh/18rex83q","slide":5,"text":"USDC","textPreview":"USDC","textChars":4,"textLines":1,"bbox":[730,415,150,28]}
+{"kind":"shape","id":"sh/e50fmt4z","slide":5,"bbox":[708,500,398,54]}
+{"kind":"textbox","id":"sh/f69wvylk","slide":5,"text":"Review transfer","textPreview":"Review transfer","textChars":15,"textLines":1,"bbox":[730,514,350,23]}
+{"kind":"textbox","id":"sh/032x07m9","slide":5,"text":"One simple payment experience.","textPreview":"One simple payment experience.","textChars":30,"textLines":1,"bbox":[64,626,494,30]}
+{"kind":"notes","id":"nt/7torie","slide":5,"text":"This is the reveal. Kobo is not a crypto remittance app. It is a simpler way to move value across borders. The user thinks in euros, the person they care about and certainty. The live product's public waitlist is already framed as Euro in, USDC out. The app walkthrough follows that same mental model.\n\n[Sources]\n- Kobo waitlist: https://www.kobopayments.com/waitlist"}
+{"kind":"slide","id":"sl/ab2bya","slide":6,"title":"KOBO","textShapes":17}
+{"kind":"textbox","id":"sh/5wnydozy","slide":6,"text":"KOBO","textPreview":"KOBO","textChars":4,"textLines":1,"bbox":[64,35,180,26]}
+{"kind":"textbox","id":"sh/itwz2907","slide":6,"text":"06","textPreview":"06","textChars":2,"textLines":1,"bbox":[1158,35,58,26]}
+{"kind":"shape","id":"sh/ju5gbehs","slide":6,"bbox":[64,72,1152,0]}
+{"kind":"textbox","id":"sh/szeh83ip","slide":6,"text":"THE DEMO","textPreview":"THE DEMO","textChars":8,"textLines":1,"bbox":[64,88,360,22]}
+{"kind":"textbox","id":"sh/t0nyh8zu","slide":6,"text":"I don't want to think about wallets.\nI just want to send money.","textPreview":"I don't want to think about wallets. | I just want to send money.","textChars":63,"textLines":2,"bbox":[64,145,1050,106]}
+{"kind":"shape","id":"sh/6xwz6t0j","slide":6,"bbox":[64,350,226,154]}
+{"kind":"textbox","id":"sh/ry5gfyh4","slide":6,"text":"01","textPreview":"01","textChars":2,"textLines":1,"bbox":[84,374,46,22]}
+{"kind":"textbox","id":"sh/83uhwzi5","slide":6,"text":"Choose\na person","textPreview":"Choose | a person","textChars":15,"textLines":2,"bbox":[84,415,186,58]}
+{"kind":"textbox","id":"sh/943y54zq","slide":6,"text":"→","textPreview":"→","textChars":1,"textLines":1,"bbox":[293,404,36,34]}
+{"kind":"shape","id":"sh/h07m58bq","slide":6,"bbox":[330,350,226,154]}
+{"kind":"textbox","id":"sh/gzylc3u5","slide":6,"text":"02","textPreview":"02","textChars":2,"textLines":1,"bbox":[350,374,46,22]}
+{"kind":"textbox","id":"sh/vyp43ytk","slide":6,"text":"Enter\nthe amount","textPreview":"Enter | the amount","textChars":16,"textLines":2,"bbox":[350,415,186,58]}
+{"kind":"textbox","id":"sh/uxg3adcz","slide":6,"text":"→","textPreview":"→","textChars":1,"textLines":1,"bbox":[559,404,36,34]}
+{"kind":"shape","id":"sh/54rm9sbm","slide":6,"bbox":[596,350,226,154]}
+{"kind":"textbox","id":"sh/43ilgnu1","slide":6,"text":"03","textPreview":"03","textChars":2,"textLines":1,"bbox":[616,374,46,22]}
+{"kind":"textbox","id":"sh/32947itg","slide":6,"text":"See exactly\nwhat lands","textPreview":"See exactly | what lands","textChars":22,"textLines":2,"bbox":[616,415,186,58]}
+{"kind":"textbox","id":"sh/i1g3edcb","slide":6,"text":"→","textPreview":"→","textChars":1,"textLines":1,"bbox":[825,404,36,34]}
+{"kind":"shape","id":"sh/d8rmdsby","slide":6,"bbox":[862,350,226,154]}
+{"kind":"textbox","id":"sh/s7i5knud","slide":6,"text":"04","textPreview":"04","textChars":2,"textLines":1,"bbox":[882,374,46,22]}
+{"kind":"textbox","id":"sh/wnaxwv6l","slide":6,"text":"Review\nand send","textPreview":"Review | and send","textChars":15,"textLines":2,"bbox":[882,415,186,58]}
+{"kind":"textbox","id":"sh/xojy50n6","slide":6,"text":"Now go live: kobopayments.com","textPreview":"Now go live: kobopayments.com","textChars":29,"textLines":1,"bbox":[64,596,550,30]}
+{"kind":"textbox","id":"sh/alsfulof","slide":6,"text":"Keep the interaction under 75 seconds.","textPreview":"Keep the interaction under 75 seconds.","textChars":38,"textLines":1,"bbox":[64,636,520,24]}
+{"kind":"notes","id":"nt/ab2bya","slide":6,"text":"This is the moment to open the live demo. Move quickly: choose the recipient, enter the amount, show the recipient amount and review the transfer, then send and land on success. Do not narrate every control. Say: 'I choose who I am sending to, enter the amount, see exactly what they are getting, and send. That's Kobo.' If the live flow is unstable, play a screen recording of this exact real flow - never a fabricated confirmation.\n\n[Sources]\n- Build-state verification: C:/Users/Isaac/Desktop/KOBO/API_CONTRACT.md and local frontend/backend code, reviewed 2026-09-02"}
+{"kind":"slide","id":"sl/nh5m4m","slide":7,"title":"KOBO","textShapes":14}
+{"kind":"textbox","id":"sh/7id8vmpc","slide":7,"text":"KOBO","textPreview":"KOBO","textChars":4,"textLines":1,"bbox":[64,35,180,26]}
+{"kind":"textbox","id":"sh/s3m9o76x","slide":7,"text":"07","textPreview":"07","textChars":2,"textLines":1,"bbox":[1158,35,58,26]}
+{"kind":"shape","id":"sh/t4vqxc7i","slide":7,"bbox":[64,72,1152,0]}
+{"kind":"textbox","id":"sh/u54rqho3","slide":7,"text":"WHAT IS UNDERNEATH","textPreview":"WHAT IS UNDERNEATH","textChars":18,"textLines":1,"bbox":[64,88,360,22]}
+{"kind":"textbox","id":"sh/f6xszmp8","slide":7,"text":"The rails should disappear.","textPreview":"The rails should disappear.","textChars":27,"textLines":1,"bbox":[64,142,768,64]}
+{"kind":"shape","id":"sh/g769sr6t","slide":7,"bbox":[64,282,212,70]}
+{"kind":"textbox","id":"sh/h8fa1w7e","slide":7,"text":"PERSON","textPreview":"PERSON","textChars":6,"textLines":1,"bbox":[79,304,182,26]}
+{"kind":"textbox","id":"sh/a9krexoj","slide":7,"text":"→","textPreview":"→","textChars":1,"textLines":1,"bbox":[282,301,54,40]}
+{"kind":"shape","id":"sh/bat8n2p4","slide":7,"bbox":[346,282,212,70]}
+{"kind":"textbox","id":"sh/ny1o3a9s","slide":7,"text":"KOBO","textPreview":"KOBO","textChars":4,"textLines":1,"bbox":[361,304,182,26]}
+{"kind":"textbox","id":"sh/2xsnups7","slide":7,"text":"→","textPreview":"→","textChars":1,"textLines":1,"bbox":[564,301,54,40]}
+{"kind":"shape","id":"sh/p0j65kri","slide":7,"bbox":[628,282,212,70]}
+{"kind":"textbox","id":"sh/oza5wfax","slide":7,"text":"USDC ON SOLANA","textPreview":"USDC ON SOLANA","textChars":14,"textLines":1,"bbox":[643,304,182,26]}
+{"kind":"textbox","id":"sh/fu1oza9g","slide":7,"text":"→","textPreview":"→","textChars":1,"textLines":1,"bbox":[846,301,54,40]}
+{"kind":"shape","id":"sh/et8nq5sv","slide":7,"bbox":[910,282,212,70]}
+{"kind":"textbox","id":"sh/1wj61krm","slide":7,"text":"FAMILY WALLET","textPreview":"FAMILY WALLET","textChars":13,"textLines":1,"bbox":[925,304,182,26]}
+{"kind":"textbox","id":"sh/0va5sfa1","slide":7,"text":"Built today","textPreview":"Built today","textChars":11,"textLines":1,"bbox":[64,448,200,26]}
+{"kind":"textbox","id":"sh/r6hovq9k","slide":7,"text":"Account + PIN auth     Recipient flow     Transfer lifecycle\nBalance handling        Solana devnet settlement     On-ramp/webhook handling","textPreview":"Account + PIN auth     Recipient flow     Transfer lifecycle | Balance handling        Solana devnet settlement     On-ramp/webhook handling","textChars":138,"textLines":2,"bbox":[64,494,1034,54]}
+{"kind":"textbox","id":"sh/q58nm5sz","slide":7,"text":"Production cash-out is not presented as live. It is next, with the right regulated partner.","textPreview":"Production cash-out is not presented as live. It is next, with the right regulated partner.","textChars":91,"textLines":1,"bbox":[64,624,1080,28]}
+{"kind":"notes","id":"nt/nh5m4m","slide":7,"text":"Under the hood, Kobo uses stablecoins and Solana for the settlement rail. The implementation today includes real account and PIN auth, recipient creation, balance handling, transfer status handling, Solana devnet settlement, and on-ramp session plus webhook handling. We deliberately do not claim a live production cash-out or a fully launched regulated payout network. The next step is hardening the flow with the right licensed partners.\n\n[Sources]\n- Local build-state evidence: C:/Users/Isaac/Desktop/KOBO/API_CONTRACT.md and KOBO_BUILD_PLAN.md, reviewed 2026-09-02\n- Solana payment documentation: https://solana.com/es/docs/payments\n- Solana institutional payments: https://solana.com/solutions/institutional-payments"}
+{"kind":"slide","id":"sl/gu6tjo","slide":8,"title":"KOBO","textShapes":6}
+{"kind":"textbox","id":"sh/l4v2p8rm","slide":8,"text":"KOBO","textPreview":"KOBO","textChars":4,"textLines":1,"bbox":[64,48,180,28]}
+{"kind":"textbox","id":"sh/y1k3udsb","slide":8,"text":"We're building the payment\nexperience our families deserve.","textPreview":"We're building the payment | experience our families deserve.","textChars":59,"textLines":2,"bbox":[64,144,830,130]}
+{"kind":"textbox","id":"sh/z2tkni9w","slide":8,"text":"We don't need everyone to understand crypto.\nWe need them to understand that their money should move better.","textPreview":"We don't need everyone to understand crypto. | We need them to understand that their money should move better.","textChars":108,"textLines":2,"bbox":[68,320,782,66]}
+{"kind":"textbox","id":"sh/87ml0nad","slide":8,"text":"KOBOPAYMENTS.COM","textPreview":"KOBOPAYMENTS.COM","textChars":16,"textLines":1,"bbox":[68,518,620,34]}
+{"kind":"textbox","id":"sh/98vmtsry","slide":8,"text":"Join the waitlist","textPreview":"Join the waitlist","textChars":17,"textLines":1,"bbox":[68,564,390,28]}
+{"kind":"textbox","id":"sh/m543yds7","slide":8,"text":"@isaackobo     @shinakobo","textPreview":"@isaackobo     @shinakobo","textChars":25,"textLines":1,"bbox":[68,626,450,24]}
+{"kind":"shape","id":"sh/76dkri9s","slide":8,"bbox":[928,414,196,196]}
+{"kind":"image","id":"im/lsny1ofe","slide":8,"name":"","geometry":"rect","alt":"QR code for Kobo waitlist","bbox":[944,430,164,164]}
+{"kind":"notes","id":"nt/gu6tjo","slide":8,"text":"Close with the ask: help us get Kobo into the hands of the people who need it. We want early users, direct feedback, distribution introductions and the right infrastructure partners. Then stop. Let the QR code and the line do the work.\n\n[Sources]\n- QR destination: https://www.kobopayments.com/waitlist"}

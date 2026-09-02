@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { CircleDot } from "lucide-react";
+import { KoboLogo } from "@/components/kobo/kobo-logo";
 
 /** Caller must persist any state it needs to resume before rendering this — it navigates away. */
 export function RedirectHandoff({
@@ -33,9 +33,7 @@ export function RedirectHandoff({
       aria-live="polite"
       className="fixed inset-0 z-50 flex flex-col items-center justify-center gap-6 bg-gradient-to-b from-[#DCEDEA] via-kobo-bg to-[#E8F0F1] px-6 text-center"
     >
-      <div className="flex size-14 items-center justify-center rounded-2xl bg-gradient-to-br from-kobo-teal-500 to-kobo-teal-800 shadow-lg shadow-kobo-teal-900/40">
-        <CircleDot className="size-6 text-kobo-mint-light" strokeWidth={1.7} />
-      </div>
+      <KoboLogo variant="mark" priority className="h-14" />
       <div className="relative size-10">
         <div className="absolute inset-0 rounded-full border-2 border-kobo-teal-600/20" />
         <div className="absolute inset-0 motion-safe:animate-spin rounded-full border-2 border-transparent border-t-kobo-teal-600" />
