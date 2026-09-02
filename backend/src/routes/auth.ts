@@ -10,6 +10,8 @@ import {
   AUTH_SERVICE_UNAVAILABLE,
 } from "../lib/auth";
 import { isPlausibleSolanaAddress } from "../lib/validation";
+import { isWaitlistMode } from "../lib/access-mode";
+import { signGrant, isPrivilegedRole, GRANT_TTL_SECONDS } from "../lib/access-grant";
 
 export const authRouter = Router();
 
@@ -52,6 +54,14 @@ function sessionBody(session: { access_token: string; refresh_token: string; exp
  * mailer available.
  */
 authRouter.post("/signup", async (req, res) => {
+  // Pre-launch: the product is closed to the public, so is account creation.
+  // Developer accounts are provisioned directly in the DB, never through this
+  // endpoint, so they are unaffected. Login stays open. Flip with
+  // KOBO_ACCESS_MODE=live on Railway (see lib/access-mode.ts).
+  if (isWaitlistMode()) {
+    return res.status(403).json({ error: "Kobo isn't open for new accounts yet — join the waitlist at /waitlist" });
+  }
+
   const { email, password, name, country, wallet_address } = req.body ?? {};
 
   if (!email || typeof email !== "string") {
@@ -262,6 +272,42 @@ authRouter.get("/me", requireAuth, async (req, res) => {
     return res.status(403).json({ error: "No account linked to this session" });
   }
   return res.json({ user: profile });
+});
+
+/**
+ * The caller's launch-access role plus, for a developer/admin, a short-lived
+ * signed "access grant" the Next.js proxy verifies offline to let them past
+ * `KOBO_ACCESS_MODE=waitlist` route gating (see backend/src/lib/access-grant.ts,
+ * frontend/proxy.ts). `access_role` is read only from the `users` row keyed by
+ * the verified session — never from the request.
+ *
+ *   { access_role: "user" | "developer" | "admin",
+ *     grant: string | null,        // signed token, only when privileged
+ *     grant_ttl_seconds: number }   // how long `grant` is valid — the client
+ *                                    // re-mints before this elapses
+ *
+ * `grant` is null (with a 200, not an error) when the caller is a normal user,
+ * or when the server has no `KOBO_ACCESS_GRANT_SECRET` configured — the proxy
+ * then simply keeps everyone on /waitlist (fail closed).
+ */
+authRouter.get("/access", requireAuth, async (req, res) => {
+  let koboUser;
+  try {
+    koboUser = await resolveKoboUser(req.authUser!.id);
+  } catch (err) {
+    return res.status(500).json({ error: (err as Error).message });
+  }
+
+  const accessRole = koboUser?.access_role ?? "user";
+  const grant = isPrivilegedRole(accessRole) && koboUser
+    ? signGrant(koboUser.id, accessRole)
+    : null;
+
+  return res.json({
+    access_role: accessRole,
+    grant,
+    grant_ttl_seconds: GRANT_TTL_SECONDS,
+  });
 });
 
 /**

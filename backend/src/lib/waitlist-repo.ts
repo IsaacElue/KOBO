@@ -17,6 +17,28 @@ export interface WaitlistSignupResult {
   created: boolean;
 }
 
+/**
+ * A developer test signup. Lives in the SEPARATE `waitlist_test_signups`
+ * table — never in `waitlist_signups`, never numbered, never counted by
+ * `GET /waitlist/count`. `is_test` is always `true` (the table IS the marker;
+ * the field is here so callers/logs can identify a row at a glance).
+ */
+export interface WaitlistTestSignup {
+  id: string;
+  email: string;
+  note: string | null;
+  created_by: string | null;
+  created_at: string;
+  is_test: true;
+}
+
+export interface WaitlistStats {
+  /** Genuine signups (`waitlist_signups`) — the same number `count()` returns. */
+  real: number;
+  /** Developer test signups (`waitlist_test_signups`). */
+  test: number;
+}
+
 export interface WaitlistRepository {
   /**
    * Idempotent: joins `email` to the list and returns its position with
@@ -26,8 +48,25 @@ export interface WaitlistRepository {
    * again defensively).
    */
   signup(email: string): Promise<WaitlistSignupResult>;
-  /** Total rows in `waitlist_signups`. */
+  /** Total GENUINE signups — rows in `waitlist_signups`. Excludes test rows (they are in another table). */
   count(): Promise<number>;
+  /**
+   * Developer-only: record a throwaway test signup in `waitlist_test_signups`.
+   * Never assigns a `signup_number`, never touches `waitlist_counter` or
+   * `waitlist_signups`. Idempotent per normalised email (get-or-create).
+   */
+  testSignup(email: string, meta?: { createdBy?: string | null; note?: string | null }): Promise<WaitlistTestSignup>;
+  /** Developer-only: delete every row in `waitlist_test_signups`. Returns the count removed. Idempotent, safe to repeat. */
+  testCleanup(): Promise<{ deleted: number }>;
+  /** Developer-only: genuine vs test counts, for a developer dashboard. */
+  stats(): Promise<WaitlistStats>;
+}
+
+/** Postgres unique-violation SQLSTATE — a concurrent test-signup of the same email. */
+const UNIQUE_VIOLATION = "23505";
+
+function normalizeEmail(email: string): string {
+  return email.trim().toLowerCase();
 }
 
 export const supabaseWaitlist: WaitlistRepository = {
@@ -54,5 +93,57 @@ export const supabaseWaitlist: WaitlistRepository = {
       .select("*", { count: "exact", head: true });
     if (error) throw new Error(error.message);
     return count ?? 0;
+  },
+
+  async testSignup(email, meta = {}): Promise<WaitlistTestSignup> {
+    const normalized = normalizeEmail(email);
+
+    // Insert first; on the unique-email conflict, return the existing row —
+    // same get-or-create shape as the real signup, but entirely within
+    // `waitlist_test_signups`. No counter, no `signup_number`, ever.
+    const inserted = await supabase
+      .from("waitlist_test_signups")
+      .insert({ email: normalized, created_by: meta.createdBy ?? null, note: meta.note ?? null })
+      .select("id, email, note, created_by, created_at")
+      .single();
+
+    if (!inserted.error) {
+      return { ...inserted.data, is_test: true };
+    }
+    if (inserted.error.code !== UNIQUE_VIOLATION) {
+      throw new Error(inserted.error.message);
+    }
+
+    const existing = await supabase
+      .from("waitlist_test_signups")
+      .select("id, email, note, created_by, created_at")
+      .eq("email", normalized)
+      .single();
+    if (existing.error) throw new Error(existing.error.message);
+    return { ...existing.data, is_test: true };
+  },
+
+  async testCleanup(): Promise<{ deleted: number }> {
+    // Deletes ONLY `waitlist_test_signups` rows. `waitlist_signups`,
+    // `waitlist_counter`, and every real `signup_number` are in other objects
+    // and are not referenced here. `neq id null` = "all rows" (PostgREST
+    // requires a filter on DELETE).
+    const { data, error } = await supabase
+      .from("waitlist_test_signups")
+      .delete()
+      .not("id", "is", null)
+      .select("id");
+    if (error) throw new Error(error.message);
+    return { deleted: data?.length ?? 0 };
+  },
+
+  async stats(): Promise<WaitlistStats> {
+    const [real, test] = await Promise.all([
+      supabase.from("waitlist_signups").select("*", { count: "exact", head: true }),
+      supabase.from("waitlist_test_signups").select("*", { count: "exact", head: true }),
+    ]);
+    if (real.error) throw new Error(real.error.message);
+    if (test.error) throw new Error(test.error.message);
+    return { real: real.count ?? 0, test: test.count ?? 0 };
   },
 };

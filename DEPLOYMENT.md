@@ -254,6 +254,52 @@ Do this once the backend is live and the pooled wallet is funded (§4).
 
 ---
 
+## 9. Launch access mode (pre-launch waitlist gate)
+
+Kobo ships in **waitlist mode**: the public reaches only `/waitlist`. `/`,
+`/landing`, the app and every other product route redirect there — enforced
+server-side in `frontend/proxy.ts` (Next 16 Proxy), so typing the URL is gated
+the same as clicking a link. Developer accounts (DB `users.access_role` =
+`developer` / `admin`) pass through via a short-lived HMAC-signed access grant.
+
+### Environment variables
+
+| Where | Variable | Value | Notes |
+|---|---|---|---|
+| **Vercel** (frontend) | `NEXT_PUBLIC_KOBO_ACCESS_MODE` | `waitlist` | Build-time. Drives `proxy.ts` + `AuthGate` + `ROOT_REDIRECT_TARGET`. Flip to `live` to launch — Vercel redeploys automatically. |
+| **Vercel** (frontend) | `KOBO_ACCESS_GRANT_SECRET` | *(32+ random bytes, secret)* | **Not** `NEXT_PUBLIC_`. Server-side only (`proxy.ts` verifies grants). Must **exactly match** Railway's value. `openssl rand -base64 32`. |
+| **Railway** (backend) | `KOBO_ACCESS_MODE` | `waitlist` | Runtime. Only gates `POST /auth/signup` (403 in waitlist mode). Flip to `live` to reopen public signup. |
+| **Railway** (backend) | `KOBO_ACCESS_GRANT_SECRET` | *(same value as Vercel)* | The API signs grants with this in `GET /auth/access`. |
+
+If `KOBO_ACCESS_GRANT_SECRET` is unset or the two copies differ, **no developer
+can pass the gate** (fail closed) — `/waitlist` still works for everyone.
+
+### One-time production migrations (apply via `backend/scripts/run-migration.ts`)
+
+```
+cd backend
+npx tsx scripts/run-migration.ts supabase/migrations/20260906000000_add_user_access_role.sql
+npx tsx scripts/run-migration.ts supabase/migrations/20260906000100_add_waitlist_test_signups.sql
+```
+
+### One-time production data operations (dry-run first, then `--apply`)
+
+```
+npx tsx scripts/grant-access-role.ts            # then --apply : sets access_role='developer'
+                                                #   for elueisaac14@gmail.com + shinaanafi10@gmail.com
+npx tsx scripts/cleanup-dev-waitlist-signup.ts  # then --apply : removes the dev test signup #1,
+                                                #   resets waitlist_counter to 1 (pre-launch only)
+```
+
+### Launch checklist
+
+1. `NEXT_PUBLIC_KOBO_ACCESS_MODE=live` on Vercel → redeploys.
+2. `KOBO_ACCESS_MODE=live` on Railway → redeploys.
+3. `/landing` is now the public entry point; `/`, `/waitlist`, `/app` unchanged
+   and still present. No page is deleted or renamed.
+
+---
+
 ## Not in scope here / follow-ups
 
 - Backend wallet keypair persistence (§4) — needed before money-movement works deployed.

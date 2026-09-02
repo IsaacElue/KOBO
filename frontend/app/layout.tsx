@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Outfit, Geist_Mono } from "next/font/google";
 import { Toaster } from "@/components/ui/sonner";
+import { AccessSync } from "@/components/kobo/access-sync";
 import "./globals.css";
 
 // Outfit — the sans used across the "Kobo Web App" design export. A clean,
@@ -40,6 +41,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       className={`${sans.variable} ${geistMono.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col">
+        <AccessSync />
         {children}
         {/* Bottom offset lifts toasts clear of the mobile bottom tab bar
             (< 1024px); resolves to the plain 24px on desktop. See globals.css. */}

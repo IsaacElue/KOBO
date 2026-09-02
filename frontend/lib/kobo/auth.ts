@@ -1,4 +1,5 @@
 import { API_URL } from "./config";
+import { clearAccessGrantCookie } from "@/lib/access/grant-cookie";
 import type { AuthSession, AuthUser, CreateLoginRequest, CreateSignupRequest } from "./types";
 
 /**
@@ -59,6 +60,8 @@ function setStoredAuth(auth: StoredAuth) {
 export function clearStoredAuth() {
   if (typeof window === "undefined") return;
   window.localStorage.removeItem(STORAGE_KEY);
+  // A dead session must not leave a usable developer access grant behind.
+  clearAccessGrantCookie();
   notify();
 }
 

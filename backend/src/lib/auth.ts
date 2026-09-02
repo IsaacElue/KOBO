@@ -131,9 +131,55 @@ export const requireAuth: RequestHandler = async (req, res, next) => {
 export async function resolveKoboUser(authUserId: string) {
   const { data, error } = await supabase
     .from("users")
-    .select("id, name, role, country, wallet_address, auth_user_id")
+    .select("id, name, role, country, wallet_address, auth_user_id, access_role")
     .eq("auth_user_id", authUserId)
     .maybeSingle();
   if (error) throw error;
   return data;
 }
+
+/* ───────────────────────────────────────────────────────────────────────────
+ *  Developer/admin gate — for the pre-launch access-control tooling only
+ *  (waitlist test-signup / test-cleanup). Layers on top of `requireAuth`:
+ *  resolves the caller's linked `users` row and checks the DB-backed
+ *  `access_role` (see 20260906000000_add_user_access_role.sql). The role is
+ *  NEVER taken from the request — only from the row keyed by the verified
+ *  session. A normal user gets 403.
+ * ─────────────────────────────────────────────────────────────────────────── */
+
+declare global {
+  namespace Express {
+    interface Request {
+      /** The caller's linked `users` row — set by requireDeveloper. */
+      koboUser?: NonNullable<Awaited<ReturnType<typeof resolveKoboUser>>>;
+    }
+  }
+}
+
+/** Must run after `requireAuth`. 403 unless the linked account's `access_role` is developer or admin. */
+export const requireDeveloper: RequestHandler = async (req, res, next) => {
+  // ⚠️ DEV BYPASS — matches requireAuth's behaviour above. Local-only, off by default.
+  if (DEV_SKIP_AUTH) {
+    return next();
+  }
+
+  if (!req.authUser) {
+    return res.status(401).json({ error: "Not authenticated" });
+  }
+
+  let koboUser;
+  try {
+    koboUser = await resolveKoboUser(req.authUser.id);
+  } catch (err) {
+    return res.status(500).json({ error: (err as Error).message });
+  }
+  if (!koboUser) {
+    return res.status(403).json({ error: "No account linked to this session" });
+  }
+  if (koboUser.access_role !== "developer" && koboUser.access_role !== "admin") {
+    return res.status(403).json({ error: "Developer access required" });
+  }
+
+  req.koboUser = koboUser;
+  next();
+};

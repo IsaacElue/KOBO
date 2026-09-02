@@ -8,8 +8,9 @@ import { LoginDialog } from "@/components/kobo/login-dialog";
 import { PinSetupDialog } from "@/components/kobo/pin-setup-dialog";
 import { PinUnlockDialog } from "@/components/kobo/pin-unlock-dialog";
 import { Skeleton } from "@/components/ui/skeleton";
-import { isMockMode, ROOT_REDIRECT_TARGET } from "@/lib/kobo/config";
-import { getStoredAuth, logout, onAuthChange, type StoredAuth } from "@/lib/kobo/auth";
+import { API_URL, isMockMode, ROOT_REDIRECT_TARGET } from "@/lib/kobo/config";
+import { getStoredAuth, getValidAccessToken, logout, onAuthChange, type StoredAuth } from "@/lib/kobo/auth";
+import { isWaitlistMode } from "@/lib/access/mode";
 
 type Phase = "loading" | "signup" | "login" | "pin-setup" | "pin-unlock" | "unlocked";
 
@@ -58,6 +59,46 @@ export function AuthGate() {
   const authIntent = searchParams.get("auth"); // "login" | "signup" | null
   const [phase, setPhase] = useState<Phase>(mock ? "unlocked" : "loading");
   const [auth, setAuth] = useState<StoredAuth | null>(null);
+
+  // Launch-access backstop to `proxy.ts`: in waitlist mode the proxy already
+  // keeps non-developers off "/" — but it leaves the sign-in form at
+  // `/?auth=login` open, and a normal user can sign in there. This makes sure
+  // the *product* still doesn't render for them: KoboApp only mounts once the
+  // server confirms (GET /auth/access -> DB `access_role`) that this account is
+  // a developer/admin. "checking" until then. Skipped entirely in live mode and
+  // mock mode.
+  const gateProductByMode = !mock && isWaitlistMode();
+  const [productAccess, setProductAccess] = useState<"checking" | "allowed" | "denied">(
+    gateProductByMode ? "checking" : "allowed"
+  );
+
+  useEffect(() => {
+    if (!gateProductByMode || phase !== "unlocked") return;
+    let cancelled = false;
+    // Async server check gating a single render decision — the state writes are
+    // inside this IIFE, not the effect body.
+    (async () => {
+      try {
+        const token = await getValidAccessToken();
+        if (!token) {
+          if (!cancelled) setProductAccess("denied");
+          return;
+        }
+        const res = await fetch(`${API_URL}/auth/access`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        const body = res.ok ? ((await res.json()) as { access_role?: string }) : null;
+        if (cancelled) return;
+        const role = body?.access_role;
+        setProductAccess(role === "developer" || role === "admin" ? "allowed" : "denied");
+      } catch {
+        if (!cancelled) setProductAccess("denied");
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [gateProductByMode, phase, auth]);
 
   useEffect(() => {
     if (mock || DEV_SKIP_AUTH) return;
@@ -163,8 +204,52 @@ export function AuthGate() {
         </AuthShell>
       );
     case "unlocked":
+      if (gateProductByMode && productAccess !== "allowed") {
+        return (
+          <AuthShell>
+            {productAccess === "checking" ? (
+              <Skeleton className="h-[420px] w-full max-w-sm rounded-[32px]" />
+            ) : (
+              <WaitlistModeNotice onLogout={handleLogout} />
+            )}
+          </AuthShell>
+        );
+      }
       return <KoboApp authUser={auth?.user} onLogout={handleLogout} />;
   }
+}
+
+/**
+ * Shown when someone signs in while Kobo is still in waitlist mode and their
+ * account isn't a developer/admin. Not an error — their session is valid, the
+ * product just isn't open yet.
+ */
+function WaitlistModeNotice({ onLogout }: { onLogout: () => void }) {
+  return (
+    <div className="w-full max-w-sm rounded-[32px] border border-black/5 bg-white p-8 text-center shadow-[0_60px_110px_-44px_rgba(0,0,0,0.5)]">
+      <div className="mx-auto mb-5 size-14 rounded-2xl bg-gradient-to-br from-[#1E9B76] to-kobo-teal-800" />
+      <h1 className="text-[24px] font-bold tracking-tight text-kobo-ink">You&apos;re on the list</h1>
+      <p className="mt-3 text-[15px] leading-relaxed text-[#5E7A81]">
+        Kobo is in early access and isn&apos;t open yet. We&apos;ll email you the moment your
+        account can send.
+      </p>
+      <div className="mt-6 flex flex-col gap-2">
+        <a
+          href="/waitlist"
+          className="rounded-full bg-kobo-teal-800 px-5 py-3 text-[14px] font-semibold text-white transition-opacity hover:opacity-90"
+        >
+          Back to the waitlist
+        </a>
+        <button
+          type="button"
+          onClick={onLogout}
+          className="px-5 py-2 text-[13px] font-medium text-[#5E7A81] transition-colors hover:text-kobo-ink"
+        >
+          Sign out
+        </button>
+      </div>
+    </div>
+  );
 }
 
 /** ⚠️ DEV BYPASS banner — unmissable, so a bypassed session is never mistaken for real auth. */

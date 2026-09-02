@@ -1,9 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import express from "express";
 import request from "supertest";
+import type { RequestHandler } from "express";
 import { createWaitlistRouter } from "../routes/waitlist";
 import { createRateLimiter } from "../lib/rate-limit";
-import type { WaitlistRepository } from "../lib/waitlist-repo";
+import type { WaitlistRepository, WaitlistTestSignup } from "../lib/waitlist-repo";
 
 /**
  * POST /waitlist/signup + GET /waitlist/count — route logic in isolation.
@@ -38,6 +39,35 @@ class FakeWaitlistRepo implements WaitlistRepository {
     return this.byEmail.size;
   }
 
+  // ── developer test tooling — a SEPARATE store, mirroring waitlist_test_signups ──
+  private testRows = new Map<string, WaitlistTestSignup>();
+
+  async testSignup(email: string, meta: { createdBy?: string | null; note?: string | null } = {}) {
+    const key = email.trim().toLowerCase();
+    const existing = this.testRows.get(key);
+    if (existing) return existing;
+    const row: WaitlistTestSignup = {
+      id: `test-${this.testRows.size + 1}`,
+      email: key,
+      note: meta.note ?? null,
+      created_by: meta.createdBy ?? null,
+      created_at: new Date().toISOString(),
+      is_test: true,
+    };
+    this.testRows.set(key, row);
+    return row;
+  }
+
+  async testCleanup() {
+    const deleted = this.testRows.size;
+    this.testRows.clear();
+    return { deleted };
+  }
+
+  async stats() {
+    return { real: this.byEmail.size, test: this.testRows.size };
+  }
+
   /** Test helper — mirrors a row being deleted; its number is NOT reclaimed. */
   remove(email: string) {
     this.byEmail.delete(email);
@@ -46,7 +76,34 @@ class FakeWaitlistRepo implements WaitlistRepository {
   get size() {
     return this.byEmail.size;
   }
+
+  get testSize() {
+    return this.testRows.size;
+  }
+
+  /** Test helper — the counter value a real signup would next hand out. */
+  get nextRealNumber() {
+    return this.nextNumber;
+  }
 }
+
+/** Fills the developer-tooling half of `WaitlistRepository` for the failure-path literals below. */
+const noopTestTooling = {
+  testSignup: async () => {
+    throw new Error("not exercised in this test");
+  },
+  testCleanup: async () => ({ deleted: 0 }),
+  stats: async () => ({ real: 0, test: 0 }),
+};
+
+/** Fake `developerGuard`: reads `x-test-role` header. Missing → 401; "user" → 403; "developer"/"admin" → pass. */
+const fakeDeveloperGuard: RequestHandler = (req, res, next) => {
+  const role = req.headers["x-test-role"];
+  if (!role) return res.status(401).json({ error: "Not authenticated" });
+  if (role !== "developer" && role !== "admin") return res.status(403).json({ error: "Developer access required" });
+  (req as unknown as { authUser?: { id: string } }).authUser = { id: "auth-dev" };
+  next();
+};
 
 function buildApp(repo: WaitlistRepository, opts?: { rateLimit?: { windowMs: number; max: number } }) {
   const app = express();
@@ -57,6 +114,7 @@ function buildApp(repo: WaitlistRepository, opts?: { rateLimit?: { windowMs: num
     createWaitlistRouter({
       repo,
       signupRateLimiter: createRateLimiter(opts?.rateLimit ?? { windowMs: 60_000, max: 1000 }),
+      developerGuard: fakeDeveloperGuard,
     })
   );
   return app;
@@ -151,6 +209,7 @@ describe("POST /waitlist/signup", () => {
         throw new Error("db down");
       },
       count: async () => 0,
+      ...noopTestTooling,
     };
     const res = await request(buildApp(failing)).post("/waitlist/signup").send({ email: "x@example.com" });
     expect(res.status).toBe(500);
@@ -209,9 +268,106 @@ describe("GET /waitlist/count", () => {
       count: async () => {
         throw new Error("count failed");
       },
+      ...noopTestTooling,
     };
     const res = await request(buildApp(failing)).get("/waitlist/count");
     expect(res.status).toBe(500);
+  });
+});
+
+describe("developer waitlist test tooling", () => {
+  let repo: FakeWaitlistRepo;
+  let app: express.Express;
+
+  beforeEach(() => {
+    repo = new FakeWaitlistRepo();
+    app = buildApp(repo);
+  });
+
+  const asDev = (r: request.Test) => r.set("x-test-role", "developer");
+
+  it("POST /waitlist/test-signup rejects unauthenticated (401)", async () => {
+    const res = await request(app).post("/waitlist/test-signup").send({ email: "t@example.com" });
+    expect(res.status).toBe(401);
+    expect(repo.testSize).toBe(0);
+  });
+
+  it("POST /waitlist/test-signup rejects a normal user (403), even one claiming a role", async () => {
+    const res = await request(app)
+      .post("/waitlist/test-signup")
+      .set("x-test-role", "user")
+      .send({ email: "t@example.com", role: "developer", access_role: "admin" });
+    expect(res.status).toBe(403);
+    expect(repo.testSize).toBe(0);
+  });
+
+  it("POST /waitlist/test-signup as developer → 201, is_test row, NO signup_number", async () => {
+    const res = await asDev(request(app).post("/waitlist/test-signup")).send({ email: "Dev@Example.com  " });
+    expect(res.status).toBe(201);
+    expect(res.body.test_signup).toMatchObject({ email: "dev@example.com", is_test: true });
+    expect(res.body.test_signup).not.toHaveProperty("signup_number");
+    expect(repo.testSize).toBe(1);
+  });
+
+  it("test-signup never advances the real counter and never adds to the real list", async () => {
+    await asDev(request(app).post("/waitlist/test-signup")).send({ email: "a@example.com" });
+    await asDev(request(app).post("/waitlist/test-signup")).send({ email: "b@example.com" });
+    expect(repo.nextRealNumber).toBe(1); // untouched
+    expect(repo.size).toBe(0); // real list empty
+    const realFirst = await request(app).post("/waitlist/signup").send({ email: "real@example.com" });
+    expect(realFirst.body.signup_number).toBe(1); // first genuine signup is still #1
+  });
+
+  it("test-signup is idempotent per email (get-or-create)", async () => {
+    const a = await asDev(request(app).post("/waitlist/test-signup")).send({ email: "dup@example.com" });
+    const b = await asDev(request(app).post("/waitlist/test-signup")).send({ email: "dup@example.com" });
+    expect(b.body.test_signup.id).toBe(a.body.test_signup.id);
+    expect(repo.testSize).toBe(1);
+  });
+
+  it("public GET /waitlist/count excludes test rows", async () => {
+    await asDev(request(app).post("/waitlist/test-signup")).send({ email: "t1@example.com" });
+    await asDev(request(app).post("/waitlist/test-signup")).send({ email: "t2@example.com" });
+    await request(app).post("/waitlist/signup").send({ email: "real@example.com" });
+    expect((await request(app).get("/waitlist/count")).body).toEqual({ total: 1 });
+  });
+
+  it("GET /waitlist/stats (developer) reports real vs test vs total", async () => {
+    await asDev(request(app).post("/waitlist/test-signup")).send({ email: "t@example.com" });
+    await request(app).post("/waitlist/signup").send({ email: "real@example.com" });
+    const res = await asDev(request(app).get("/waitlist/stats"));
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ real: 1, test: 1, total: 2 });
+  });
+
+  it("GET /waitlist/stats rejects a normal user (403)", async () => {
+    expect((await request(app).get("/waitlist/stats").set("x-test-role", "user")).status).toBe(403);
+  });
+
+  it("POST /waitlist/test-cleanup deletes only test rows, leaves real signups + numbering intact", async () => {
+    await request(app).post("/waitlist/signup").send({ email: "real1@example.com" });
+    await request(app).post("/waitlist/signup").send({ email: "real2@example.com" });
+    await asDev(request(app).post("/waitlist/test-signup")).send({ email: "t1@example.com" });
+    await asDev(request(app).post("/waitlist/test-signup")).send({ email: "t2@example.com" });
+
+    const res = await asDev(request(app).post("/waitlist/test-cleanup"));
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ deleted: 2 });
+    expect(repo.testSize).toBe(0);
+    expect(repo.size).toBe(2); // real rows untouched
+    expect(repo.nextRealNumber).toBe(3); // counter unchanged — next real signup is #3
+  });
+
+  it("POST /waitlist/test-cleanup is idempotent (safe to repeat)", async () => {
+    await asDev(request(app).post("/waitlist/test-signup")).send({ email: "t@example.com" });
+    expect((await asDev(request(app).post("/waitlist/test-cleanup"))).body).toEqual({ deleted: 1 });
+    expect((await asDev(request(app).post("/waitlist/test-cleanup"))).body).toEqual({ deleted: 0 });
+  });
+
+  it("test-cleanup rejects a normal user (403)", async () => {
+    await asDev(request(app).post("/waitlist/test-signup")).send({ email: "t@example.com" });
+    expect((await request(app).post("/waitlist/test-cleanup").set("x-test-role", "user")).status).toBe(403);
+    expect(repo.testSize).toBe(1);
   });
 });
 
