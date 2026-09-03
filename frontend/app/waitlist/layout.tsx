@@ -13,13 +13,13 @@ const spaceGrotesk = Space_Grotesk({
 });
 
 export const metadata: Metadata = {
-  title: "Kobo waitlist: early access to euro-in, USDC-out",
+  title: "Kobo: early access to a better way to send money home",
   description:
-    "Join the Kobo waitlist. Send euros from Ireland to family in Nigeria as USDC on Solana, held safely until they choose to convert.",
+    "Kobo is building a faster, simpler way to send money from Ireland to Nigeria. Join the early-access list and be first to try it.",
   openGraph: {
-    title: "Get early access to Kobo",
+    title: "Be first in line for Kobo",
     description:
-      "Euros from Ireland, digital dollars in Nigeria, settled on Solana in seconds. Join the waitlist.",
+      "A faster, simpler way to send money home from Ireland to Nigeria. Join the waitlist for early access.",
     type: "website",
   },
   robots: { index: true, follow: true },
