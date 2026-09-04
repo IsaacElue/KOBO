@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { Outfit, Geist_Mono } from "next/font/google";
+import Script from "next/script";
 import { Toaster } from "@/components/ui/sonner";
 import { AccessSync } from "@/components/kobo/access-sync";
 import "./globals.css";
@@ -60,6 +61,14 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       className={`${sans.variable} ${geistMono.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col">
+        <Script
+          strategy="afterInteractive"
+          data-domain="kobopayments.com"
+          src="https://plausible.io/js/pa-GZ0hr_Osai5YBmpiXjcpB.js"
+        />
+        <Script id="plausible-init" strategy="afterInteractive">
+          {`window.plausible = window.plausible || function() { (window.plausible.q = window.plausible.q || []).push(arguments) }; window.plausible.init = window.plausible.init || function(i) { window.plausible.o = i || {} }; window.plausible.init()`}
+        </Script>
         <AccessSync />
         {children}
         {/* Bottom offset lifts toasts clear of the mobile bottom tab bar
